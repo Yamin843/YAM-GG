@@ -1,6 +1,7 @@
 #include "NativeMethods.h"
 #include "../Core/Runtime.h"
 #include "../UI/Renderer.h"
+#include "../UI/MainWindow.h"
 
 #include <android/log.h>
 #include <vector>
@@ -34,6 +35,13 @@ static void JNICALL impl_nativeOnTouch(JNIEnv* env, jclass clazz,
     Renderer::instance().onTouch((int)action, (float)x, (float)y, (int)pointerId);
 }
 
+
+static jboolean JNICALL impl_nativeHitTest(JNIEnv* env, jclass clazz,
+                                             jfloat x, jfloat y) {
+    (void)env; (void)clazz;
+    return MainWindow::instance().hitTest((float)x, (float)y) ? JNI_TRUE
+                                                               : JNI_FALSE;
+}
 
 static jboolean JNICALL impl_nativeWantCaptureMouse(JNIEnv* env, jclass clazz) {
     (void)env; (void)clazz;
@@ -102,6 +110,7 @@ static const JNINativeMethod g_methods[] = {
     {"nativeOnKey", "(II)V", (void*)impl_nativeOnKey},
     {"nativeGetPendingCmd", "()Ljava/lang/String;", (void*)impl_nativeGetPendingCmd},
     {"nativeWantCaptureMouse", "()Z", (void*)impl_nativeWantCaptureMouse},
+    {"nativeHitTest", "(FF)Z", (void*)impl_nativeHitTest},
     {"nativeOnChar", "(I)V", (void*)impl_nativeOnChar},
     {"nativeWantTextInput", "()Z", (void*)impl_nativeWantTextInput},
     {"nativeOnScroll", "(FF)V", (void*)impl_nativeOnScroll},
@@ -125,6 +134,7 @@ void onDrawFrame(JNIEnv* env, jclass clazz, jint w, jint h) { impl_nativeOnDrawF
 void onTouch(JNIEnv* env, jclass clazz, jint a, jfloat x, jfloat y, jint p) { impl_nativeOnTouch(env, clazz, a, x, y, p); }
 void onKey(JNIEnv* env, jclass clazz, jint k, jint a) { (void)env; (void)clazz; (void)k; (void)a; }
 jboolean wantCaptureMouse(JNIEnv* env, jclass clazz) { return impl_nativeWantCaptureMouse(env, clazz); }
+jboolean hitTest(JNIEnv* env, jclass clazz, jfloat x, jfloat y) { return impl_nativeHitTest(env, clazz, x, y); }
 void onChar(JNIEnv* env, jclass clazz, jint c) { impl_nativeOnChar(env, clazz, c); }
 jboolean wantTextInput(JNIEnv* env, jclass clazz) { return impl_nativeWantTextInput(env, clazz); }
 void onScroll(JNIEnv* env, jclass clazz, jfloat dx, jfloat dy) { impl_nativeOnScroll(env, clazz, dx, dy); }

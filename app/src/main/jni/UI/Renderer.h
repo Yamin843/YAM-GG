@@ -44,6 +44,13 @@ private:
     std::atomic<bool> wantTextInput_{false};
     std::mutex charMu_;
     std::vector<unsigned int> charQueue_;
+
+    // Scroll inertia: input dx/dy is accumulated here and drained
+    // gradually each frame with exponential decay. This gives the
+    // smooth "coasting" feel of native Android list scrolls.
+    std::mutex scrollMu_;
+    float scrollVelX_{0.0f};
+    float scrollVelY_{0.0f};
 };
 
 #define YAMGG_RENDERER yamgg::Renderer::instance()

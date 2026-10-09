@@ -269,6 +269,12 @@ Java_com_yamgg_modview_ModView_nativeOnScroll(JNIEnv* env, jclass clazz,
     jni::onScroll(env, clazz, dx, dy);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_yamgg_modview_ModView_nativeHitTest(JNIEnv* env, jclass clazz,
+                                              jfloat x, jfloat y) {
+    return jni::hitTest(env, clazz, x, y);
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_yamgg_modview_ModView_nativeGetPendingCmd(JNIEnv*, jclass);
 

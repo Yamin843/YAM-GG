@@ -22,6 +22,11 @@ public:
 
     void notify(const std::string& msg, float duration = 3.0f);
 
+    // Returns true if (x, y) falls inside our current visible UI.
+    // Used by ModView to decide whether to claim a touch gesture
+    // (blocks the underlying app) or pass it through.
+    bool hitTest(float x, float y) const;
+
 private:
     MainWindow();
     ~MainWindow();

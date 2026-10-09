@@ -43,6 +43,11 @@ struct MainWindow::Impl {
     ImVec2 dragStartMouse{0, 0};
     ImVec2 dragStartWindow{0, 0};
     int    dragStartMs{0};           // when the click started (ms)
+
+    // hit test rect (updated every frame while we draw)
+    ImVec2 currentWindowPos{0, 0};
+    ImVec2 currentWindowSize{0, 0};
+    bool   currentWindowValid{false};
 };
 
 MainWindow::MainWindow() : impl_(new Impl()) {
@@ -134,6 +139,12 @@ void MainWindow::drawMainWindow() {
         ImGui::End();
         return;
     }
+
+    // Track the actual window rect for hitTest() (called from native code
+    // potentially before this frame's draw is committed).
+    impl_->currentWindowPos   = ImGui::GetWindowPos();
+    impl_->currentWindowSize  = ImGui::GetWindowSize();
+    impl_->currentWindowValid = true;
 
     // ─── YG minimize button (top-right, inside window) ───
     {
@@ -375,6 +386,11 @@ void MainWindow::drawMinimized() {
 
     ImGui::Begin("##YAMGG_Minimized", nullptr, f);
 
+    // Update hitTest rect for minimized state.
+    impl_->currentWindowPos   = impl_->minimizedPos;
+    impl_->currentWindowSize  = ImVec2(size, size);
+    impl_->currentWindowValid = true;
+
     ImVec2 curPos = ImGui::GetCursorScreenPos();
     ImGui::InvisibleButton("##yg_icon", ImVec2(size, size));
     bool active = ImGui::IsItemActive();
@@ -482,6 +498,15 @@ bool MainWindow::fileBrowserOpen() const {
 
 void MainWindow::notify(const std::string& msg, float duration) {
     Notification::instance().push(msg, duration);
+}
+
+bool MainWindow::hitTest(float x, float y) const {
+    if (!impl_->currentWindowValid) return false;
+    ImVec2 p = impl_->currentWindowPos;
+    ImVec2 s = impl_->currentWindowSize;
+    if (s.x <= 0.0f || s.y <= 0.0f) return false;
+    return x >= p.x && x <= p.x + s.x &&
+           y >= p.y && y <= p.y + s.y;
 }
 
 } // namespace yamgg

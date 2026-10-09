@@ -29,6 +29,7 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
     private static native void nativeOnDrawFrame(int width, int height);
     private static native void nativeOnTouch(int action, float x, float y, int pointerId);
     private static native boolean nativeWantCaptureMouse();
+    private static native boolean nativeHitTest(float x, float y);
     private static native String nativeGetPendingCmd();
     private static native void nativeOnChar(int codepoint);
     private static native boolean nativeWantTextInput();
@@ -120,12 +121,18 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
         } catch (Throwable t) {}
     }
 
-    // ─── Two-finger scroll tracking ───
+    // ─── Two-finger scroll ───
     private boolean twoFingerScrollActive = false;
     private float   twoFingerLastY = 0f;
     private long    lastScrollSentMs = 0;
-    // EMA smoothing للحفاظ على سرعة متسقة
     private float   smoothedDy = 0f;
+
+    // ─── Gesture ownership ───
+    // When the first finger lands, we ask native code whether the touch
+    // is inside our UI. If yes, we own the entire gesture until UP/CANCEL
+    // — the underlying app never sees it. If no, we pass the DOWN through
+    // so Unity/app gets a normal tap.
+    private boolean touchOwned = false;
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
@@ -135,33 +142,33 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
         // ─────── Two-finger → scroll ───────
         if (pointerCount >= 2) {
             if (action == MotionEvent.ACTION_POINTER_DOWN) {
+                if (!touchOwned) {
+                    // Second finger while not owning → let the app handle it.
+                    return false;
+                }
                 try { nativeOnTouch(MotionEvent.ACTION_CANCEL, 0f, 0f, 0); }
                 catch (Throwable t) {}
                 twoFingerScrollActive = true;
                 twoFingerLastY = (event.getY(0) + event.getY(1)) * 0.5f;
                 lastScrollSentMs = 0L;
                 smoothedDy = 0f;
-                return nativeWantCaptureMouse();
+                return true;
             }
 
             if (action == MotionEvent.ACTION_MOVE && twoFingerScrollActive) {
                 float curY = (event.getY(0) + event.getY(1)) * 0.5f;
                 float dy = curY - twoFingerLastY;
                 twoFingerLastY = curY;
-
-                // EMA: 70% القديم + 30% الجديد — يخفف الاهتزاز
                 smoothedDy = smoothedDy * 0.70f + dy * 0.30f;
 
                 long now = System.currentTimeMillis();
-                // 8ms = 125Hz — أعلى من refresh المتوسط
                 if (now - lastScrollSentMs >= 8L) {
                     lastScrollSentMs = now;
-                    // 0.025 = 1/40 — تقريباً 1 بكسل لكل 40 بكسل إصبع
                     float scroll = -smoothedDy * 0.025f;
                     try { nativeOnScroll(0f, scroll); }
                     catch (Throwable t) {}
                 }
-                return nativeWantCaptureMouse();
+                return true;
             }
 
             if (action == MotionEvent.ACTION_POINTER_UP) {
@@ -169,25 +176,43 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                 smoothedDy = 0f;
                 try { nativeOnTouch(MotionEvent.ACTION_CANCEL, 0f, 0f, 0); }
                 catch (Throwable t) {}
-                return nativeWantCaptureMouse();
+                return touchOwned;
             }
 
             if (action == MotionEvent.ACTION_UP
                 || action == MotionEvent.ACTION_CANCEL) {
                 twoFingerScrollActive = false;
                 smoothedDy = 0f;
+                touchOwned = false;
                 try { nativeOnTouch(action, 0f, 0f, 0); }
                 catch (Throwable t) {}
-                return nativeWantCaptureMouse();
+                return true;
             }
 
-            if (twoFingerScrollActive) return nativeWantCaptureMouse();
+            if (twoFingerScrollActive) return true;
         }
 
         // ─────── Single finger ───────
-        if (pointerCount == 1) {
+        if (action == MotionEvent.ACTION_DOWN) {
             twoFingerScrollActive = false;
             smoothedDy = 0f;
+
+            float x = event.getX();
+            float y = event.getY();
+            boolean inside = false;
+            try { inside = nativeHitTest(x, y); }
+            catch (Throwable t) { inside = false; }
+
+            touchOwned = inside;
+
+            if (!touchOwned) {
+                // Not ours — pass through without telling ImGui.
+                return false;
+            }
+        }
+
+        if (!touchOwned) {
+            return false;
         }
 
         try {
@@ -200,24 +225,12 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
             Log.e(TAG, "dispatchTouchEvent failed", t);
         }
 
-        try {
-            return nativeWantCaptureMouse();
-        } catch (Throwable t) {
-            return true;
+        if (action == MotionEvent.ACTION_UP
+            || action == MotionEvent.ACTION_CANCEL) {
+            touchOwned = false;
         }
-    }
 
-    @Override
-    public boolean onGenericMotionEvent(MotionEvent event) {
-        // للأجهزة التي فيها فأرة/لوحة لمس خارجية
-        if (event.getAction() == MotionEvent.ACTION_SCROLL
-            && (event.getSource() & android.view.InputDevice.SOURCE_CLASS_POINTER) != 0) {
-            float v = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
-            float h = event.getAxisValue(MotionEvent.AXIS_HSCROLL);
-            try { nativeOnScroll(h, v); } catch (Throwable t) {}
-            return nativeWantCaptureMouse();
-        }
-        return super.onGenericMotionEvent(event);
+        return true;
     }
 
     @Override

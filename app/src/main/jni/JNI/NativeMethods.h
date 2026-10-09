@@ -13,6 +13,7 @@ void onDrawFrame(JNIEnv* env, jclass clazz, jint width, jint height);
 void onTouch(JNIEnv* env, jclass clazz, jint action, jfloat x, jfloat y, jint pointerId);
 void onKey(JNIEnv* env, jclass clazz, jint keyCode, jint action);
 jboolean wantCaptureMouse(JNIEnv* env, jclass clazz);
+jboolean hitTest(JNIEnv* env, jclass clazz, jfloat x, jfloat y);
 void onChar(JNIEnv* env, jclass clazz, jint codepoint);
 jboolean wantTextInput(JNIEnv* env, jclass clazz);
 void onScroll(JNIEnv* env, jclass clazz, jfloat dx, jfloat dy);

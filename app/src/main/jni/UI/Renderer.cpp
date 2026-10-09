@@ -9,6 +9,7 @@
 #include <android/log.h>
 #include <GLES3/gl3.h>
 #include <chrono>
+#include <cmath>
 
 #define LOG_TAG "YAMGG"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -110,6 +111,24 @@ void Renderer::onDrawFrame(int width, int height) {
             io.AddInputCharacter(cp);
         }
         charQueue_.clear();
+    }
+
+    // Drain scroll velocity — smooth inertia with exponential decay.
+    // Only emits a wheel event when there is meaningful momentum.
+    {
+        std::lock_guard<std::mutex> lk(scrollMu_);
+        const float kThreshold = 0.001f;
+        if (std::fabs(scrollVelX_) > kThreshold ||
+            std::fabs(scrollVelY_) > kThreshold) {
+            io.AddMouseWheelEvent(scrollVelX_, scrollVelY_);
+            scrollVelX_ *= 0.55f;
+            scrollVelY_ *= 0.55f;
+            if (std::fabs(scrollVelX_) < kThreshold) scrollVelX_ = 0.0f;
+            if (std::fabs(scrollVelY_) < kThreshold) scrollVelY_ = 0.0f;
+        } else {
+            scrollVelX_ = 0.0f;
+            scrollVelY_ = 0.0f;
+        }
     }
 
     ImGui::NewFrame();
@@ -264,10 +283,12 @@ void Renderer::onChar(unsigned int codepoint) {
 }
 
 void Renderer::onScroll(float dx, float dy) {
-    std::lock_guard<std::mutex> lk(mu_);
     if (!initialized_.load()) return;
-    ImGuiIO& io = ImGui::GetIO();
-    io.AddMouseWheelEvent(dx, dy);
+    // Do NOT send immediately — accumulate. The next onDrawFrame will
+    // drain this with exponential decay, producing natural inertia.
+    std::lock_guard<std::mutex> lk(scrollMu_);
+    scrollVelX_ += dx;
+    scrollVelY_ += dy;
 }
 
 void Renderer::shutdown() {
