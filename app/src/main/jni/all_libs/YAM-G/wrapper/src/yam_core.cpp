@@ -911,7 +911,6 @@ String RuntimeDiag::to_string(const DiagSnapshot& s) {
 #include <sstream>
 #include <fstream>
 #include <cstring>
-#include <glib.h>
 
 namespace yam {
 namespace detail {
