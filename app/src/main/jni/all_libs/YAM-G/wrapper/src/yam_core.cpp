@@ -657,10 +657,17 @@ namespace {
 // Trampoline: the Yam engine calls a C function with (msg, data, user).
 // We forward into the Script instance.
 void script_msg_trampoline(const gchar* msg, GBytes* data, gpointer user) {
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "TRAMPOLINE CALLED: msg=%s", msg ? msg : "(null)");
     auto* self = static_cast<Script*>(user);
+    if (!self) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "TRAMPOLINE: self is null");
+        return;
+    }
     ByteVector bytes;
     if (data) {
-        // We don't have g_bytes_get_data binding; skip.
+        // no g_bytes_get_data binding
     }
     self->dispatch_message(msg ? String(msg) : String(), bytes);
 }
@@ -705,8 +712,31 @@ Result<void> Script::load(Cancellable& c) {
     }
     yam_script_set_message_handler(static_cast<YamScript*>(handle_),
         script_msg_trampoline, this, nullptr);
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "before yam_script_load_sync");
     yam_script_load_sync(static_cast<YamScript*>(handle_),
         reinterpret_cast<GCancellable*>(c.native_handle()));
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "after yam_script_load_sync");
+
+    // Pump the thread-default GMainContext so queued JS messages
+    // (from send()) are actually delivered to our message handler.
+    GMainContext* ctx = g_main_context_get_thread_default();
+    if (!ctx) ctx = g_main_context_default();
+    if (ctx) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "pumping GMainContext");
+        for (int i = 0; i < 300; ++i) {
+            while (g_main_context_iteration(ctx, FALSE)) {}
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "pump finished");
+    } else {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "NO GMainContext available");
+    }
+
     loaded_ = true;
     YAM_LOG_INFO() << "script loaded: " << name_;
     return Result<void>::ok();
@@ -870,6 +900,7 @@ String RuntimeDiag::to_string(const DiagSnapshot& s) {
 #include <sstream>
 #include <fstream>
 #include <cstring>
+#include <glib.h>
 
 namespace yam {
 namespace detail {
