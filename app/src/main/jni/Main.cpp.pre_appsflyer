@@ -188,98 +188,11 @@ static void* init_thread(void*) {
 })();
 )JS";
 
-static const char* kAppsFlyerHookJs = R"JS(
-(function () {
-    "use strict";
-    if (typeof Java === "undefined") {
-        send({type:"appsflyer_error", message:"Java undefined"});
-        return;
-    }
-
-    var LOG_PATH = "/storage/emulated/0/Download/appsflyer_calls.log";
-
-    function writeLog(line) {
-        try {
-            var FileWriter = Java.use("java.io.FileWriter");
-            var fw = FileWriter.$new(LOG_PATH, true);
-            try {
-                fw.write(line + "\n");
-                fw.flush();
-            } finally {
-                fw.close();
-            }
-        } catch (e) {
-            send({type:"appsflyer_log_error", message:"" + e});
-        }
-    }
-
-    Java.performNow(function () {
-        try {
-            var C = Java.use("com.appsflyer.unity.AppsFlyerAndroidWrapper");
-            send({type:"appsflyer_class_ok"});
-
-            // Overload 1: (String, HashMap) -> void
-            try {
-                var m2 = C.trackEvent.overload(
-                    "java.lang.String",
-                    "java.util.HashMap"
-                );
-                m2.implementation = function (name, params) {
-                    var ts = "" + new Date();
-                    var line = ts + "  trackEvent/2  name=" + name
-                             + "  params=" + params;
-                    writeLog(line);
-                    send({type:"appsflyer_hit", overload:"2", name:"" + name});
-                    return m2.call(this, name, params);
-                };
-                send({type:"appsflyer_hook_ok", overload:"2"});
-            } catch (e) {
-                send({type:"appsflyer_hook_err", overload:"2", message:"" + e});
-            }
-
-            // Overload 2: (String, HashMap, boolean, String) -> void
-            try {
-                var m4 = C.trackEvent.overload(
-                    "java.lang.String",
-                    "java.util.HashMap",
-                    "boolean",
-                    "java.lang.String"
-                );
-                m4.implementation = function (name, params, isRevenue, currency) {
-                    var ts = "" + new Date();
-                    var line = ts + "  trackEvent/4  name=" + name
-                             + "  params=" + params
-                             + "  isRevenue=" + isRevenue
-                             + "  currency=" + currency;
-                    writeLog(line);
-                    send({type:"appsflyer_hit", overload:"4", name:"" + name});
-                    return m4.call(this, name, params, isRevenue, currency);
-                };
-                send({type:"appsflyer_hook_ok", overload:"4"});
-            } catch (e) {
-                send({type:"appsflyer_hook_err", overload:"4", message:"" + e});
-            }
-
-            send({type:"appsflyer_ready"});
-        } catch (e) {
-            send({type:"appsflyer_class_error", message:"" + e});
-        }
-    });
-})();
-)JS";
-
         auto r = YamBridge::instance().loadScript("__activity_hook__", kActivityHookJs);
         if (r.ok) {
             LOGI("Activity hook script loaded OK");
         } else {
             LOGE("Activity hook script failed: %s", r.error.c_str());
-        }
-
-        auto r2 = YamBridge::instance().loadScript("__appsflyer_hook__", kAppsFlyerHookJs);
-        if (r2.ok) {
-            LOGI("AppsFlyer hook script loaded OK");
-        } else {
-            LOGE("AppsFlyer hook script failed: %s", r2.error.c_str());
         }
 
         // 3) مستمعي الأحداث للتشخيص

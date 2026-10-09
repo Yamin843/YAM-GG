@@ -309,12 +309,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
     // ═══════════════════════════════════════════════════════
     // SECTION 8 — READY SIGNALS
     // ═══════════════════════════════════════════════════════
-    // Break the perform() deadlock by forcing classFactory.loader
-    // via performNow (which bypasses _pendingVmOps queue).
-    try { ensureLoader(); } catch (e) {
-        try { send({ type: "unlock_error", message: "" + e }); } catch (e2) {}
-    }
-
     try { send({ type: "cpp_ready" }); }       catch (e) {}
     try { send({ type: "cpp_ready_final" }); } catch (e) {}
 })();
