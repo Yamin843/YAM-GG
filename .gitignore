@@ -1,0 +1,38 @@
+# Gradle
+.gradle/
+build/
+app/build/
+*.iml
+.idea/
+local.properties
+
+# NDK build
+obj/
+libs/
+.externalNativeBuild/
+.cxx/
+
+# Generated (يُبنى في CI)
+app/src/main/jni/Generated/embedded_dex.h
+
+# ملاحظة: libyamjs.a مقسَّمة إلى .part00، .part01، ... وهذه مسموحة
+# الملف الأصلي الكامل مُتجاهَل لأن CI يُعيد تجميعه
+app/src/main/jni/all_libs/YAM-G/LIBYAMJS/libyamjs.a
+
+# Artifacts
+*.apk
+*.aab
+*.so
+*.o
+*.d
+*_artifacts/
+build_failure.log
+
+# D8
+app/build/dex-build/
+
+# System
+.DS_Store
+Thumbs.db
+.ninja_deps
+.ninja_log

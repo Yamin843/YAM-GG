@@ -1,0 +1,155 @@
+#include "Theme.h"
+
+#include "imgui.h"
+#include "../../Includes/Roboto-Regular.h"
+
+#include <android/log.h>
+#include <cstddef>
+
+#define LOG_TAG "YAMGG"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+
+namespace yamgg {
+
+static float g_fontSize = 40.0f;
+
+void Theme::apply() {
+    ImGuiStyle& style = ImGui::GetStyle();
+    ImVec4* colors = style.Colors;
+
+    style.FrameBorderSize    = 5.0f;
+    style.WindowBorderSize   = 4.0f;
+    style.PopupBorderSize    = 5.0f;
+    style.ChildBorderSize    = 3.0f;
+    style.TabBorderSize      = 3.0f;
+
+    style.FrameRounding      = 16.0f;
+    style.WindowRounding     = 20.0f;
+    style.PopupRounding      = 16.0f;
+    style.TabRounding        = 12.0f;
+    style.GrabRounding       = 12.0f;
+    style.ScrollbarRounding  = 12.0f;
+    style.ChildRounding      = 16.0f;
+
+    style.WindowPadding      = ImVec2(12.0f, 12.0f);
+    style.FramePadding       = ImVec2(14.0f, 10.0f);
+    style.CellPadding        = ImVec2(8.0f, 6.0f);
+    style.ItemSpacing        = ImVec2(10.0f, 8.0f);
+    style.ItemInnerSpacing   = ImVec2(8.0f, 6.0f);
+    style.IndentSpacing      = 22.0f;
+    style.ScrollbarSize      = 26.0f;
+    style.GrabMinSize        = 18.0f;
+
+    style.WindowTitleAlign   = ImVec2(0.5f, 0.5f);
+    style.ButtonTextAlign    = ImVec2(0.5f, 0.5f);
+    style.SelectableTextAlign= ImVec2(0.0f, 0.5f);
+
+    style.WindowMenuButtonPosition = ImGuiDir_None;
+    style.ColorButtonPosition      = ImGuiDir_Left;
+    style.AntiAliasedLines         = true;
+    style.AntiAliasedFill          = true;
+    style.AntiAliasedLinesUseTex   = true;
+
+    colors[ImGuiCol_Text]                   = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImGuiCol_TextDisabled]           = ImVec4(0.55f, 0.55f, 0.55f, 1.00f);
+    colors[ImGuiCol_WindowBg]               = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
+    colors[ImGuiCol_ChildBg]                = ImVec4(0.01f, 0.01f, 0.01f, 1.00f);
+    colors[ImGuiCol_PopupBg]                = ImVec4(0.03f, 0.03f, 0.03f, 0.98f);
+    colors[ImGuiCol_Border]                 = ImVec4(0.85f, 0.65f, 0.00f, 1.00f);
+    colors[ImGuiCol_BorderShadow]           = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_FrameBg]                = ImVec4(0.08f, 0.06f, 0.00f, 1.00f);
+    colors[ImGuiCol_FrameBgHovered]         = ImVec4(0.20f, 0.16f, 0.02f, 1.00f);
+    colors[ImGuiCol_FrameBgActive]          = ImVec4(0.30f, 0.24f, 0.03f, 1.00f);
+    colors[ImGuiCol_TitleBg]                = ImVec4(0.03f, 0.03f, 0.03f, 1.00f);
+    colors[ImGuiCol_TitleBgActive]          = ImVec4(0.10f, 0.08f, 0.00f, 1.00f);
+    colors[ImGuiCol_TitleBgCollapsed]       = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
+    colors[ImGuiCol_MenuBarBg]              = ImVec4(0.05f, 0.04f, 0.00f, 1.00f);
+    colors[ImGuiCol_ScrollbarBg]            = ImVec4(0.02f, 0.02f, 0.02f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrab]          = ImVec4(0.30f, 0.25f, 0.00f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(0.40f, 0.33f, 0.00f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabActive]    = ImVec4(0.50f, 0.42f, 0.00f, 1.00f);
+    colors[ImGuiCol_CheckMark]              = ImVec4(1.00f, 0.80f, 0.00f, 1.00f);
+    colors[ImGuiCol_SliderGrab]             = ImVec4(0.70f, 0.55f, 0.00f, 1.00f);
+    colors[ImGuiCol_SliderGrabActive]       = ImVec4(0.85f, 0.65f, 0.00f, 1.00f);
+    colors[ImGuiCol_Button]                 = ImVec4(0.08f, 0.06f, 0.00f, 1.00f);
+    colors[ImGuiCol_ButtonHovered]          = ImVec4(0.30f, 0.22f, 0.02f, 1.00f);
+    colors[ImGuiCol_ButtonActive]           = ImVec4(0.45f, 0.32f, 0.03f, 1.00f);
+    colors[ImGuiCol_Header]                 = ImVec4(0.15f, 0.12f, 0.02f, 1.00f);
+    colors[ImGuiCol_HeaderHovered]          = ImVec4(0.35f, 0.25f, 0.04f, 1.00f);
+    colors[ImGuiCol_HeaderActive]           = ImVec4(0.50f, 0.35f, 0.05f, 1.00f);
+    colors[ImGuiCol_Separator]              = ImVec4(0.75f, 0.55f, 0.00f, 1.00f);
+    colors[ImGuiCol_SeparatorHovered]       = ImVec4(0.90f, 0.70f, 0.10f, 1.00f);
+    colors[ImGuiCol_SeparatorActive]        = ImVec4(1.00f, 0.80f, 0.15f, 1.00f);
+    colors[ImGuiCol_ResizeGrip]             = ImVec4(0.85f, 0.65f, 0.00f, 0.60f);
+    colors[ImGuiCol_ResizeGripHovered]      = ImVec4(0.95f, 0.75f, 0.10f, 0.85f);
+    colors[ImGuiCol_ResizeGripActive]       = ImVec4(1.00f, 0.85f, 0.15f, 1.00f);
+    colors[ImGuiCol_Tab]                    = ImVec4(0.08f, 0.06f, 0.00f, 1.00f);
+    colors[ImGuiCol_TabHovered]             = ImVec4(0.25f, 0.20f, 0.00f, 1.00f);
+    colors[ImGuiCol_TabSelected]              = ImVec4(0.40f, 0.32f, 0.00f, 1.00f);
+    colors[ImGuiCol_TabDimmed]           = ImVec4(0.05f, 0.04f, 0.00f, 1.00f);
+    colors[ImGuiCol_TabDimmedSelected]     = ImVec4(0.30f, 0.24f, 0.02f, 1.00f);
+    colors[ImGuiCol_TabSelectedOverline]   = ImVec4(1.00f, 0.80f, 0.00f, 1.00f);
+    colors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.40f, 0.32f, 0.00f, 1.00f);
+    colors[ImGuiCol_PlotLines]              = ImVec4(0.80f, 0.60f, 0.00f, 1.00f);
+    colors[ImGuiCol_PlotLinesHovered]       = ImVec4(1.00f, 0.80f, 0.15f, 1.00f);
+    colors[ImGuiCol_PlotHistogram]          = ImVec4(0.90f, 0.70f, 0.10f, 1.00f);
+    colors[ImGuiCol_PlotHistogramHovered]   = ImVec4(1.00f, 0.85f, 0.20f, 1.00f);
+    colors[ImGuiCol_TableHeaderBg]          = ImVec4(0.05f, 0.04f, 0.00f, 1.00f);
+    colors[ImGuiCol_TableBorderStrong]      = ImVec4(0.75f, 0.55f, 0.00f, 1.00f);
+    colors[ImGuiCol_TableBorderLight]       = ImVec4(0.35f, 0.28f, 0.00f, 1.00f);
+    colors[ImGuiCol_TableRowBg]             = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_TableRowBgAlt]          = ImVec4(0.04f, 0.03f, 0.00f, 1.00f);
+    colors[ImGuiCol_TextSelectedBg]         = ImVec4(0.85f, 0.65f, 0.00f, 0.35f);
+    colors[ImGuiCol_DragDropTarget]         = ImVec4(1.00f, 0.80f, 0.00f, 0.90f);
+    colors[ImGuiCol_NavWindowingHighlight]  = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
+    colors[ImGuiCol_NavWindowingDimBg]      = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
+    colors[ImGuiCol_ModalWindowDimBg]       = ImVec4(0.00f, 0.00f, 0.00f, 0.60f);
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    ImFontConfig cfg;
+    cfg.OversampleH = 2;
+    cfg.OversampleV = 2;
+    cfg.PixelSnapH = false;
+    cfg.RasterizerMultiply = 1.15f;
+
+    ImFont* font = io.Fonts->AddFontFromMemoryTTF(
+            (void*)Roboto_Regular,
+            (int)sizeof(Roboto_Regular),
+            g_fontSize,
+            &cfg);
+
+    if (!font) {
+        LOGI("Theme: Roboto failed, falling back to default");
+        io.Fonts->AddFontDefault();
+    }
+
+    LOGI("Theme applied, font=%p, size=%f", (void*)font, g_fontSize);
+}
+
+void Theme::applyBlackGold() { apply(); }
+
+void Theme::applyCompact() {
+    apply();
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.FramePadding = ImVec2(10.0f, 7.0f);
+    style.ItemSpacing = ImVec2(7.0f, 5.0f);
+}
+
+void Theme::applyRounded() {
+    apply();
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.FrameRounding = 24.0f;
+    style.WindowRounding = 28.0f;
+    style.PopupRounding = 24.0f;
+}
+
+void Theme::setFontSize(float px) {
+    g_fontSize = px;
+}
+
+float Theme::fontSize() {
+    return g_fontSize;
+}
+
+} // namespace yamgg

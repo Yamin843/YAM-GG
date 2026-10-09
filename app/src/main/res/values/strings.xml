@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">YAM-GG</string>
+    <string name="tab_js">JS</string>
+    <string name="tab_files">Files</string>
+    <string name="tab_scripts">Scripts</string>
+    <string name="button_load">Load JS File</string>
+    <string name="button_inject">Inject</string>
+    <string name="button_unload">Unload</string>
+    <string name="button_clear">Clear Console</string>
+    <string name="button_run">Run</string>
+    <string name="dialog_scripts_title">Select JS Scripts</string>
+    <string name="menu_refresh">Refresh</string>
+    <string name="menu_up">Up</string>
+</resources>

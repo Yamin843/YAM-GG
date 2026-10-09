@@ -1,0 +1,1183 @@
+// ===========================================================================
+// yam_core.cpp
+// ---------------------------------------------------------------------------
+// Foundation: error, log, string, time, thread pool, runtime, script,
+// message, cancellable, memory, module, symbol, range, memory patch,
+// registry, gc, diag.
+// ===========================================================================
+
+#include "yam_internal.hpp"
+
+#include <android/log.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <dlfcn.h>
+#include <link.h>
+#include <cxxabi.h>
+
+// ===========================================================================
+// namespace yam
+// ===========================================================================
+
+namespace yam {
+
+// ===========================================================================
+// SECTION 1 — ErrorCategory / error_code / throw_error
+// ===========================================================================
+
+std::string ErrorCategory::message(int ev) const {
+    switch (static_cast<ErrorCode>(ev)) {
+    case ErrorCode::Ok: return "ok";
+    case ErrorCode::Unknown: return "unknown error";
+    case ErrorCode::InvalidArgument: return "invalid argument";
+    case ErrorCode::OutOfRange: return "out of range";
+    case ErrorCode::NotInitialized: return "not initialized";
+    case ErrorCode::AlreadyInitialized: return "already initialized";
+    case ErrorCode::ScriptCompileFailed: return "script compile failed";
+    case ErrorCode::ScriptLoadFailed: return "script load failed";
+    case ErrorCode::ScriptUnloadFailed: return "script unload failed";
+    case ErrorCode::BackendUnavailable: return "backend unavailable";
+    case ErrorCode::Cancelled: return "cancelled";
+    case ErrorCode::Timeout: return "timeout";
+    case ErrorCode::NotAttached: return "not attached";
+    case ErrorCode::AttachFailed: return "attach failed";
+    case ErrorCode::DetachFailed: return "detach failed";
+    case ErrorCode::ReplaceFailed: return "replace failed";
+    case ErrorCode::RevertFailed: return "revert failed";
+    case ErrorCode::MemoryAccessDenied: return "memory access denied";
+    case ErrorCode::MemoryReadFailed: return "memory read failed";
+    case ErrorCode::MemoryWriteFailed: return "memory write failed";
+    case ErrorCode::MemoryAllocFailed: return "memory alloc failed";
+    case ErrorCode::ModuleNotFound: return "module not found";
+    case ErrorCode::SymbolNotFound: return "symbol not found";
+    case ErrorCode::ClassNotFound: return "class not found";
+    case ErrorCode::MethodNotFound: return "method not found";
+    case ErrorCode::FieldNotFound: return "field not found";
+    case ErrorCode::OverloadAmbiguous: return "overload ambiguous";
+    case ErrorCode::OverloadNotFound: return "overload not found";
+    case ErrorCode::JniNotAttached: return "jni not attached";
+    case ErrorCode::JniExceptionPending: return "jni exception pending";
+    case ErrorCode::JavaVmNotFound: return "java vm not found";
+    case ErrorCode::TypeError: return "type error";
+    case ErrorCode::NullDereference: return "null dereference";
+    case ErrorCode::NotImplemented: return "not implemented";
+    case ErrorCode::InternalError: return "internal error";
+    }
+    return "unknown";
+}
+
+const std::error_category& error_category() noexcept {
+    static ErrorCategory cat;
+    return cat;
+}
+
+std::error_code make_error_code(ErrorCode c) noexcept {
+    return { static_cast<int>(c), error_category() };
+}
+
+[[noreturn]] void throw_error(ErrorCode c, const String& m) {
+    throw Error(c, m);
+}
+
+[[noreturn]] void throw_error(ErrorCode c, String&& m) {
+    throw Error(c, std::move(m));
+}
+
+// ===========================================================================
+// SECTION 2 — Log
+// ===========================================================================
+
+namespace {
+std::atomic<int> g_log_level{ static_cast<int>(LogLevel::Info) };
+std::mutex       g_log_mu;
+LogCallback      g_log_cb;
+
+const char* log_level_tag(LogLevel lv) {
+    switch (lv) {
+    case LogLevel::Trace: return "TRACE";
+    case LogLevel::Debug: return "DEBUG";
+    case LogLevel::Info:  return "INFO ";
+    case LogLevel::Warn:  return "WARN ";
+    case LogLevel::Error: return "ERROR";
+    case LogLevel::Fatal: return "FATAL";
+    case LogLevel::Off:   return "OFF  ";
+    }
+    return "?????";
+}
+
+int log_android_prio(LogLevel lv) {
+    switch (lv) {
+    case LogLevel::Trace: return ANDROID_LOG_VERBOSE;
+    case LogLevel::Debug: return ANDROID_LOG_DEBUG;
+    case LogLevel::Info:  return ANDROID_LOG_INFO;
+    case LogLevel::Warn:  return ANDROID_LOG_WARN;
+    case LogLevel::Error: return ANDROID_LOG_ERROR;
+    case LogLevel::Fatal: return ANDROID_LOG_FATAL;
+    default:              return ANDROID_LOG_DEFAULT;
+    }
+}
+
+void log_emit(LogLevel lv, const String& msg) {
+    if (static_cast<int>(lv) < g_log_level.load(std::memory_order_acquire)) return;
+    __android_log_print(log_android_prio(lv), "YAM", "[%s] %s",
+                        log_level_tag(lv), msg.c_str());
+    LogCallback cb;
+    {
+        std::lock_guard<std::mutex> lk(g_log_mu);
+        cb = g_log_cb;
+    }
+    if (cb) {
+        try { cb(lv, msg); } catch (...) {}
+    }
+}
+
+bool g_trace_enabled = false;
+}
+
+void Log::set_level(LogLevel lv) noexcept {
+    g_log_level.store(static_cast<int>(lv), std::memory_order_release);
+}
+LogLevel Log::level() noexcept {
+    return static_cast<LogLevel>(g_log_level.load(std::memory_order_acquire));
+}
+void Log::set_callback(LogCallback cb) {
+    std::lock_guard<std::mutex> lk(g_log_mu);
+    g_log_cb = std::move(cb);
+}
+void Log::clear_callback() {
+    std::lock_guard<std::mutex> lk(g_log_mu);
+    g_log_cb = nullptr;
+}
+void Log::trace(const String& m) { log_emit(LogLevel::Trace, m); }
+void Log::debug(const String& m) { log_emit(LogLevel::Debug, m); }
+void Log::info(const String& m)  { log_emit(LogLevel::Info, m); }
+void Log::warn(const String& m)  { log_emit(LogLevel::Warn, m); }
+void Log::error(const String& m) { log_emit(LogLevel::Error, m); }
+void Log::fatal(const String& m) { log_emit(LogLevel::Fatal, m); }
+
+namespace detail {
+
+LogStream::LogStream(LogLevel lv, const char* file, int line)
+    : lv_(lv), file_(file), line_(line) {}
+
+LogStream::~LogStream() {
+    if (static_cast<int>(lv_) < g_log_level.load(std::memory_order_acquire)) return;
+    std::string s = ss_.str();
+    const char* base = std::strrchr(file_, '/');
+    if (base) file_ = base + 1;
+    std::ostringstream final;
+    final << '[' << file_ << ':' << line_ << "] " << s;
+    log_emit(lv_, final.str());
+}
+
+void trace_enable(bool on) { g_trace_enabled = on; }
+bool trace_enabled() noexcept { return g_trace_enabled; }
+void trace(const char* fmt, ...) {
+    if (!g_trace_enabled) return;
+    char buf[2048];
+    va_list ap; va_start(ap, fmt);
+    std::vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    __android_log_print(ANDROID_LOG_VERBOSE, "YAM-TRACE", "%s", buf);
+}
+
+} // namespace detail
+
+// ===========================================================================
+// SECTION 3 — String utilities
+// ===========================================================================
+
+namespace str {
+
+bool starts_with(StringView s, StringView p) noexcept {
+    return s.size() >= p.size() &&
+           std::memcmp(s.data(), p.data(), p.size()) == 0;
+}
+bool ends_with(StringView s, StringView p) noexcept {
+    return s.size() >= p.size() &&
+           std::memcmp(s.data() + s.size() - p.size(), p.data(), p.size()) == 0;
+}
+bool contains(StringView s, StringView p) noexcept {
+    return s.find(p) != StringView::npos;
+}
+
+String to_lower(StringView s) {
+    String r; r.reserve(s.size());
+    for (char c : s) r.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    return r;
+}
+String to_upper(StringView s) {
+    String r; r.reserve(s.size());
+    for (char c : s) r.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+    return r;
+}
+
+static bool is_ws(char c) {
+    return std::isspace(static_cast<unsigned char>(c)) != 0;
+}
+
+String trim_left(StringView s) {
+    size_t i = 0; while (i < s.size() && is_ws(s[i])) ++i;
+    return String(s.substr(i));
+}
+String trim_right(StringView s) {
+    size_t i = s.size(); while (i > 0 && is_ws(s[i - 1])) --i;
+    return String(s.substr(0, i));
+}
+String trim(StringView s) { return trim_right(trim_left(s)); }
+
+std::vector<String> split(StringView s, char d) {
+    std::vector<String> out;
+    size_t start = 0;
+    while (true) {
+        size_t p = s.find(d, start);
+        if (p == StringView::npos) { out.emplace_back(s.substr(start)); break; }
+        out.emplace_back(s.substr(start, p - start));
+        start = p + 1;
+    }
+    return out;
+}
+
+std::vector<String> split(StringView s, StringView d) {
+    std::vector<String> out;
+    size_t start = 0;
+    while (true) {
+        size_t p = s.find(d, start);
+        if (p == StringView::npos) { out.emplace_back(s.substr(start)); break; }
+        out.emplace_back(s.substr(start, p - start));
+        start = p + d.size();
+    }
+    return out;
+}
+
+String join(const std::vector<String>& parts, StringView sep) {
+    if (parts.empty()) return {};
+    String r;
+    size_t total = 0;
+    for (auto& s : parts) total += s.size() + sep.size();
+    r.reserve(total);
+    for (size_t i = 0; i < parts.size(); ++i) {
+        if (i) r.append(sep.data(), sep.size());
+        r.append(parts[i]);
+    }
+    return r;
+}
+
+String replace_all(StringView s, StringView from, StringView to) {
+    if (from.empty()) return String(s);
+    String r; r.reserve(s.size());
+    size_t pos = 0;
+    while (true) {
+        size_t f = s.find(from, pos);
+        if (f == StringView::npos) { r.append(s.substr(pos)); break; }
+        r.append(s.substr(pos, f - pos));
+        r.append(to.data(), to.size());
+        pos = f + from.size();
+    }
+    return r;
+}
+
+String vformat(const char* fmt, va_list ap) {
+    va_list cp; va_copy(cp, ap);
+    int n = std::vsnprintf(nullptr, 0, fmt, cp);
+    va_end(cp);
+    if (n < 0) return {};
+    String out;
+    out.resize(static_cast<size_t>(n));
+    std::vsnprintf(out.data(), static_cast<size_t>(n) + 1, fmt, ap);
+    return out;
+}
+
+String format(const char* fmt, ...) {
+    va_list ap; va_start(ap, fmt);
+    String s = vformat(fmt, ap);
+    va_end(ap);
+    return s;
+}
+
+String hex(u64 v, bool prefix, int width) {
+    char buf[32];
+    int n = std::snprintf(buf, sizeof(buf), "%0*llx",
+                          width, static_cast<unsigned long long>(v));
+    String s;
+    if (prefix) s += "0x";
+    s.append(buf, static_cast<size_t>(n));
+    return s;
+}
+
+String hex(const void* p, bool prefix) {
+    return hex(reinterpret_cast<u64>(p), prefix, 0);
+}
+
+bool parse_i64(StringView s, i64& out, int base) noexcept {
+    if (s.empty()) return false;
+    String tmp(s);
+    char* end = nullptr;
+    errno = 0;
+    long long v = std::strtoll(tmp.c_str(), &end, base);
+    if (errno != 0 || end == tmp.c_str() || *end != '\0') return false;
+    out = v;
+    return true;
+}
+
+bool parse_u64(StringView s, u64& out, int base) noexcept {
+    if (s.empty()) return false;
+    String tmp(s);
+    char* end = nullptr;
+    errno = 0;
+    unsigned long long v = std::strtoull(tmp.c_str(), &end, base);
+    if (errno != 0 || end == tmp.c_str() || *end != '\0') return false;
+    out = v;
+    return true;
+}
+
+bool parse_f64(StringView s, f64& out) noexcept {
+    if (s.empty()) return false;
+    String tmp(s);
+    char* end = nullptr;
+    errno = 0;
+    double v = std::strtod(tmp.c_str(), &end);
+    if (errno != 0 || end == tmp.c_str() || *end != '\0') return false;
+    out = v;
+    return true;
+}
+
+String jni_to_dotted(StringView jni) {
+    if (jni.empty()) return {};
+    String s(jni);
+    if (s.front() == 'L' && s.back() == ';') s = s.substr(1, s.size() - 2);
+    for (char& c : s) if (c == '/') c = '.';
+    return s;
+}
+
+String dotted_to_jni(StringView dotted) {
+    String s(dotted);
+    for (char& c : s) if (c == '.') c = '/';
+    if (!s.empty() && s.front() != '[') return "L" + s + ";";
+    return s;
+}
+
+String dotted_to_path(StringView dotted) {
+    String s(dotted);
+    for (char& c : s) if (c == '.') c = '/';
+    return s;
+}
+
+String escape_json(StringView s) {
+    String o; o.reserve(s.size() + 8);
+    for (char c : s) {
+        switch (c) {
+        case '"': o += "\\\""; break;
+        case '\\': o += "\\\\"; break;
+        case '\n': o += "\\n"; break;
+        case '\r': o += "\\r"; break;
+        case '\t': o += "\\t"; break;
+        case '\b': o += "\\b"; break;
+        case '\f': o += "\\f"; break;
+        default:
+            if (static_cast<unsigned char>(c) < 0x20) {
+                char buf[8];
+                std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                o += buf;
+            } else o += c;
+        }
+    }
+    return o;
+}
+
+String unescape_json(StringView s) {
+    String o; o.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        char c = s[i];
+        if (c != '\\') { o += c; continue; }
+        if (i + 1 >= s.size()) break;
+        char n = s[++i];
+        switch (n) {
+        case '"': o += '"'; break;
+        case '\\': o += '\\'; break;
+        case '/': o += '/'; break;
+        case 'n': o += '\n'; break;
+        case 'r': o += '\r'; break;
+        case 't': o += '\t'; break;
+        case 'b': o += '\b'; break;
+        case 'f': o += '\f'; break;
+        case 'u': {
+            if (i + 4 >= s.size()) { o += '?'; break; }
+            char hex[5] = { s[i+1], s[i+2], s[i+3], s[i+4], 0 };
+            unsigned long cp = std::strtoul(hex, nullptr, 16);
+            i += 4;
+            if (cp < 0x80) o += static_cast<char>(cp);
+            else if (cp < 0x800) {
+                o += static_cast<char>(0xC0 | (cp >> 6));
+                o += static_cast<char>(0x80 | (cp & 0x3F));
+            } else {
+                o += static_cast<char>(0xE0 | (cp >> 12));
+                o += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                o += static_cast<char>(0x80 | (cp & 0x3F));
+            }
+            break;
+        }
+        default: o += n;
+        }
+    }
+    return o;
+}
+
+} // namespace str
+
+// ===========================================================================
+// SECTION 4 — Time
+// ===========================================================================
+
+namespace time_util {
+
+i64 now_ms() noexcept {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+i64 now_us() noexcept {
+    using namespace std::chrono;
+    return duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
+}
+i64 now_ns() noexcept {
+    using namespace std::chrono;
+    return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+String iso8601(i64 ms) {
+    std::time_t t = static_cast<std::time_t>(ms / 1000);
+    std::tm tm{};
+    gmtime_r(&t, &tm);
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+    return buf;
+}
+
+} // namespace time_util
+
+// ===========================================================================
+// SECTION 5 — ThreadPool
+// ===========================================================================
+
+ThreadPool::ThreadPool(usize n) {
+    if (n == 0) n = std::max<usize>(2, std::thread::hardware_concurrency());
+    threads_.reserve(n);
+    for (usize i = 0; i < n; ++i) {
+        threads_.emplace_back([this]{ worker_loop(); });
+    }
+}
+
+ThreadPool::~ThreadPool() {
+    stop();
+    for (auto& t : threads_) if (t.joinable()) t.join();
+}
+
+void ThreadPool::stop() {
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        stop_ = true;
+    }
+    cv_.notify_all();
+}
+
+void ThreadPool::wait_all() {
+    std::unique_lock<std::mutex> lk(mu_);
+    done_cv_.wait(lk, [this]{ return queue_.empty() && active_ == 0; });
+}
+
+void ThreadPool::worker_loop() {
+    for (;;) {
+        std::function<void()> job;
+        {
+            std::unique_lock<std::mutex> lk(mu_);
+            cv_.wait(lk, [this]{ return stop_ || !queue_.empty(); });
+            if (stop_ && queue_.empty()) return;
+            job = std::move(queue_.front());
+            queue_.pop();
+        }
+        try { job(); }
+        catch (const std::exception& e) { YAM_LOG_ERROR() << "worker: " << e.what(); }
+        catch (...) { YAM_LOG_ERROR() << "worker: unknown"; }
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            --active_;
+            if (queue_.empty() && active_ == 0) done_cv_.notify_all();
+        }
+    }
+}
+
+// ===========================================================================
+// SECTION 6 — Runtime
+// ===========================================================================
+
+namespace {
+std::atomic<bool> g_yam_inited{false};
+std::mutex        g_yam_mutex;
+}
+
+Runtime::Runtime() = default;
+Runtime::~Runtime() { if (initialized_) shutdown(); }
+
+Runtime& Runtime::instance() {
+    static Runtime inst;
+    return inst;
+}
+
+Result<void> Runtime::init() {
+    RuntimeOptions o;
+    return init(o);
+}
+
+Result<void> Runtime::init(const RuntimeOptions& opt) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (initialized_) return Result<void>::err(ErrorCode::AlreadyInitialized, "");
+    opts_ = opt;
+    Log::set_level(opts_.log_level);
+
+    bool expected = false;
+    if (!g_yam_inited.compare_exchange_strong(expected, true)) {
+        return Result<void>::err(ErrorCode::AlreadyInitialized, "yam already inited");
+    }
+
+    try {
+        yam_init_embedded();
+        backend_ = yam_script_backend_obtain_qjs();
+        if (!backend_) {
+            yam_deinit_embedded();
+            g_yam_inited.store(false);
+            return Result<void>::err(ErrorCode::BackendUnavailable, "qjs backend unavailable");
+        }
+        initialized_ = true;
+        YAM_LOG_INFO() << "runtime initialized";
+        return Result<void>::ok();
+    } catch (const std::exception& e) {
+        g_yam_inited.store(false);
+        return Result<void>::err(ErrorCode::InternalError, e.what());
+    }
+}
+
+Result<void> Runtime::shutdown() {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (!initialized_) return Result<void>::err(ErrorCode::NotInitialized, "");
+    try {
+        yam_deinit_embedded();
+        g_yam_inited.store(false);
+        initialized_ = false;
+        backend_ = nullptr;
+        YAM_LOG_INFO() << "runtime shutdown";
+        return Result<void>::ok();
+    } catch (const std::exception& e) {
+        return Result<void>::err(ErrorCode::InternalError, e.what());
+    }
+}
+
+// ===========================================================================
+// SECTION 7 — Message / MessageParser
+// ===========================================================================
+
+namespace {
+const char* skip_ws(const char* p, const char* e) {
+    while (p < e && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) ++p;
+    return p;
+}
+} // namespace
+
+bool MessageParser::parse(const String& raw, Message& out) {
+    const char* p = raw.data();
+    const char* e = p + raw.size();
+    const char* vb = nullptr;
+    const char* ve = nullptr;
+    bool is_str = false;
+
+    // type
+    {
+        String k = "\"type\"";
+        StringView sv(p, raw.size());
+        size_t pos = sv.find(k);
+        if (pos == StringView::npos) return false;
+        const char* q = p + pos + k.size();
+        q = skip_ws(q, e);
+        if (q >= e || *q != ':') return false;
+        ++q; q = skip_ws(q, e);
+        if (*q == '"') {
+            ++q;
+            vb = q;
+            while (q < e && *q != '"') { if (*q == '\\' && q + 1 < e) q += 2; else ++q; }
+            ve = q;
+            is_str = true;
+        }
+    }
+    out.type.assign(vb, ve);
+    (void)is_str;
+
+    // payload (optional)
+    {
+        String k = "\"payload\"";
+        StringView sv(p, raw.size());
+        size_t pos = sv.find(k);
+        if (pos != StringView::npos) {
+            const char* q = p + pos + k.size();
+            q = skip_ws(q, e);
+            if (q < e && *q == ':') {
+                ++q; q = skip_ws(q, e);
+                if (q < e && *q == '"') {
+                    ++q;
+                    vb = q;
+                    while (q < e && *q != '"') { if (*q == '\\' && q + 1 < e) q += 2; else ++q; }
+                    out.payload.assign(vb, q);
+                }
+            }
+        }
+    }
+
+    out.timestamp = time_util::now_ms();
+    return true;
+}
+
+// ===========================================================================
+// SECTION 8 — Cancellable
+// ===========================================================================
+
+namespace {
+std::atomic<bool> g_cancel_flag{false};
+}
+
+Cancellable::Cancellable() { g_cancel_flag.store(false); }
+Cancellable::~Cancellable() = default;
+void Cancellable::cancel() { g_cancel_flag.store(true); }
+bool Cancellable::is_cancelled() const noexcept { return g_cancel_flag.load(); }
+
+// ===========================================================================
+// SECTION 9 — Script
+// ===========================================================================
+
+namespace {
+// Trampoline: the Yam engine calls a C function with (msg, data, user).
+// We forward into the Script instance.
+void script_msg_trampoline(const gchar* msg, GBytes* data, gpointer user) {
+    auto* self = static_cast<Script*>(user);
+    ByteVector bytes;
+    if (data) {
+        // We don't have g_bytes_get_data binding; skip.
+    }
+    self->dispatch_message(msg ? String(msg) : String(), bytes);
+}
+} // namespace
+
+Script::Script(const String& n, const String& s, const ByteVector& b)
+    : name_(n), source_(s), source_bytes_(b) {}
+
+Script::~Script() {
+    if (loaded_) { try { unload(); } catch (...) {} }
+    if (handle_) {
+        yam_object_unref(handle_);
+        handle_ = nullptr;
+    }
+}
+
+Ptr<Script> Script::create(const String& n, const String& s) {
+    return Ptr<Script>(new Script(n, s, {}));
+}
+Ptr<Script> Script::create(const String& n, const String& s, const ByteVector& b) {
+    return Ptr<Script>(new Script(n, s, b));
+}
+
+Result<void> Script::load() { Cancellable c; return load(c); }
+
+Result<void> Script::load(Cancellable& c) {
+    if (loaded_) return Result<void>::err(ErrorCode::InvalidArgument, "already loaded");
+    auto& rt = Runtime::instance();
+    if (!rt.is_initialized()) {
+        return Result<void>::err(ErrorCode::NotInitialized, "runtime");
+    }
+    GError* err = nullptr;
+    const gchar* nm = name_.empty() ? "yam" : name_.c_str();
+    const gchar* src = source_.empty() ? "" : source_.c_str();
+    handle_ = yam_script_backend_create_sync(
+        static_cast<YamScriptBackend*>(rt.backend_handle()),
+        nm, src, nullptr,
+        reinterpret_cast<GCancellable*>(c.native_handle()),
+        &err);
+    if (!handle_) {
+        return Result<void>::err(ErrorCode::ScriptCompileFailed, "create");
+    }
+    yam_script_set_message_handler(static_cast<YamScript*>(handle_),
+        script_msg_trampoline, this, nullptr);
+    yam_script_load_sync(static_cast<YamScript*>(handle_),
+        reinterpret_cast<GCancellable*>(c.native_handle()));
+    loaded_ = true;
+    YAM_LOG_INFO() << "script loaded: " << name_;
+    return Result<void>::ok();
+}
+
+Result<void> Script::unload() { Cancellable c; return unload(c); }
+
+Result<void> Script::unload(Cancellable& c) {
+    if (!loaded_ || !handle_) return Result<void>::err(ErrorCode::NotInitialized, "");
+    yam_script_unload_sync(static_cast<YamScript*>(handle_),
+        reinterpret_cast<GCancellable*>(c.native_handle()));
+    loaded_ = false;
+    return Result<void>::ok();
+}
+
+void Script::set_message_handler(MessageCallback cb) {
+    std::lock_guard<std::mutex> lk(cb_mu_);
+    cb_ = std::move(cb);
+}
+void Script::clear_message_handler() {
+    std::lock_guard<std::mutex> lk(cb_mu_);
+    cb_ = nullptr;
+}
+void Script::post(const String& msg) {
+    if (!handle_) return;
+    yam_script_post(static_cast<YamScript*>(handle_), msg.c_str(), nullptr);
+}
+void Script::post(const String& msg, const ByteVector& /* data */) {
+    // Note: yam_script_post_with_data does not exist in the library. We fall
+    // back to plain yam_script_post. If data is needed, encode it in the JSON
+    // payload as base64.
+    if (!handle_) return;
+    yam_script_post(static_cast<YamScript*>(handle_), msg.c_str(), nullptr);
+}
+
+void Script::dispatch_message(const String& raw, const ByteVector& bytes) {
+    MessageCallback cb;
+    {
+        std::lock_guard<std::mutex> lk(cb_mu_);
+        cb = cb_;
+    }
+    if (!cb) return;
+    Message m;
+    if (!MessageParser::parse(raw, m)) {
+        m.type = "raw";
+        m.payload = raw;
+    }
+    m.data = bytes;
+    m.timestamp = time_util::now_ms();
+    try { cb(m); }
+    catch (const std::exception& e) { YAM_LOG_ERROR() << "msg cb: " << e.what(); }
+    catch (...) { YAM_LOG_ERROR() << "msg cb: unknown"; }
+}
+
+// ===========================================================================
+// SECTION 10 — Memory
+// ===========================================================================
+
+namespace {
+int posix_prot_from(Protection p) {
+    int r = 0;
+    if (has_flag(p, Protection::Read))  r |= PROT_READ;
+    if (has_flag(p, Protection::Write)) r |= PROT_WRITE;
+    if (has_flag(p, Protection::Exec))  r |= PROT_EXEC;
+    return r;
+}
+Protection protection_from_posix(int r) {
+    u32 p = 0;
+    if (r & PROT_READ)  p |= static_cast<u32>(Protection::Read);
+    if (r & PROT_WRITE) p |= static_cast<u32>(Protection::Write);
+    if (r & PROT_EXEC)  p |= static_cast<u32>(Protection::Exec);
+    return static_cast<Protection>(p);
+}
+} // namespace
+
+Result<void> Memory::protect(void* addr, usize size, Protection prot) {
+    if (!addr || !size) return Result<void>::err(ErrorCode::InvalidArgument, "protect");
+    long page = ::sysconf(_SC_PAGESIZE);
+    uintptr_t start = reinterpret_cast<uintptr_t>(addr) & ~(static_cast<uintptr_t>(page) - 1);
+    usize span = size + (reinterpret_cast<uintptr_t>(addr) - start);
+    if (::mprotect(reinterpret_cast<void*>(start), span, posix_prot_from(prot)) != 0) {
+        return Result<void>::err(ErrorCode::MemoryAccessDenied, "mprotect");
+    }
+    return Result<void>::ok();
+}
+
+Result<Protection> Memory::query(void* addr) {
+    auto maps = detail::ProcMaps::read();
+    auto a = reinterpret_cast<u64>(addr);
+    for (auto& m : maps) {
+        if (a >= m.start && a < m.end) return Result<Protection>::ok(m.prot);
+    }
+    return Result<Protection>::err(ErrorCode::MemoryAccessDenied, "not mapped");
+}
+
+Result<void*> Memory::alloc(usize size) {
+    return alloc(size, Protection::RWX);
+}
+Result<void*> Memory::alloc(usize size, Protection prot) {
+    if (!size) return Result<void*>::err(ErrorCode::InvalidArgument, "size=0");
+    void* p = ::mmap(nullptr, size, posix_prot_from(prot),
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) {
+        return Result<void*>::err(ErrorCode::MemoryAllocFailed, "mmap");
+    }
+    detail::register_allocation(p, size);
+    return Result<void*>::ok(p);
+}
+Result<void*> Memory::alloc_near(void* near, usize size) {
+    // Try to allocate within +-2GB of 'near' by hinting the kernel.
+    auto n = reinterpret_cast<uintptr_t>(near);
+    usize step = 0x10000000ULL; // 256 MB
+    for (int i = 0; i < 32; ++i) {
+        void* hint = reinterpret_cast<void*>(n + (i % 2 ? i : -i) * step);
+        void* p = ::mmap(hint, size, PROT_READ | PROT_WRITE | PROT_EXEC,
+                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (p == MAP_FAILED) continue;
+        auto a = reinterpret_cast<uintptr_t>(p);
+        auto dist = a > n ? a - n : n - a;
+        if (dist < 0x7FFFFFFFULL) {
+            detail::register_allocation(p, size);
+            return Result<void*>::ok(p);
+        }
+        ::munmap(p, size);
+    }
+    return alloc(size, Protection::RWX);
+}
+Result<void> Memory::free(void* addr) {
+    if (!addr) return Result<void>::ok();
+    // We use mmap; free must be paired with the same page size.
+    if (detail::unmap_allocation(addr)) return Result<void>::ok();
+    return Result<void>::err(ErrorCode::InvalidArgument, "not a yam allocation");
+}
+
+Result<void> Memory::copy(void* dst, const void* src, usize size) {
+    if (!dst || !src) return Result<void>::err(ErrorCode::InvalidArgument, "copy");
+    std::memmove(dst, src, size);
+    return Result<void>::ok();
+}
+
+Result<void> Memory::read(void* addr, void* out, usize size) {
+    if (!addr || !out) return Result<void>::err(ErrorCode::InvalidArgument, "read");
+    std::memcpy(out, addr, size);
+    return Result<void>::ok();
+}
+Result<void> Memory::write(void* addr, const void* in, usize size) {
+    if (!addr || !in) return Result<void>::err(ErrorCode::InvalidArgument, "write");
+    std::memcpy(addr, in, size);
+    return Result<void>::ok();
+}
+
+Result<ByteVector> Memory::read_bytes(void* addr, usize size) {
+    if (!addr) return Result<ByteVector>::err(ErrorCode::InvalidArgument, "null");
+    ByteVector out(size);
+    std::memcpy(out.data(), addr, size);
+    return Result<ByteVector>::ok(std::move(out));
+}
+Result<void> Memory::write_bytes(void* addr, const ByteVector& d) {
+    if (!addr) return Result<void>::err(ErrorCode::InvalidArgument, "null");
+    std::memcpy(addr, d.data(), d.size());
+    return Result<void>::ok();
+}
+
+#define YAM_MEM_R(T, sfx) \
+Result<T> Memory::read_##sfx(void* a) { \
+    if (!a) return Result<T>::err(ErrorCode::InvalidArgument, "null"); \
+    T v; std::memcpy(&v, a, sizeof(v)); \
+    return Result<T>::ok(v); \
+}
+YAM_MEM_R(u8,u8) YAM_MEM_R(u16,u16) YAM_MEM_R(u32,u32) YAM_MEM_R(u64,u64)
+YAM_MEM_R(i8,i8) YAM_MEM_R(i16,i16) YAM_MEM_R(i32,i32) YAM_MEM_R(i64,i64)
+YAM_MEM_R(f32,f32) YAM_MEM_R(f64,f64)
+
+Result<void*> Memory::read_ptr(void* a) {
+    if (!a) return Result<void*>::err(ErrorCode::InvalidArgument, "null");
+    void* v; std::memcpy(&v, a, sizeof(v));
+    return Result<void*>::ok(v);
+}
+
+#define YAM_MEM_W(T, sfx) \
+Result<void> Memory::write_##sfx(void* a, T v) { \
+    if (!a) return Result<void>::err(ErrorCode::InvalidArgument, "null"); \
+    std::memcpy(a, &v, sizeof(v)); \
+    return Result<void>::ok(); \
+}
+YAM_MEM_W(u8,u8) YAM_MEM_W(u16,u16) YAM_MEM_W(u32,u32) YAM_MEM_W(u64,u64)
+YAM_MEM_W(i8,i8) YAM_MEM_W(i16,i16) YAM_MEM_W(i32,i32) YAM_MEM_W(i64,i64)
+YAM_MEM_W(f32,f32) YAM_MEM_W(f64,f64)
+
+Result<void> Memory::write_ptr(void* a, void* v) {
+    if (!a) return Result<void>::err(ErrorCode::InvalidArgument, "null");
+    std::memcpy(a, &v, sizeof(v));
+    return Result<void>::ok();
+}
+
+String Memory::read_cstring(void* addr, usize max) {
+    if (!addr) return {};
+    const char* p = static_cast<const char*>(addr);
+    usize n = 0;
+    while (n < max && p[n]) ++n;
+    return String(p, n);
+}
+String Memory::read_utf8(void* addr, usize size) {
+    if (!addr) return {};
+    return String(static_cast<const char*>(addr), size);
+}
+String Memory::read_utf16(void* addr, usize chars) {
+    if (!addr) return {};
+    const u16* p = static_cast<const u16*>(addr);
+    String out; out.reserve(chars);
+    for (usize i = 0; i < chars; ++i) {
+        u16 c = p[i];
+        if (c < 0x80) out.push_back(static_cast<char>(c));
+        else if (c < 0x800) {
+            out.push_back(static_cast<char>(0xC0 | (c >> 6)));
+            out.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+        } else {
+            out.push_back(static_cast<char>(0xE0 | (c >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+        }
+    }
+    return out;
+}
+Result<void> Memory::write_utf8(void* addr, const String& s) {
+    if (!addr) return Result<void>::err(ErrorCode::InvalidArgument, "null");
+    std::memcpy(addr, s.data(), s.size());
+    return Result<void>::ok();
+}
+
+Result<std::vector<void*>> Memory::scan(void* base, usize size, const String& pattern) {
+    auto compiled = detail::HexPattern::compile(pattern);
+    if (!compiled) return Result<std::vector<void*>>::err(compiled.error_code(), compiled.error_message());
+    auto bytes = compiled.value();
+    if (bytes.empty()) return Result<std::vector<void*>>::ok({});
+
+    std::vector<void*> out;
+    const u8* b = static_cast<const u8*>(base);
+    for (usize i = 0; i + bytes.size() <= size; ++i) {
+        bool match = true;
+        for (usize j = 0; j < bytes.size(); ++j) {
+            if (bytes[j] != 0xFF && b[i + j] != bytes[j]) { match = false; break; }
+        }
+        if (match) out.push_back(const_cast<u8*>(b + i));
+    }
+    return Result<std::vector<void*>>::ok(std::move(out));
+}
+
+Result<void*> Memory::scan_first(void* base, usize size, const String& pattern) {
+    auto r = scan(base, size, pattern);
+    if (!r) return Result<void*>::err(r.error_code(), r.error_message());
+    if (r.value().empty()) return Result<void*>::ok(nullptr);
+    return Result<void*>::ok(r.value().front());
+}
+
+Result<std::vector<void*>> Memory::scan_module(const String& module, const String& pattern) {
+    auto m = Module::find(module);
+    if (!m) return Result<std::vector<void*>>::err(m.error_code(), m.error_message());
+    return scan(m.value().base(), m.value().size(), pattern);
+}
+
+bool Memory::is_readable(void* addr, usize) {
+    auto q = query(addr);
+    return q && has_flag(q.value(), Protection::Read);
+}
+bool Memory::is_writable(void* addr, usize) {
+    auto q = query(addr);
+    return q && has_flag(q.value(), Protection::Write);
+}
+bool Memory::is_executable(void* addr, usize) {
+    auto q = query(addr);
+    return q && has_flag(q.value(), Protection::Exec);
+}
+
+// ===========================================================================
+// SECTION 11 — Allocation
+// ===========================================================================
+
+Allocation& Allocation::operator=(Allocation&& o) noexcept {
+    if (this != &o) {
+        if (ptr_) Memory::free(ptr_);
+        ptr_ = o.ptr_; size_ = o.size_;
+        o.ptr_ = nullptr; o.size_ = 0;
+    }
+    return *this;
+}
+void* Allocation::release() noexcept {
+    auto* p = ptr_;
+    ptr_ = nullptr; size_ = 0;
+    return p;
+}
+
+// ===========================================================================
+// SECTION 18 — RuntimeDiag
+// ===========================================================================
+
+namespace {
+TimePoint g_start_time = Clock::now();
+}
+
+DiagSnapshot RuntimeDiag::snapshot() {
+    DiagSnapshot s;
+    s.runtime_init = Runtime::instance().is_initialized();
+    s.java_ready = false; // set by JavaFacade
+    s.registry_entries = registry().size();
+    s.registry_bytes = registry().total_bytes();
+    s.uptime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        Clock::now() - g_start_time).count();
+    return s;
+}
+
+String RuntimeDiag::to_json(const DiagSnapshot& s) {
+    char buf[512];
+    std::snprintf(buf, sizeof(buf),
+        "{\"runtime_init\":%s,\"java_ready\":%s,"
+        "\"registry_entries\":%zu,\"registry_bytes\":%zu,"
+        "\"java_hooks\":%zu,\"channels\":%zu,\"uptime_ms\":%lld}",
+        s.runtime_init ? "true" : "false",
+        s.java_ready ? "true" : "false",
+        s.registry_entries, s.registry_bytes,
+        s.java_hooks_count, s.channels_count,
+        static_cast<long long>(s.uptime_ms));
+    return buf;
+}
+
+String RuntimeDiag::to_string(const DiagSnapshot& s) {
+    char buf[512];
+    std::snprintf(buf, sizeof(buf),
+        "runtime=%d java=%d reg=%zu bytes=%zu hooks=%zu chan=%zu up=%lldms",
+        s.runtime_init, s.java_ready,
+        s.registry_entries, s.registry_bytes,
+        s.java_hooks_count, s.channels_count,
+        static_cast<long long>(s.uptime_ms));
+    return buf;
+}
+
+} // namespace yam
+
+// ===========================================================================
+
+
+// ===========================================================================
+// APPENDIX — Definitions missing from the original DeepSeek-authored file.
+// ===========================================================================
+
+#include <sstream>
+#include <fstream>
+#include <cstring>
+
+namespace yam {
+namespace detail {
+
+// ---------------------------------------------------------------------------
+// ProcMaps::read — parse /proc/self/maps into a vector of entries.
+// ---------------------------------------------------------------------------
+std::vector<ProcMapsEntry> ProcMaps::read() {
+    std::vector<ProcMapsEntry> out;
+    std::ifstream f("/proc/self/maps");
+    if (!f) return out;
+
+    String line;
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+
+        unsigned long long start = 0, end = 0;
+        char perms[5] = {0};
+        unsigned long long offset = 0;
+        unsigned int dev_major = 0, dev_minor = 0;
+        unsigned long inode = 0;
+
+        int consumed = 0;
+        int matched = std::sscanf(
+            line.c_str(),
+            "%llx-%llx %4s %llx %x:%x %lu %n",
+            &start, &end, perms,
+            &offset, &dev_major, &dev_minor, &inode,
+            &consumed);
+
+        if (matched < 4) continue;
+
+        ProcMapsEntry e;
+        e.start = static_cast<u64>(start);
+        e.end   = static_cast<u64>(end);
+
+        u32 p = 0;
+        if (perms[0] == 'r') p |= static_cast<u32>(Protection::Read);
+        if (perms[1] == 'w') p |= static_cast<u32>(Protection::Write);
+        if (perms[2] == 'x') p |= static_cast<u32>(Protection::Exec);
+        e.prot = static_cast<Protection>(p);
+
+        if (consumed > 0 && static_cast<size_t>(consumed) < line.size()) {
+            const char* rest = line.c_str() + consumed;
+            while (*rest == ' ' || *rest == '\t') ++rest;
+            e.path = rest;
+        }
+
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// HexPattern::compile — parse a hex pattern into a byte vector.
+// ---------------------------------------------------------------------------
+Result<ByteVector> HexPattern::compile(const String& pattern) {
+    ByteVector out;
+    out.reserve(pattern.size() / 2);
+
+    size_t i = 0;
+    const size_t n = pattern.size();
+    while (i < n) {
+        while (i < n && (std::isspace(static_cast<unsigned char>(pattern[i]))
+                         || pattern[i] == ',')) {
+            ++i;
+        }
+        if (i >= n) break;
+
+        if (i + 1 < n && pattern[i] == '0'
+            && (pattern[i+1] == 'x' || pattern[i+1] == 'X')) {
+            i += 2;
+        }
+        if (i >= n) break;
+
+        auto read_nibble = [](char c, int& v) -> bool {
+            if (c >= '0' && c <= '9') { v = c - '0'; return true; }
+            if (c >= 'a' && c <= 'f') { v = c - 'a' + 10; return true; }
+            if (c >= 'A' && c <= 'F') { v = c - 'A' + 10; return true; }
+            if (c == '?') { v = -1; return true; }
+            return false;
+        };
+
+        int h0 = -1, h1 = -1;
+        bool first_ok = false, second_ok = false;
+
+        if (i < n) {
+            first_ok = read_nibble(pattern[i], h0);
+            if (first_ok) ++i;
+        }
+        if (i < n) {
+            second_ok = read_nibble(pattern[i], h1);
+            if (second_ok) ++i;
+        }
+
+        if (!first_ok && !second_ok) {
+            return Result<ByteVector>::err(ErrorCode::InvalidArgument,
+                String("bad hex pattern near: ") + pattern.substr(i, 4));
+        }
+
+        if (first_ok && !second_ok) {
+            if (h0 < 0) out.push_back(0xFF);
+            else out.push_back(static_cast<u8>(h0));
+            continue;
+        }
+
+        u8 byte = 0;
+        if (h0 < 0 && h1 < 0) {
+            byte = 0xFF;
+        } else if (h0 < 0 || h1 < 0) {
+            byte = 0xFF;
+        } else {
+            byte = static_cast<u8>((h0 << 4) | h1);
+        }
+        out.push_back(byte);
+    }
+
+    if (out.empty()) {
+        return Result<ByteVector>::err(ErrorCode::InvalidArgument,
+            "empty hex pattern");
+    }
+    return Result<ByteVector>::ok(std::move(out));
+}
+
+} // namespace detail
+} // namespace yam

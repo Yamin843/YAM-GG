@@ -1,0 +1,372 @@
+.
+|____app
+| |____src
+| | |____main
+| | | |____jni
+| | | | |____Includes
+| | | | | |____Logger.h
+| | | | | |____Logger.cpp
+| | | | | |____Roboto-Regular.h
+| | | | | |____circular_buffer.h
+| | | | |____Menu
+| | | | | |____ImGui.h
+| | | | | |____ImGui.cpp
+| | | | | |____get_device_api_level_inlines.h
+| | | | |____all_libs
+| | | | | |____asmjit
+| | | | | | |____arm
+| | | | | | | |____a32archtraits_p.h
+| | | | | | | |____a32assembler.cpp
+| | | | | | | |____a32assembler.h
+| | | | | | | |____a32builder.cpp
+| | | | | | | |____a32builder.h
+| | | | | | | |____a32emithelper.cpp
+| | | | | | | |____a32emithelper_p.h
+| | | | | | | |____a32emitter.h
+| | | | | | | |____a32formatter.cpp
+| | | | | | | |____a32formatter_p.h
+| | | | | | | |____a32globals.h
+| | | | | | | |____a32instapi_p.h
+| | | | | | | |____a32instapi.cpp
+| | | | | | | |____a32instdb.cpp
+| | | | | | | |____a32instdb.h
+| | | | | | | |____a32instdb_p.h
+| | | | | | | |____a32operand.h
+| | | | | | | |____a64archtraits_p.h
+| | | | | | | |____a64assembler.cpp
+| | | | | | | |____a64assembler.h
+| | | | | | | |____a64builder.cpp
+| | | | | | | |____a64builder.h
+| | | | | | | |____a64compiler.cpp
+| | | | | | | |____a64compiler.h
+| | | | | | | |____a64emithelper.cpp
+| | | | | | | |____a64emithelper_p.h
+| | | | | | | |____a64emitter.h
+| | | | | | | |____a64formatter_p.h
+| | | | | | | |____a64formatter.cpp
+| | | | | | | |____a64func.cpp
+| | | | | | | |____a64func_p.h
+| | | | | | | |____a64globals.h
+| | | | | | | |____a64instapi.cpp
+| | | | | | | |____a64instapi_p.h
+| | | | | | | |____a64instdb.cpp
+| | | | | | | |____a64instdb.h
+| | | | | | | |____a64instdb_p.h
+| | | | | | | |____a64operand.cpp
+| | | | | | | |____a64operand.h
+| | | | | | | |____a64rapass.cpp
+| | | | | | | |____a64rapass_p.h
+| | | | | | | |____armformatter.cpp
+| | | | | | | |____armformatter_p.h
+| | | | | | | |____armglobals.h
+| | | | | | | |____armoperand.h
+| | | | | | | |____armutils.h
+| | | | | | |____core
+| | | | | | | |____api-build_p.h
+| | | | | | | |____api-config.h
+| | | | | | | |____archcommons.h
+| | | | | | | |____archtraits.cpp
+| | | | | | | |____archtraits.h
+| | | | | | | |____assembler.cpp
+| | | | | | | |____assembler.h
+| | | | | | | |____builder.cpp
+| | | | | | | |____builder.h
+| | | | | | | |____builder_p.h
+| | | | | | | |____codebuffer.h
+| | | | | | | |____codeholder.cpp
+| | | | | | | |____codeholder.h
+| | | | | | | |____codewriter.cpp
+| | | | | | | |____codewriter_p.h
+| | | | | | | |____compiler.cpp
+| | | | | | | |____compiler.h
+| | | | | | | |____compilerdefs.h
+| | | | | | | |____constpool.cpp
+| | | | | | | |____constpool.h
+| | | | | | | |____cpuinfo.cpp
+| | | | | | | |____cpuinfo.h
+| | | | | | | |____emithelper_p.h
+| | | | | | | |____emithelper.cpp
+| | | | | | | |____emitter.cpp
+| | | | | | | |____emitter.h
+| | | | | | | |____emitterutils.cpp
+| | | | | | | |____emitterutils_p.h
+| | | | | | | |____environment.cpp
+| | | | | | | |____environment.h
+| | | | | | | |____errorhandler.cpp
+| | | | | | | |____errorhandler.h
+| | | | | | | |____formatter.cpp
+| | | | | | | |____formatter.h
+| | | | | | | |____formatter_p.h
+| | | | | | | |____func.cpp
+| | | | | | | |____func.h
+| | | | | | | |____funcargscontext.cpp
+| | | | | | | |____funcargscontext_p.h
+| | | | | | | |____globals.cpp
+| | | | | | | |____globals.h
+| | | | | | | |____inst.cpp
+| | | | | | | |____inst.h
+| | | | | | | |____instdb.cpp
+| | | | | | | |____instdb_p.h
+| | | | | | | |____jitallocator.cpp
+| | | | | | | |____jitallocator.h
+| | | | | | | |____jitruntime.cpp
+| | | | | | | |____jitruntime.h
+| | | | | | | |____logger.h
+| | | | | | | |____misc_p.h
+| | | | | | | |____logger.cpp
+| | | | | | | |____operand.cpp
+| | | | | | | |____operand.h
+| | | | | | | |____osutils.cpp
+| | | | | | | |____osutils.h
+| | | | | | | |____osutils_p.h
+| | | | | | | |____raassignment_p.h
+| | | | | | | |____rabuilders_p.h
+| | | | | | | |____radefs_p.h
+| | | | | | | |____ralocal.cpp
+| | | | | | | |____ralocal_p.h
+| | | | | | | |____rapass_p.h
+| | | | | | | |____rapass.cpp
+| | | | | | | |____rastack.cpp
+| | | | | | | |____rastack_p.h
+| | | | | | | |____string.cpp
+| | | | | | | |____string.h
+| | | | | | | |____support.cpp
+| | | | | | | |____support.h
+| | | | | | | |____support_p.h
+| | | | | | | |____target.cpp
+| | | | | | | |____target.h
+| | | | | | | |____type.cpp
+| | | | | | | |____type.h
+| | | | | | | |____virtmem.cpp
+| | | | | | | |____virtmem.h
+| | | | | | | |____zone.cpp
+| | | | | | | |____zone.h
+| | | | | | | |____zonehash.cpp
+| | | | | | | |____zonehash.h
+| | | | | | | |____zonelist.cpp
+| | | | | | | |____zonelist.h
+| | | | | | | |____zonestack.cpp
+| | | | | | | |____zonestack.h
+| | | | | | | |____zonestring.h
+| | | | | | | |____zonetree.cpp
+| | | | | | | |____zonetree.h
+| | | | | | | |____zonevector.cpp
+| | | | | | | |____zonevector.h
+| | | | | | |____tools
+| | | | | | | |____configure-makefiles.sh
+| | | | | | | |____configure-ninja.sh
+| | | | | | | |____configure-sanitizers.sh
+| | | | | | | |____configure-vs2019-x64.bat
+| | | | | | | |____configure-vs2019-x86.bat
+| | | | | | | |____configure-vs2022-x64.bat
+| | | | | | | |____configure-vs2022-x86.bat
+| | | | | | | |____configure-xcode.sh
+| | | | | | | |____enumgen.js
+| | | | | | | |____enumgen.sh
+| | | | | | | |____generator-commons.js
+| | | | | | | |____generator-cxx.js
+| | | | | | | |____tablegen-a32.js
+| | | | | | | |____tablegen-a32.sh
+| | | | | | | |____tablegen-a64.js
+| | | | | | | |____tablegen-a64.sh
+| | | | | | | |____tablegen-x86.js
+| | | | | | | |____tablegen-x86.sh
+| | | | | | | |____tablegen.js
+| | | | | | | |____tablegen.sh
+| | | | | | | |____testgen-a32.js
+| | | | | | |____x86
+| | | | | | | |____x86archtraits_p.h
+| | | | | | | |____x86assembler.h
+| | | | | | | |____x86assembler.cpp
+| | | | | | | |____x86builder.h
+| | | | | | | |____x86builder.cpp
+| | | | | | | |____x86compiler.cpp
+| | | | | | | |____x86compiler.h
+| | | | | | | |____x86emithelper.cpp
+| | | | | | | |____x86emithelper_p.h
+| | | | | | | |____x86emitter.h
+| | | | | | | |____x86formatter.cpp
+| | | | | | | |____x86formatter_p.h
+| | | | | | | |____x86func.cpp
+| | | | | | | |____x86func_p.h
+| | | | | | | |____x86instapi.cpp
+| | | | | | | |____x86globals.h
+| | | | | | | |____x86instapi_p.h
+| | | | | | | |____x86instdb.cpp
+| | | | | | | |____x86instdb.h
+| | | | | | | |____x86instdb_p.h
+| | | | | | | |____x86opcode_p.h
+| | | | | | | |____x86operand.cpp
+| | | | | | | |____x86operand.h
+| | | | | | | |____x86rapass.cpp
+| | | | | | | |____x86rapass_p.h
+| | | | | | |____Android.mk
+| | | | | | |____a32.h
+| | | | | | |____a64.h
+| | | | | | |____arm.h
+| | | | | | |____asmjit-scope-begin.h
+| | | | | | |____asmjit-scope-end.h
+| | | | | | |____asmjit.h
+| | | | | | |____core.h
+| | | | | | |____x86.h
+| | | | | |____Dobby
+| | | | | | |____prebuilt
+| | | | | | | |____arm64-v8a
+| | | | | | | | |____libdobby.a
+| | | | | | | |____include
+| | | | | | | | |____dobby.h
+| | | | | | |____Android.mk
+| | | | | |____imgui
+| | | | | |____json
+| | | | | | |____json.hpp
+| | | | | | |____json_fwd.hpp
+| | | | | |____KittyMemory
+| | | | | | |____KittyMemory
+| | | | | | | |____Deps
+| | | | | | | | |____Keystone
+| | | | | | | | | |____includes
+| | | | | | | | | | |____arm.h
+| | | | | | | | | | |____evm.h
+| | | | | | | | | | |____arm64.h
+| | | | | | | | | | |____hexagon.h
+| | | | | | | | | | |____keystone.h
+| | | | | | | | | | |____mips.h
+| | | | | | | | | | |____ppc.h
+| | | | | | | | | | |____riscv.h
+| | | | | | | | | | |____sparc.h
+| | | | | | | | | | |____systemz.h
+| | | | | | | | | | |____x86.h
+| | | | | | | | | |____libs-android
+| | | | | | | | | | |____arm64-v8a
+| | | | | | | | | | | |____libkeystone.a
+| | | | | | | |____KittyAsm.cpp
+| | | | | | | |____KittyAsm.hpp
+| | | | | | | |____KittyIOFile.cpp
+| | | | | | | |____KittyIOFile.hpp
+| | | | | | | |____KittyInclude.hpp
+| | | | | | | |____KittyMemory.cpp
+| | | | | | | |____KittyMemory.hpp
+| | | | | | | |____KittyPtrValidator.cpp
+| | | | | | | |____KittyPtrValidator.hpp
+| | | | | | | |____KittyScanner.cpp
+| | | | | | | |____KittyScanner.hpp
+| | | | | | | |____KittyUtils.cpp
+| | | | | | | |____KittyUtils.hpp
+| | | | | | | |____MemoryBackup.cpp
+| | | | | | | |____MemoryBackup.hpp
+| | | | | | | |____MemoryPatch.hpp
+| | | | | | | |____MemoryPatch.cpp
+| | | | | | | |____writeData.hpp
+| | | | | | |____Android.mk
+| | | | | |____ndk_libs
+| | | | | | |____libatomic.a
+| | | | | | |____libc++_static.a
+| | | | | | |____libc++abi.a
+| | | | | | |____libclang_rt.builtins-aarch64-android.a
+| | | | | |____XDL
+| | | | | | |____include
+| | | | | | | |____xdl.h
+| | | | | | |____CMakeLists.txt
+| | | | | | |____xdl.c
+| | | | | | |____xdl.h
+| | | | | | |____xdl_iterate.c
+| | | | | | |____xdl_iterate.h
+| | | | | | |____xdl_linker.c
+| | | | | | |____xdl_linker.h
+| | | | | | |____xdl_lzma.c
+| | | | | | |____xdl_lzma.h
+| | | | | | |____xdl_util.c
+| | | | | | |____xdl_util.h
+| | | | | |____YAM-G
+| | | | | | |____LIBYAMJS
+| | | | | | | |____include
+| | | | | | | | |____YAMJS.h
+| | | | | | | | |____gumpp.hpp
+| | | | | | | | |____invocationcontext.hpp
+| | | | | | | | |____invocationlistener.hpp
+| | | | | | | | |____objectwrapper.hpp
+| | | | | | | | |____podwrapper.hpp
+| | | | | | | | |____runtime.hpp
+| | | | | | | | |____string.hpp
+| | | | | | | |____Android.mk
+| | | | | | | |____CMakeLists.txt
+| | | | | | | |____README.txt
+| | | | | | | |____example.c
+| | | | | | | |____libyamjs.a
+| | | | | | |____wrapper
+| | | | | | | |____include
+| | | | | | | | |____yam.hpp
+| | | | | | | | |____yam_advanced.hpp
+| | | | | | | | |____yam_c_api.hpp
+| | | | | | | | |____yam_cmodule_registry.hpp
+| | | | | | | | |____yam_internal.hpp
+| | | | | | | | |____yam_java_model.hpp
+| | | | | | | | |____yam_stalker.hpp
+| | | | | | | | |____yam_subsystems.hpp
+| | | | | | | |____src
+| | | | | | | | |____yam_cmodule_registry.cpp
+| | | | | | | | |____yam_console.cpp
+| | | | | | | | |____yam_core.cpp
+| | | | | | | | |____yam_events.cpp
+| | | | | | | | |____yam_hooks.cpp
+| | | | | | | | |____yam_java.cpp
+| | | | | | | | |____yam_java_model.cpp
+| | | | | | | | |____yam_json.cpp
+| | | | | | | | |____yam_memory.cpp
+| | | | | | | | |____yam_stalker.cpp
+| | | | | | | | |____yam_subsystems.cpp
+| | | | | | | | |____yam_writer.cpp
+| | | | | | | |____Android.mk
+| | | | | | | |____Application.mk
+| | | | | | |____READMEFULL.md
+| | | | | | |____READMEFULL2.md
+| | | | | | |____YAMG.txt
+| | | | | | |____build.sh
+| | | | |____Android.mk
+| | | | |____Application.mk
+| | | | |____Main.cpp
+| | | |____res
+| | | | |____drawable
+| | | | | |____ic_launcher_foreground.xml
+| | | | |____layout
+| | | | | |____activity_main.xml
+| | | | |____mipmap-anydpi-v26
+| | | | | |____ic_launcher.xml
+| | | | | |____ic_launcher_round.xml
+| | | | |____mipmap-hdpi
+| | | | | |____ic_launcher.png
+| | | | | |____ic_launcher_round.png
+| | | | |____mipmap-mdpi
+| | | | | |____ic_launcher_round.png
+| | | | | |____ic_launcher.png
+| | | | |____mipmap-xhdpi
+| | | | | |____ic_launcher.png
+| | | | | |____ic_launcher_round.png
+| | | | |____mipmap-xxhdpi
+| | | | | |____ic_launcher.png
+| | | | | |____ic_launcher_round.png
+| | | | |____mipmap-xxxhdpi
+| | | | | |____ic_launcher.png
+| | | | | |____ic_launcher_round.png
+| | | | |____values
+| | | | | |____colors.xml
+| | | | | |____ic_launcher_background.xml
+| | | | | |____strings.xml
+| | | | | |____styles.xml
+| | | |____AndroidManifest.xml
+| | | |____ic_launcher-playstore.png
+| |____.gitignore
+| |____app.iml
+| |____proguard-rules.pro
+| |____build.gradle
+|____gradle
+| |____wrapper
+| | |____gradle-wrapper.properties
+|____YAM-GG.txt
+|____.gitignore
+|____FloatingModMenu.iml
+|____gradlew
+|____gradlew.bat
+|____build.gradle
+|____gradle.properties
+|____settings.gradle

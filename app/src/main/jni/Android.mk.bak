@@ -1,0 +1,104 @@
+LOCAL_PATH := $(call my-dir)
+MY_ROOT := $(LOCAL_PATH)
+
+include $(MY_ROOT)/all_libs/asmjit/Android.mk
+include $(MY_ROOT)/all_libs/Dobby/Android.mk
+include $(MY_ROOT)/all_libs/KittyMemory/Android.mk
+include $(MY_ROOT)/all_libs/XDL/Android.mk
+include $(MY_ROOT)/all_libs/YAM-G/LIBYAMJS/Android.mk
+include $(MY_ROOT)/all_libs/YAM-G/wrapper/Android.mk
+
+LOCAL_PATH := $(MY_ROOT)
+
+include $(CLEAR_VARS)
+
+LOCAL_MODULE := YAMGG
+
+LOCAL_SRC_FILES := \
+    Main.cpp \
+    JNI/NativeMethods.cpp \
+    Core/Runtime.cpp \
+    Core/DexLoader.cpp \
+    Core/HookManager.cpp \
+    UI/Renderer.cpp \
+    UI/Theme.cpp \
+    UI/MainWindow.cpp \
+    UI/Tabs/JSConsole.cpp \
+    UI/Tabs/FileBrowser.cpp \
+    UI/Widgets/Notification.cpp \
+    Bridge/YamBridge.cpp \
+    all_libs/imgui/imgui.cpp \
+    all_libs/imgui/imgui_draw.cpp \
+    all_libs/imgui/imgui_widgets.cpp \
+    all_libs/imgui/imgui_tables.cpp \
+    all_libs/imgui/backends/imgui_impl_opengl3.cpp
+
+LOCAL_C_INCLUDES := \
+    $(MY_ROOT) \
+    $(MY_ROOT)/Core \
+    $(MY_ROOT)/UI \
+    $(MY_ROOT)/UI/Tabs \
+    $(MY_ROOT)/UI/Widgets \
+    $(MY_ROOT)/Bridge \
+    $(MY_ROOT)/JNI \
+    $(MY_ROOT)/Generated \
+    $(MY_ROOT)/Includes \
+    $(MY_ROOT)/all_libs/imgui \
+    $(MY_ROOT)/all_libs/imgui/backends \
+    $(MY_ROOT)/all_libs/json \
+    $(MY_ROOT)/all_libs/YAM-G/LIBYAMJS/include \
+    $(MY_ROOT)/all_libs/YAM-G/wrapper/include \
+    $(MY_ROOT)/all_libs/XDL \
+    $(MY_ROOT)/all_libs/XDL/include \
+    $(MY_ROOT)/all_libs/Dobby/prebuilt/include \
+    $(MY_ROOT)/all_libs/KittyMemory/KittyMemory \
+    $(MY_ROOT)/all_libs/KittyMemory/KittyMemory/Deps/Keystone/includes
+
+LOCAL_EXPORT_C_INCLUDES := $(MY_ROOT)
+
+LOCAL_CPPFLAGS := \
+    -std=c++17 \
+    -fexceptions \
+    -frtti \
+    -fPIC \
+    -w \
+    -O2 \
+    -DNDEBUG \
+    -DIMGUI_IMPL_OPENGL_ES3=1 \
+    -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1 \
+    -Wno-everything \
+    -Wno-error
+
+LOCAL_CFLAGS := -w -O2 -DNDEBUG
+
+LOCAL_CPP_FEATURES := exceptions rtti
+
+LOCAL_LDFLAGS := \
+    -Wl,--gc-sections \
+    -Wl,--strip-all \
+    -Wl,--exclude-libs,ALL
+
+LOCAL_LDLIBS := \
+    -llog \
+    -landroid \
+    -lEGL \
+    -lGLESv3 \
+    -ldl \
+    -lz \
+    -lm \
+    -lc++_shared \
+    -lunwind
+
+LOCAL_STATIC_LIBRARIES := \
+    asmjit \
+    dobby \
+    kitty_memory \
+    xdl \
+    yamcpp \
+    yamgjs
+
+ifeq ($(TARGET_ARCH_ABI),arm64-v8a)
+    LOCAL_CPPFLAGS += -DYAM_ARCH_ARM64=1
+endif
+
+include $(BUILD_SHARED_LIBRARY)

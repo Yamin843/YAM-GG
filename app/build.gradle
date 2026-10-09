@@ -1,0 +1,83 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.yamgg'
+    compileSdk 34
+    ndkVersion '26.1.10909125'
+
+    defaultConfig {
+        applicationId "com.yamgg"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+
+        externalNativeBuild {
+            ndkBuild {
+                arguments "NDK_APPLICATION_MK=src/main/jni/Application.mk"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    externalNativeBuild {
+        ndkBuild {
+            path file('src/main/jni/Android.mk')
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+dependencies {
+    implementation 'androidx.annotation:annotation:1.7.1'
+}
+
+tasks.register('generateDex', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'bash', 'scripts/generate-dex.sh'
+    standardOutput = System.out
+    errorOutput = System.err
+    ignoreExitValue = false
+}
+
+tasks.matching { it.name.startsWith('externalNativeBuild') }.configureEach {
+    dependsOn 'generateDex'
+}
+
+tasks.matching { it.name == 'preBuild' }.configureEach {
+    dependsOn 'generateDex'
+}
