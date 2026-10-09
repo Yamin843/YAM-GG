@@ -573,7 +573,8 @@ void* Module::find_symbol(const String& name) const {
 
 void* Module::find_global_export(const String& name) {
     if (name.empty()) return nullptr;
-    return yam_module_find_global_export_by_name(name.c_str());
+    YamAddress a = yam_module_find_global_export_by_name(name.c_str());
+    return reinterpret_cast<void*>(static_cast<uintptr_t>(a));
 }
 
 namespace {
