@@ -1,777 +1,777 @@
-build	Set up job	﻿2026-10-09T15:44:06.3416700Z Current runner version: '2.337.0'
-build	Set up job	2026-10-09T15:44:06.3437670Z ##[group]Runner Image Provisioner
-build	Set up job	2026-10-09T15:44:06.3438621Z Hosted Compute Agent
-build	Set up job	2026-10-09T15:44:06.3438989Z Version: 20261002.596
-build	Set up job	2026-10-09T15:44:06.3439365Z Commit: c3d12f3313a95f25162a1503be624f3b0617f8c0
-build	Set up job	2026-10-09T15:44:06.3439861Z Build Date: 2026-10-02T22:28:27Z
-build	Set up job	2026-10-09T15:44:06.3440263Z Worker ID: {0966697b-1246-4ef5-b462-723c3c8bbc03}
-build	Set up job	2026-10-09T15:44:06.3440670Z Region: southcentralus
-build	Set up job	2026-10-09T15:44:06.3441066Z Cloud: Azure
-build	Set up job	2026-10-09T15:44:06.3441398Z ##[endgroup]
-build	Set up job	2026-10-09T15:44:06.3442237Z ##[group]Operating System
-build	Set up job	2026-10-09T15:44:06.3442647Z Ubuntu
-build	Set up job	2026-10-09T15:44:06.3443194Z 24.04.5
-build	Set up job	2026-10-09T15:44:06.3443555Z LTS
-build	Set up job	2026-10-09T15:44:06.3443865Z ##[endgroup]
-build	Set up job	2026-10-09T15:44:06.3444250Z ##[group]Runner Image
-build	Set up job	2026-10-09T15:44:06.3444617Z Image: ubuntu-24.04
-build	Set up job	2026-10-09T15:44:06.3444963Z Version: 20261004.327.1
-build	Set up job	2026-10-09T15:44:06.3445614Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261004.327/images/ubuntu/Ubuntu2404-Readme.md
-build	Set up job	2026-10-09T15:44:06.3446699Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261004.327
-build	Set up job	2026-10-09T15:44:06.3447259Z ##[endgroup]
-build	Set up job	2026-10-09T15:44:06.3447964Z ##[group]GITHUB_TOKEN Permissions
-build	Set up job	2026-10-09T15:44:06.3449415Z Contents: read
-build	Set up job	2026-10-09T15:44:06.3449770Z Metadata: read
-build	Set up job	2026-10-09T15:44:06.3450195Z ##[endgroup]
-build	Set up job	2026-10-09T15:44:06.3451640Z Secret source: Actions
-build	Set up job	2026-10-09T15:44:06.3452259Z Cache mode: write
-build	Set up job	2026-10-09T15:44:06.3452691Z Prepare workflow directory
-build	Set up job	2026-10-09T15:44:06.3710592Z Prepare all required actions
-build	Set up job	2026-10-09T15:44:06.3746127Z Getting action download info
-build	Set up job	2026-10-09T15:44:06.6094957Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
-build	Set up job	2026-10-09T15:44:06.6837758Z Download action repository 'actions/setup-java@v4' (SHA:cf277c60eb25467037889841efdb72551f06f6c3)
-build	Set up job	2026-10-09T15:44:07.3538894Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
-build	Set up job	2026-10-09T15:44:07.5540478Z Complete job name: build
-build	Checkout	﻿2026-10-09T15:44:07.6081574Z ##[group]Run actions/checkout@v4
-build	Checkout	2026-10-09T15:44:07.6082109Z with:
-build	Checkout	2026-10-09T15:44:07.6082366Z   submodules: false
-build	Checkout	2026-10-09T15:44:07.6082649Z   repository: Yamin843/YAM-GG
-build	Checkout	2026-10-09T15:44:07.6085129Z   token: ***
-build	Checkout	2026-10-09T15:44:07.6085389Z   ssh-strict: true
-build	Checkout	2026-10-09T15:44:07.6085659Z   ssh-user: git
-build	Checkout	2026-10-09T15:44:07.6085933Z   persist-credentials: true
-build	Checkout	2026-10-09T15:44:07.6086236Z   clean: true
-build	Checkout	2026-10-09T15:44:07.6086508Z   sparse-checkout-cone-mode: true
-build	Checkout	2026-10-09T15:44:07.6086817Z   fetch-depth: 1
-build	Checkout	2026-10-09T15:44:07.6087081Z   fetch-tags: false
-build	Checkout	2026-10-09T15:44:07.6087354Z   show-progress: true
-build	Checkout	2026-10-09T15:44:07.6087641Z   lfs: false
-build	Checkout	2026-10-09T15:44:07.6087900Z   set-safe-directory: true
-build	Checkout	2026-10-09T15:44:07.6088207Z   allow-unsafe-pr-checkout: false
-build	Checkout	2026-10-09T15:44:07.6088596Z env:
-build	Checkout	2026-10-09T15:44:07.6088861Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Checkout	2026-10-09T15:44:07.6089224Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Checkout	2026-10-09T15:44:07.6089602Z   NDK_VERSION: 26.1.10909125
-build	Checkout	2026-10-09T15:44:07.6089928Z ##[endgroup]
-build	Checkout	2026-10-09T15:44:07.6786910Z Syncing repository: Yamin843/YAM-GG
-build	Checkout	2026-10-09T15:44:07.6788825Z ##[group]Getting Git version info
-build	Checkout	2026-10-09T15:44:07.6789490Z Working directory is '/home/runner/work/YAM-GG/YAM-GG'
-build	Checkout	2026-10-09T15:44:07.6790420Z [command]/usr/bin/git version
-build	Checkout	2026-10-09T15:44:07.6880854Z git version 2.55.0
-build	Checkout	2026-10-09T15:44:07.6895808Z ##[endgroup]
-build	Checkout	2026-10-09T15:44:07.6908306Z Temporarily overriding HOME='/home/runner/work/_temp/32a30a62-ee56-461f-8719-c3e40fb2731e' before making global git config changes
-build	Checkout	2026-10-09T15:44:07.6909837Z Adding repository directory to the temporary git global config as a safe directory
-build	Checkout	2026-10-09T15:44:07.6912070Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/YAM-GG/YAM-GG
-build	Checkout	2026-10-09T15:44:07.6962479Z Deleting the contents of '/home/runner/work/YAM-GG/YAM-GG'
-build	Checkout	2026-10-09T15:44:07.6967285Z ##[group]Initializing the repository
-build	Checkout	2026-10-09T15:44:07.6970731Z [command]/usr/bin/git init /home/runner/work/YAM-GG/YAM-GG
-build	Checkout	2026-10-09T15:44:07.7090760Z hint: Using 'master' as the name for the initial branch. This default branch name
-build	Checkout	2026-10-09T15:44:07.7092278Z hint: will change to "main" in Git 3.0. To configure the initial branch name
-build	Checkout	2026-10-09T15:44:07.7093823Z hint: to use in all of your new repositories, which will suppress this warning,
-build	Checkout	2026-10-09T15:44:07.7094761Z hint: call:
-build	Checkout	2026-10-09T15:44:07.7095583Z hint:
-build	Checkout	2026-10-09T15:44:07.7096269Z hint: 	git config --global init.defaultBranch <name>
-build	Checkout	2026-10-09T15:44:07.7096868Z hint:
-build	Checkout	2026-10-09T15:44:07.7097410Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
-build	Checkout	2026-10-09T15:44:07.7098289Z hint: 'development'. The just-created branch can be renamed via this command:
-build	Checkout	2026-10-09T15:44:07.7099032Z hint:
-build	Checkout	2026-10-09T15:44:07.7099428Z hint: 	git branch -m <name>
-build	Checkout	2026-10-09T15:44:07.7099881Z hint:
-build	Checkout	2026-10-09T15:44:07.7100500Z hint: Disable this message with "git config set advice.defaultBranchName false"
-build	Checkout	2026-10-09T15:44:07.7101566Z Initialized empty Git repository in /home/runner/work/YAM-GG/YAM-GG/.git/
-build	Checkout	2026-10-09T15:44:07.7104296Z [command]/usr/bin/git remote add origin https://github.com/Yamin843/YAM-GG
-build	Checkout	2026-10-09T15:44:07.7169198Z ##[endgroup]
-build	Checkout	2026-10-09T15:44:07.7169853Z ##[group]Disabling automatic garbage collection
-build	Checkout	2026-10-09T15:44:07.7170307Z [command]/usr/bin/git config --local gc.auto 0
-build	Checkout	2026-10-09T15:44:07.7202694Z ##[endgroup]
-build	Checkout	2026-10-09T15:44:07.7203506Z ##[group]Setting up auth
-build	Checkout	2026-10-09T15:44:07.7209633Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
-build	Checkout	2026-10-09T15:44:07.7241500Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
-build	Checkout	2026-10-09T15:44:07.7552790Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
-build	Checkout	2026-10-09T15:44:07.7585076Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
-build	Checkout	2026-10-09T15:44:07.7765806Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
-build	Checkout	2026-10-09T15:44:07.7796434Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
-build	Checkout	2026-10-09T15:44:07.7981199Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
-build	Checkout	2026-10-09T15:44:07.8018297Z ##[endgroup]
-build	Checkout	2026-10-09T15:44:07.8018995Z ##[group]Fetching the repository
-build	Checkout	2026-10-09T15:44:07.8024967Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +791e6ea1659b96438a8caefbd882b0795b793b91:refs/remotes/origin/main
-build	Checkout	2026-10-09T15:44:10.7667958Z From https://github.com/Yamin843/YAM-GG
-build	Checkout	2026-10-09T15:44:10.7669782Z  * [new ref]         791e6ea1659b96438a8caefbd882b0795b793b91 -> origin/main
-build	Checkout	2026-10-09T15:44:10.7671752Z ##[endgroup]
-build	Checkout	2026-10-09T15:44:10.7672185Z ##[group]Determining the checkout info
-build	Checkout	2026-10-09T15:44:10.7673288Z ##[endgroup]
-build	Checkout	2026-10-09T15:44:10.7678799Z [command]/usr/bin/git sparse-checkout disable
-build	Checkout	2026-10-09T15:44:10.7728014Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
-build	Checkout	2026-10-09T15:44:10.7756299Z ##[group]Checking out the ref
-build	Checkout	2026-10-09T15:44:10.7765217Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
-build	Checkout	2026-10-09T15:44:10.9598952Z Switched to a new branch 'main'
-build	Checkout	2026-10-09T15:44:10.9602285Z branch 'main' set up to track 'origin/main'.
-build	Checkout	2026-10-09T15:44:10.9626676Z ##[endgroup]
-build	Checkout	2026-10-09T15:44:10.9669485Z [command]/usr/bin/git log -1 --format=%H
-build	Checkout	2026-10-09T15:44:10.9694649Z 791e6ea1659b96438a8caefbd882b0795b793b91
-build	Setup Java 17	﻿2026-10-09T15:44:10.9915708Z ##[group]Run actions/setup-java@v4
-build	Setup Java 17	2026-10-09T15:44:10.9915988Z with:
-build	Setup Java 17	2026-10-09T15:44:10.9916292Z   java-version: 17
-build	Setup Java 17	2026-10-09T15:44:10.9916447Z   distribution: temurin
-build	Setup Java 17	2026-10-09T15:44:10.9916607Z   java-package: jdk
-build	Setup Java 17	2026-10-09T15:44:10.9916770Z   check-latest: false
-build	Setup Java 17	2026-10-09T15:44:10.9916923Z   server-id: github
-build	Setup Java 17	2026-10-09T15:44:10.9917083Z   server-username: GITHUB_ACTOR
-build	Setup Java 17	2026-10-09T15:44:10.9917264Z   server-password: GITHUB_TOKEN
-build	Setup Java 17	2026-10-09T15:44:10.9917443Z   overwrite-settings: true
-build	Setup Java 17	2026-10-09T15:44:10.9917613Z   job-status: success
-build	Setup Java 17	2026-10-09T15:44:10.9919085Z   token: ***
-build	Setup Java 17	2026-10-09T15:44:10.9919229Z env:
-build	Setup Java 17	2026-10-09T15:44:10.9919385Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Setup Java 17	2026-10-09T15:44:10.9919602Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Setup Java 17	2026-10-09T15:44:10.9919825Z   NDK_VERSION: 26.1.10909125
-build	Setup Java 17	2026-10-09T15:44:10.9920022Z ##[endgroup]
-build	Setup Java 17	2026-10-09T15:44:11.1092281Z ##[warning]setup-java v4 is deprecated and will no longer receive updates. Please migrate to actions/setup-java@v5.
-build	Setup Java 17	2026-10-09T15:44:11.1097913Z ##[group]Installed distributions
-build	Setup Java 17	2026-10-09T15:44:11.1121282Z Resolved Java 17.0.20+1 from tool-cache
-build	Setup Java 17	2026-10-09T15:44:11.1121595Z Setting Java 17.0.20+1 as the default
-build	Setup Java 17	2026-10-09T15:44:11.1128645Z (node:2075) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
-build	Setup Java 17	2026-10-09T15:44:11.1129087Z (Use `node --trace-deprecation ...` to show where the warning was created)
-build	Setup Java 17	2026-10-09T15:44:11.1131170Z Creating toolchains.xml for JDK version 17 from temurin
-build	Setup Java 17	2026-10-09T15:44:11.1196301Z Writing to /home/runner/.m2/toolchains.xml
-build	Setup Java 17	2026-10-09T15:44:11.1196727Z 
-build	Setup Java 17	2026-10-09T15:44:11.1196817Z Java configuration:
-build	Setup Java 17	2026-10-09T15:44:11.1197026Z   Distribution: temurin
-build	Setup Java 17	2026-10-09T15:44:11.1197273Z   Version: 17.0.20+1
-build	Setup Java 17	2026-10-09T15:44:11.1197566Z   Path: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Setup Java 17	2026-10-09T15:44:11.1197754Z 
-build	Setup Java 17	2026-10-09T15:44:11.1198173Z ##[endgroup]
-build	Setup Java 17	2026-10-09T15:44:11.1218538Z Creating settings.xml with server-id: github
-build	Setup Java 17	2026-10-09T15:44:11.1234271Z Writing to /home/runner/.m2/settings.xml
-build	Reassemble libyamjs.a from parts	﻿2026-10-09T15:44:11.1387690Z ##[group]Run LIB_DIR=app/src/main/jni/all_libs/YAM-G/LIBYAMJS
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1388427Z ^[[36;1mLIB_DIR=app/src/main/jni/all_libs/YAM-G/LIBYAMJS^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1388783Z ^[[36;1mcd "$LIB_DIR"^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1389031Z ^[[36;1m^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1389276Z ^[[36;1mecho "=== parts available ==="^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1389625Z ^[[36;1mls -la libyamjs.a.part* 2>/dev/null || {^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1389973Z ^[[36;1m  echo "ERROR: no .part files found"^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1390307Z ^[[36;1m  exit 1^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1390532Z ^[[36;1m}^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1390741Z ^[[36;1m^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1390953Z ^[[36;1mecho ""^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1391200Z ^[[36;1mecho "=== concatenating ==="^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1391512Z ^[[36;1mcat libyamjs.a.part* > libyamjs.a^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1391804Z ^[[36;1m^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1392027Z ^[[36;1mecho ""^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1392306Z ^[[36;1mecho "=== result ==="^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1392654Z ^[[36;1mls -la libyamjs.a^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1393237Z ^[[36;1mSIZE=$(stat -c%s libyamjs.a)^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1393528Z ^[[36;1mecho "Size: $SIZE bytes"^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1393793Z ^[[36;1m^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1394044Z ^[[36;1mif [ "$SIZE" -lt 100000000 ]; then^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1394420Z ^[[36;1m  echo "ERROR: reassembled file too small"^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1394826Z ^[[36;1m  exit 1^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1395142Z ^[[36;1mfi^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1395402Z ^[[36;1m^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1395643Z ^[[36;1mecho ""^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1395923Z ^[[36;1mecho "=== cleanup parts ==="^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1396292Z ^[[36;1mrm -f libyamjs.a.part*^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1396623Z ^[[36;1m^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1396885Z ^[[36;1mecho "OK"^[[0m
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1638541Z shell: /usr/bin/bash -e {0}
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1638880Z env:
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1639066Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1639294Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1639500Z   NDK_VERSION: 26.1.10909125
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1639957Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1640277Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1640526Z ##[endgroup]
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1743791Z === parts available ===
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1757638Z -rw-r--r-- 1 runner runner 62914560 Oct  9 15:44 libyamjs.a.part00
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1758035Z -rw-r--r-- 1 runner runner 58531068 Oct  9 15:44 libyamjs.a.part01
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1759415Z 
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.1759566Z === concatenating ===
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.2052367Z 
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.2053322Z === result ===
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.2066147Z -rw-r--r-- 1 runner runner 121445628 Oct  9 15:44 libyamjs.a
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.2081039Z Size: 121445628 bytes
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.2081195Z 
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.2081281Z === cleanup parts ===
-build	Reassemble libyamjs.a from parts	2026-10-09T15:44:11.2178769Z OK
-build	Inspect preinstalled SDK	﻿2026-10-09T15:44:11.2219611Z ##[group]Run echo "ANDROID_HOME=$ANDROID_HOME"
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2219915Z ^[[36;1mecho "ANDROID_HOME=$ANDROID_HOME"^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2220161Z ^[[36;1mls -la $ANDROID_HOME/ 2>/dev/null || echo "(no $ANDROID_HOME)"^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2220412Z ^[[36;1mecho ""^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2220650Z ^[[36;1mecho "cmdline-tools:"^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2220869Z ^[[36;1mls $ANDROID_HOME/cmdline-tools/ 2>/dev/null || echo "(none)"^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2221095Z ^[[36;1mecho ""^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2221248Z ^[[36;1mecho "ndk preinstalled:"^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2221454Z ^[[36;1mls $ANDROID_HOME/ndk/ 2>/dev/null || echo "(none)"^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2221663Z ^[[36;1mecho ""^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2221832Z ^[[36;1mecho "build-tools:"^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2222038Z ^[[36;1mls $ANDROID_HOME/build-tools/ 2>/dev/null || echo "(none)"^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2222255Z ^[[36;1mecho ""^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2222401Z ^[[36;1mecho "platforms:"^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2222602Z ^[[36;1mls $ANDROID_HOME/platforms/ 2>/dev/null || echo "(none)"^[[0m
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2279890Z shell: /usr/bin/bash -e {0}
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2280110Z env:
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2280274Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2280498Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2280697Z   NDK_VERSION: 26.1.10909125
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2280921Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2281221Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2281462Z ##[endgroup]
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2358557Z ANDROID_HOME=/usr/local/lib/android/sdk
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2386609Z total 72
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2386892Z drwxrwxrwx 11 root root  4096 Oct  4 21:51 .
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2387222Z drwxr-xr-x  3 root root  4096 Oct  4 21:48 ..
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2387554Z -rw-r--r--  1 root root    16 Oct  4 21:51 .knownPackages
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2387802Z drwxrwxrwx  2 root root  4096 Oct  4 21:51 .temp
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2388090Z drwxrwxrwx  8 root root  4096 Oct  4 21:49 build-tools
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2388328Z drwxrwxrwx  4 root root  4096 Oct  4 21:51 cmake
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2388639Z drwxrwxrwx  3 root root  4096 Oct  4 21:48 cmdline-tools
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2388943Z drwxrwxrwx  4 root root  4096 Oct  4 21:51 extras
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2389168Z drwxrwxrwx  2 root root  4096 Oct  4 21:49 licenses
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2389426Z drwxrwxrwx  5 root root  4096 Oct  4 21:51 ndk
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2389792Z -rw-r--r--  1 root root 21987 Oct  4 21:51 packages-list.txt
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2390202Z drwxrwxrwx  3 root root  4096 Oct  4 21:49 platform-tools
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2390567Z drwxrwxrwx 20 root root  4096 Oct  4 21:50 platforms
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2390812Z 
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2390916Z cmdline-tools:
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2401543Z latest
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2403659Z 
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2403828Z ndk preinstalled:
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2416156Z 27.3.13750724
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2416379Z 29.0.14206865
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2416599Z 30.0.16248370
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2417824Z 
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2417927Z build-tools:
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2429762Z 34.0.0
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2430022Z 35.0.0
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2430225Z 35.0.1
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2430422Z 36.0.0
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2430611Z 36.1.0
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2430802Z 37.0.0
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2431169Z 
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2431282Z platforms:
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2442503Z android-34
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2442791Z android-34-ext10
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2443148Z android-34-ext11
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2443376Z android-34-ext12
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2443601Z android-34-ext8
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2443806Z android-35
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2443947Z android-35-ext14
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2444096Z android-35-ext15
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2444278Z android-36
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2444489Z android-36-ext18
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2444710Z android-36-ext19
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2444938Z android-36.1
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2445154Z android-37.0
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2445325Z android-37.1
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2445467Z android-37.2
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2445953Z android-37.2-beta1
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2446213Z android-37.2-beta2
-build	Inspect preinstalled SDK	2026-10-09T15:44:11.2446446Z android-37.2-beta3
-build	Install NDK + Build Tools	﻿2026-10-09T15:44:11.2474306Z ##[group]Run set -e
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2474531Z ^[[36;1mset -e^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2474672Z ^[[36;1m^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2474807Z ^[[36;1mCMDPATH=""^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2474977Z ^[[36;1mfor v in 19.0 18.0 17.0 16.0 15.0 latest; do^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2475215Z ^[[36;1m    if [ -d "$ANDROID_HOME/cmdline-tools/$v/bin" ]; then^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2475461Z ^[[36;1m        CMDPATH="$ANDROID_HOME/cmdline-tools/$v/bin"^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2475666Z ^[[36;1m        break^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2475815Z ^[[36;1m    fi^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2475956Z ^[[36;1mdone^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2476090Z ^[[36;1m^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2476234Z ^[[36;1mif [ -z "$CMDPATH" ]; then^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2476426Z ^[[36;1m    echo "ERROR: cmdline-tools not found"^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2476665Z ^[[36;1m    find $ANDROID_HOME -name sdkmanager -type f 2>/dev/null^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2476880Z ^[[36;1m    exit 1^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2477035Z ^[[36;1mfi^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2477169Z ^[[36;1m^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2477348Z ^[[36;1mecho "Using cmdline-tools at: $CMDPATH"^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2477551Z ^[[36;1mSDKMANAGER="$CMDPATH/sdkmanager"^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2477727Z ^[[36;1m^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2477898Z ^[[36;1myes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2478105Z ^[[36;1m^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2478283Z ^[[36;1m"$SDKMANAGER" --install "ndk;$NDK_VERSION" 2>&1 | tail -3^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2478542Z ^[[36;1m"$SDKMANAGER" --install "build-tools;34.0.0" 2>&1 | tail -3^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2478806Z ^[[36;1m"$SDKMANAGER" --install "platforms;android-34" 2>&1 | tail -3^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2479024Z ^[[36;1m^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2479155Z ^[[36;1mecho ""^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2479298Z ^[[36;1mecho "NDK:"^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2479453Z ^[[36;1mls -la $ANDROID_HOME/ndk/^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2479670Z ^[[36;1m$ANDROID_HOME/ndk/$NDK_VERSION/ndk-build --version^[[0m
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2536177Z shell: /usr/bin/bash -e {0}
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2536358Z env:
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2536534Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2536735Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2536929Z   NDK_VERSION: 26.1.10909125
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2537156Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2537456Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2537695Z ##[endgroup]
-build	Install NDK + Build Tools	2026-10-09T15:44:11.2614144Z Using cmdline-tools at: /usr/local/lib/android/sdk/cmdline-tools/latest/bin
-build	Install NDK + Build Tools	2026-10-09T15:44:17.3118863Z yes: standard output: Broken pipe
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4884133Z Loading package information...                                                  
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4884780Z Loading local repository...                                                     
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4885118Z [                                       ] 3% Loading local repository...        
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4885745Z [                                       ] 3% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4886067Z [=                                      ] 3% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4886376Z [=                                      ] 4% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4886678Z [=                                      ] 5% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4886988Z [==                                     ] 5% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4887296Z [==                                     ] 6% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4887601Z [==                                     ] 7% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4887883Z [==                                     ] 7% Computing updates...               
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4888177Z [===                                    ] 8% Computing updates...               
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4888479Z [===                                    ] 10% Computing updates...              
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4888997Z [===                                    ] 10% Installing NDK (Side by side) 26.1
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4889308Z [===                                    ] 10% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4889624Z [====                                   ] 10% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4889956Z [====                                   ] 11% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4890291Z [====                                   ] 12% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4890629Z [=====                                  ] 13% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4890945Z [=====                                  ] 14% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4891275Z [=====                                  ] 15% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4891619Z [======                                 ] 15% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4891949Z [======                                 ] 16% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4892266Z [======                                 ] 17% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4892571Z [=======                                ] 18% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4892999Z [=======                                ] 19% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4893329Z [=======                                ] 20% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4893636Z [========                               ] 20% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4894008Z [========                               ] 21% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4894327Z [========                               ] 22% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4894627Z [=========                              ] 23% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4894927Z [=========                              ] 24% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4895240Z [=========                              ] 25% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4895551Z [==========                             ] 25% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4895863Z [==========                             ] 26% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4896171Z [==========                             ] 27% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4896493Z [===========                            ] 28% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4896802Z [===========                            ] 29% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4897163Z [===========                            ] 30% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4897564Z [============                           ] 30% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4898011Z [============                           ] 31% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4898328Z [============                           ] 32% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4898641Z [============                           ] 33% Downloading android-ndk-r26b-linux
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4898957Z [============                           ] 33% Unzipping...                      
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4899273Z [============                           ] 33% Unzipping... android-ndk-r26b/    
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4899588Z [============                           ] 33% Unzipping... android-ndk-r26b/CHAN
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4899895Z [=============                          ] 33% Unzipping... android-ndk-r26b/CHAN
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4900199Z [=============                          ] 33% Unzipping... android-ndk-r26b/wrap
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4900507Z [=============                          ] 33% Unzipping... android-ndk-r26b/preb
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4900818Z [=============                          ] 33% Unzipping... android-ndk-r26b/buil
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4901135Z [=============                          ] 33% Unzipping... android-ndk-r26b/NOTI
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4901593Z [=============                          ] 33% Unzipping... android-ndk-r26b/ndk-
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4901907Z [=============                          ] 33% Unzipping... android-ndk-r26b/NOTI
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4902224Z [=============                          ] 33% Unzipping... android-ndk-r26b/meta
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4902529Z [=============                          ] 33% Unzipping... android-ndk-r26b/ndk-
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4902838Z [=============                          ] 33% Unzipping... android-ndk-r26b/pyth
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4903272Z [=============                          ] 33% Unzipping... android-ndk-r26b/sour
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4903583Z [=============                          ] 33% Unzipping... android-ndk-r26b/simp
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4903893Z [=============                          ] 33% Unzipping... android-ndk-r26b/ndk-
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4904209Z [=============                          ] 33% Unzipping... android-ndk-r26b/READ
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4904526Z [=============                          ] 33% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4904838Z [=============                          ] 34% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4905172Z [=============                          ] 35% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4905596Z [==============                         ] 35% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4905906Z [==============                         ] 36% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4906218Z [==============                         ] 37% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4906536Z [===============                        ] 38% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4906850Z [===============                        ] 39% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4907164Z [===============                        ] 40% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4907475Z [================                       ] 40% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4907787Z [================                       ] 41% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4908088Z [================                       ] 42% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4908395Z [=================                      ] 43% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4908707Z [=================                      ] 44% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4909024Z [=================                      ] 45% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4909316Z [==================                     ] 45% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4909511Z [==================                     ] 46% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4909705Z [==================                     ] 47% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4910111Z [===================                    ] 48% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4910308Z [===================                    ] 49% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4910505Z [===================                    ] 50% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4910801Z [====================                   ] 50% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4911117Z [====================                   ] 51% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4911434Z [====================                   ] 52% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4911667Z [=====================                  ] 53% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4911859Z [=====================                  ] 54% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4912053Z [=====================                  ] 55% Unzipping... android-ndk-r26b/tool
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4912250Z [=====================                  ] 55% Unzipping... android-ndk-r26b/ndk-
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4912536Z [=====================                  ] 55% Unzipping... android-ndk-r26b/shad
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4912732Z [=======================================] 100% Unzipping... android-ndk-r26b/sha
-build	Install NDK + Build Tools	2026-10-09T15:44:41.4913716Z 
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4777313Z Loading package information...                                                  
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4777780Z Loading local repository...                                                     
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4778005Z [                                       ] 3% Loading local repository...        
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4778204Z [                                       ] 3% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4778392Z [=                                      ] 3% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4778582Z [=                                      ] 4% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4778807Z [=                                      ] 5% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4779008Z [==                                     ] 5% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4779196Z [==                                     ] 6% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4779383Z [==                                     ] 7% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4779569Z [==                                     ] 7% Computing updates...               
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4779753Z [===                                    ] 8% Computing updates...               
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4779944Z [===                                    ] 10% Computing updates...              
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4780132Z [=======================================] 100% Computing updates...             
-build	Install NDK + Build Tools	2026-10-09T15:44:42.4780252Z 
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4041635Z Loading package information...                                                  
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4042035Z Loading local repository...                                                     
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4042281Z [                                       ] 3% Loading local repository...        
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4042482Z [                                       ] 3% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4042681Z [=                                      ] 3% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4043000Z [=                                      ] 4% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4043282Z [=                                      ] 5% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4043480Z [==                                     ] 5% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4043674Z [==                                     ] 6% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4043870Z [==                                     ] 7% Fetch remote repository...         
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4044336Z [==                                     ] 7% Computing updates...               
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4044535Z [===                                    ] 8% Computing updates...               
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4044733Z [===                                    ] 10% Computing updates...              
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4044926Z [=======================================] 100% Computing updates...             
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4045053Z 
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4045339Z 
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4045478Z NDK:
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4060025Z total 24
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4060224Z drwxrwxrwx  6 root   root   4096 Oct  9 15:44 .
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4060428Z drwxrwxrwx 11 root   root   4096 Oct  4 21:51 ..
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4060635Z drwxr-xr-x 11 runner runner 4096 Oct  9 15:44 26.1.10909125
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4060848Z drwxrwxrwx 11 root   root   4096 Oct  4 21:51 27.3.13750724
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4061116Z drwxrwxrwx 11 root   root   4096 Oct  4 21:51 29.0.14206865
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4061423Z drwxrwxrwx 10 root   root   4096 Oct  4 21:50 30.0.16248370
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4136188Z GNU Make 4.3
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4136684Z Built for x86_64-pc-linux-gnu
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4136946Z Copyright (C) 1988-2020 Free Software Foundation, Inc.
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4137337Z License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4137868Z This is free software: you are free to change and redistribute it.
-build	Install NDK + Build Tools	2026-10-09T15:44:43.4138210Z There is NO WARRANTY, to the extent permitted by law.
-build	Verify project layout	﻿2026-10-09T15:44:43.4169388Z ##[group]Run echo "=== jni ==="
-build	Verify project layout	2026-10-09T15:44:43.4169591Z ^[[36;1mecho "=== jni ==="^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4169731Z ^[[36;1mls app/src/main/jni/^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4169863Z ^[[36;1mecho ""^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4169986Z ^[[36;1mecho "=== all_libs ==="^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4170134Z ^[[36;1mls app/src/main/jni/all_libs/^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4170279Z ^[[36;1mecho ""^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4170399Z ^[[36;1mecho "=== YAM-G/LIBYAMJS ==="^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4170592Z ^[[36;1mls -la app/src/main/jni/all_libs/YAM-G/LIBYAMJS/^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4170767Z ^[[36;1mecho ""^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4170881Z ^[[36;1mecho "=== imgui ==="^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4171040Z ^[[36;1mls app/src/main/jni/all_libs/imgui/ | head -10^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4171207Z ^[[36;1mecho ""^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4171319Z ^[[36;1mecho "=== java ==="^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4171466Z ^[[36;1mls app/src/main/java/com/yamgg/modview/^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4171623Z ^[[36;1mecho ""^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4171740Z ^[[36;1mecho "=== scripts ==="^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4171896Z ^[[36;1mls scripts/^[[0m
-build	Verify project layout	2026-10-09T15:44:43.4225419Z shell: /usr/bin/bash -e {0}
-build	Verify project layout	2026-10-09T15:44:43.4225565Z env:
-build	Verify project layout	2026-10-09T15:44:43.4225691Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Verify project layout	2026-10-09T15:44:43.4225861Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Verify project layout	2026-10-09T15:44:43.4226033Z   NDK_VERSION: 26.1.10909125
-build	Verify project layout	2026-10-09T15:44:43.4226225Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Verify project layout	2026-10-09T15:44:43.4226499Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Verify project layout	2026-10-09T15:44:43.4226710Z ##[endgroup]
-build	Verify project layout	2026-10-09T15:44:43.4291967Z === jni ===
-build	Verify project layout	2026-10-09T15:44:43.4301723Z Android.mk
-build	Verify project layout	2026-10-09T15:44:43.4301894Z Application.mk
-build	Verify project layout	2026-10-09T15:44:43.4302062Z Bridge
-build	Verify project layout	2026-10-09T15:44:43.4302219Z Core
-build	Verify project layout	2026-10-09T15:44:43.4302369Z Includes
-build	Verify project layout	2026-10-09T15:44:43.4302510Z JNI
-build	Verify project layout	2026-10-09T15:44:43.4302608Z Main.cpp
-build	Verify project layout	2026-10-09T15:44:43.4302770Z UI
-build	Verify project layout	2026-10-09T15:44:43.4303074Z all_libs
-build	Verify project layout	2026-10-09T15:44:43.4303331Z 
-build	Verify project layout	2026-10-09T15:44:43.4303424Z === all_libs ===
-build	Verify project layout	2026-10-09T15:44:43.4312018Z Dobby
-build	Verify project layout	2026-10-09T15:44:43.4312174Z KittyMemory
-build	Verify project layout	2026-10-09T15:44:43.4312328Z XDL
-build	Verify project layout	2026-10-09T15:44:43.4312473Z YAM-G
-build	Verify project layout	2026-10-09T15:44:43.4312623Z asmjit
-build	Verify project layout	2026-10-09T15:44:43.4312773Z imgui
-build	Verify project layout	2026-10-09T15:44:43.4313023Z json
-build	Verify project layout	2026-10-09T15:44:43.4313481Z 
-build	Verify project layout	2026-10-09T15:44:43.4313615Z === YAM-G/LIBYAMJS ===
-build	Verify project layout	2026-10-09T15:44:43.4323510Z total 118616
-build	Verify project layout	2026-10-09T15:44:43.4323818Z drwxr-xr-x 3 runner runner      4096 Oct  9 15:44 .
-build	Verify project layout	2026-10-09T15:44:43.4324210Z drwxr-xr-x 4 runner runner      4096 Oct  9 15:44 ..
-build	Verify project layout	2026-10-09T15:44:43.4324415Z -rw-r--r-- 1 runner runner       189 Oct  9 15:44 Android.mk
-build	Verify project layout	2026-10-09T15:44:43.4324631Z drwxr-xr-x 2 runner runner      4096 Oct  9 15:44 include
-build	Verify project layout	2026-10-09T15:44:43.4324911Z -rw-r--r-- 1 runner runner 121445628 Oct  9 15:44 libyamjs.a
-build	Verify project layout	2026-10-09T15:44:43.4325186Z 
-build	Verify project layout	2026-10-09T15:44:43.4325259Z === imgui ===
-build	Verify project layout	2026-10-09T15:44:43.4335315Z LICENSE.txt
-build	Verify project layout	2026-10-09T15:44:43.4335532Z backends
-build	Verify project layout	2026-10-09T15:44:43.4335636Z docs
-build	Verify project layout	2026-10-09T15:44:43.4335747Z examples
-build	Verify project layout	2026-10-09T15:44:43.4337663Z imconfig.h
-build	Verify project layout	2026-10-09T15:44:43.4337856Z imgui.cpp
-build	Verify project layout	2026-10-09T15:44:43.4338012Z imgui.h
-build	Verify project layout	2026-10-09T15:44:43.4338168Z imgui_demo.cpp
-build	Verify project layout	2026-10-09T15:44:43.4338351Z imgui_draw.cpp
-build	Verify project layout	2026-10-09T15:44:43.4338466Z imgui_internal.h
-build	Verify project layout	2026-10-09T15:44:43.4338540Z 
-build	Verify project layout	2026-10-09T15:44:43.4338589Z === java ===
-build	Verify project layout	2026-10-09T15:44:43.4345032Z ModView.java
-build	Verify project layout	2026-10-09T15:44:43.4345207Z ModView.java.pre_passthrough
-build	Verify project layout	2026-10-09T15:44:43.4345362Z ModViewHelper.java
-build	Verify project layout	2026-10-09T15:44:43.4346495Z 
-build	Verify project layout	2026-10-09T15:44:43.4346611Z === scripts ===
-build	Verify project layout	2026-10-09T15:44:43.4354524Z dex_to_header.py
-build	Verify project layout	2026-10-09T15:44:43.4354702Z errors_only.sh
-build	Verify project layout	2026-10-09T15:44:43.4354817Z generate-dex.sh
-build	Verify project layout	2026-10-09T15:44:43.4354929Z git_setup.sh
-build	Verify project layout	2026-10-09T15:44:43.4355036Z push.sh
-build	Verify project layout	2026-10-09T15:44:43.4355147Z show_build_error.sh
-build	Verify project layout	2026-10-09T15:44:43.4355263Z verify.sh
-build	Verify Dobby source	﻿2026-10-09T15:44:43.4378409Z ##[group]Run echo "=== Dobby dir ==="
-build	Verify Dobby source	2026-10-09T15:44:43.4378607Z ^[[36;1mecho "=== Dobby dir ==="^[[0m
-build	Verify Dobby source	2026-10-09T15:44:43.4378769Z ^[[36;1mls app/src/main/jni/all_libs/Dobby/^[[0m
-build	Verify Dobby source	2026-10-09T15:44:43.4378920Z ^[[36;1mecho ""^[[0m
-build	Verify Dobby source	2026-10-09T15:44:43.4379039Z ^[[36;1mecho "=== source/ ==="^[[0m
-build	Verify Dobby source	2026-10-09T15:44:43.4379216Z ^[[36;1mls app/src/main/jni/all_libs/Dobby/source/ | head -10^[[0m
-build	Verify Dobby source	2026-10-09T15:44:43.4379397Z ^[[36;1mecho ""^[[0m
-build	Verify Dobby source	2026-10-09T15:44:43.4379517Z ^[[36;1mecho "=== source file count ==="^[[0m
-build	Verify Dobby source	2026-10-09T15:44:43.4379753Z ^[[36;1mfind app/src/main/jni/all_libs/Dobby/source -name "*.cc" -o -name "*.c" | wc -l^[[0m
-build	Verify Dobby source	2026-10-09T15:44:43.4428628Z shell: /usr/bin/bash -e {0}
-build	Verify Dobby source	2026-10-09T15:44:43.4428768Z env:
-build	Verify Dobby source	2026-10-09T15:44:43.4428887Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Verify Dobby source	2026-10-09T15:44:43.4429058Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Verify Dobby source	2026-10-09T15:44:43.4429218Z   NDK_VERSION: 26.1.10909125
-build	Verify Dobby source	2026-10-09T15:44:43.4429405Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Verify Dobby source	2026-10-09T15:44:43.4429691Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Verify Dobby source	2026-10-09T15:44:43.4429903Z ##[endgroup]
-build	Verify Dobby source	2026-10-09T15:44:43.4491060Z === Dobby dir ===
-build	Verify Dobby source	2026-10-09T15:44:43.4499969Z Android.mk
-build	Verify Dobby source	2026-10-09T15:44:43.4500140Z builtin-plugin
-build	Verify Dobby source	2026-10-09T15:44:43.4500307Z cmake
-build	Verify Dobby source	2026-10-09T15:44:43.4500458Z external
-build	Verify Dobby source	2026-10-09T15:44:43.4500607Z include
-build	Verify Dobby source	2026-10-09T15:44:43.4500741Z source
-build	Verify Dobby source	2026-10-09T15:44:43.4501363Z 
-build	Verify Dobby source	2026-10-09T15:44:43.4501466Z === source/ ===
-build	Verify Dobby source	2026-10-09T15:44:43.4510534Z Backend
-build	Verify Dobby source	2026-10-09T15:44:43.4510732Z InstructionRelocation
-build	Verify Dobby source	2026-10-09T15:44:43.4511110Z InterceptEntry.cpp
-build	Verify Dobby source	2026-10-09T15:44:43.4511292Z InterceptEntry.h
-build	Verify Dobby source	2026-10-09T15:44:43.4511466Z InterceptRouting
-build	Verify Dobby source	2026-10-09T15:44:43.4511636Z Interceptor.cpp
-build	Verify Dobby source	2026-10-09T15:44:43.4511804Z Interceptor.h
-build	Verify Dobby source	2026-10-09T15:44:43.4511979Z MemoryAllocator
-build	Verify Dobby source	2026-10-09T15:44:43.4512169Z PlatformUnifiedInterface
-build	Verify Dobby source	2026-10-09T15:44:43.4512369Z TrampolineBridge
-build	Verify Dobby source	2026-10-09T15:44:43.4512476Z 
-build	Verify Dobby source	2026-10-09T15:44:43.4512565Z === source file count ===
-build	Verify Dobby source	2026-10-09T15:44:43.4531591Z 83
-build	Generate embedded dex	﻿2026-10-09T15:44:43.4556903Z ##[group]Run chmod +x scripts/generate-dex.sh scripts/dex_to_header.py
-build	Generate embedded dex	2026-10-09T15:44:43.4557195Z ^[[36;1mchmod +x scripts/generate-dex.sh scripts/dex_to_header.py^[[0m
-build	Generate embedded dex	2026-10-09T15:44:43.4557399Z ^[[36;1mbash scripts/generate-dex.sh^[[0m
-build	Generate embedded dex	2026-10-09T15:44:43.4607471Z shell: /usr/bin/bash -e {0}
-build	Generate embedded dex	2026-10-09T15:44:43.4607620Z env:
-build	Generate embedded dex	2026-10-09T15:44:43.4607744Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Generate embedded dex	2026-10-09T15:44:43.4607915Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Generate embedded dex	2026-10-09T15:44:43.4608245Z   NDK_VERSION: 26.1.10909125
-build	Generate embedded dex	2026-10-09T15:44:43.4608437Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Generate embedded dex	2026-10-09T15:44:43.4608701Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Generate embedded dex	2026-10-09T15:44:43.4608910Z ##[endgroup]
-build	Generate embedded dex	2026-10-09T15:44:43.4775214Z Build tools: 37.0.0
-build	Generate embedded dex	2026-10-09T15:44:43.4775575Z Platform: android-37.2-beta3
-build	Generate embedded dex	2026-10-09T15:44:43.4775896Z Android JAR: /usr/local/lib/android/sdk/platforms/android-37.2-beta3/android.jar
-build	Generate embedded dex	2026-10-09T15:44:43.4776231Z D8: /usr/local/lib/android/sdk/build-tools/37.0.0/d8
-build	Generate embedded dex	2026-10-09T15:44:43.4776408Z Compiling Java sources...
-build	Generate embedded dex	2026-10-09T15:44:44.3748517Z Note: /home/runner/work/YAM-GG/YAM-GG/app/src/main/java/com/yamgg/modview/ModView.java uses or overrides a deprecated API.
-build	Generate embedded dex	2026-10-09T15:44:44.3749296Z Note: Recompile with -Xlint:deprecation for details.
-build	Generate embedded dex	2026-10-09T15:44:44.3753653Z Compiled classes:
-build	Generate embedded dex	2026-10-09T15:44:44.3767265Z /home/runner/work/YAM-GG/YAM-GG/build/dex-build/classes/com/yamgg/modview/ModView$2.class
-build	Generate embedded dex	2026-10-09T15:44:44.3767816Z /home/runner/work/YAM-GG/YAM-GG/build/dex-build/classes/com/yamgg/modview/ModViewHelper.class
-build	Generate embedded dex	2026-10-09T15:44:44.3768262Z /home/runner/work/YAM-GG/YAM-GG/build/dex-build/classes/com/yamgg/modview/ModView.class
-build	Generate embedded dex	2026-10-09T15:44:44.3768774Z /home/runner/work/YAM-GG/YAM-GG/build/dex-build/classes/com/yamgg/modview/ModView$1.class
-build	Generate embedded dex	2026-10-09T15:44:44.3769192Z Converting to DEX...
-build	Generate embedded dex	2026-10-09T15:44:46.3659592Z DEX size: 7004 bytes
-build	Generate embedded dex	2026-10-09T15:44:46.3659923Z Generating C header...
-build	Generate embedded dex	2026-10-09T15:44:46.3800970Z Generated header:
-build	Generate embedded dex	2026-10-09T15:44:46.3809496Z 454 /home/runner/work/YAM-GG/YAM-GG/app/src/main/jni/Generated/embedded_dex.h
-build	Generate embedded dex	2026-10-09T15:44:46.3818054Z // Auto-generated. Do not edit.
-build	Generate embedded dex	2026-10-09T15:44:46.3818298Z #ifndef YAMGG_EMBEDDED_DEX_H
-build	Generate embedded dex	2026-10-09T15:44:46.3818441Z #define YAMGG_EMBEDDED_DEX_H
-build	Generate embedded dex	2026-10-09T15:44:46.3818531Z 
-build	Generate embedded dex	2026-10-09T15:44:46.3818586Z #include <cstddef>
-build	Generate embedded dex	2026-10-09T15:44:46.3818660Z 
-build	Generate embedded dex	2026-10-09T15:44:46.3818709Z namespace yamgg {
-build	Generate embedded dex	2026-10-09T15:44:46.3818869Z 
-build	Generate embedded dex	2026-10-09T15:44:46.3818967Z static const unsigned int kDexSize = 7004;
-build	Generate embedded dex	2026-10-09T15:44:46.3819152Z 
-build	Generate embedded dex	2026-10-09T15:44:46.3819311Z DEX generation complete
-build	Verify dex generation	﻿2026-10-09T15:44:46.3855578Z ##[group]Run ls -la app/src/main/jni/Generated/
-build	Verify dex generation	2026-10-09T15:44:46.3855946Z ^[[36;1mls -la app/src/main/jni/Generated/^[[0m
-build	Verify dex generation	2026-10-09T15:44:46.3856254Z ^[[36;1mwc -l app/src/main/jni/Generated/embedded_dex.h^[[0m
-build	Verify dex generation	2026-10-09T15:44:46.3856587Z ^[[36;1mhead -15 app/src/main/jni/Generated/embedded_dex.h^[[0m
-build	Verify dex generation	2026-10-09T15:44:46.3915703Z shell: /usr/bin/bash -e {0}
-build	Verify dex generation	2026-10-09T15:44:46.3915934Z env:
-build	Verify dex generation	2026-10-09T15:44:46.3916121Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Verify dex generation	2026-10-09T15:44:46.3916398Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Verify dex generation	2026-10-09T15:44:46.3916658Z   NDK_VERSION: 26.1.10909125
-build	Verify dex generation	2026-10-09T15:44:46.3916962Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Verify dex generation	2026-10-09T15:44:46.3917395Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Verify dex generation	2026-10-09T15:44:46.3917701Z ##[endgroup]
-build	Verify dex generation	2026-10-09T15:44:46.3999800Z total 52
-build	Verify dex generation	2026-10-09T15:44:46.4000138Z drwxr-xr-x 2 runner runner  4096 Oct  9 15:44 .
-build	Verify dex generation	2026-10-09T15:44:46.4000493Z drwxr-xr-x 9 runner runner  4096 Oct  9 15:44 ..
-build	Verify dex generation	2026-10-09T15:44:46.4000916Z -rw-r--r-- 1 runner runner 44051 Oct  9 15:44 embedded_dex.h
-build	Verify dex generation	2026-10-09T15:44:46.4008988Z 454 app/src/main/jni/Generated/embedded_dex.h
-build	Verify dex generation	2026-10-09T15:44:46.4017237Z // Auto-generated. Do not edit.
-build	Verify dex generation	2026-10-09T15:44:46.4017518Z #ifndef YAMGG_EMBEDDED_DEX_H
-build	Verify dex generation	2026-10-09T15:44:46.4017738Z #define YAMGG_EMBEDDED_DEX_H
-build	Verify dex generation	2026-10-09T15:44:46.4017880Z 
-build	Verify dex generation	2026-10-09T15:44:46.4017935Z #include <cstddef>
-build	Verify dex generation	2026-10-09T15:44:46.4018010Z 
-build	Verify dex generation	2026-10-09T15:44:46.4018064Z namespace yamgg {
-build	Verify dex generation	2026-10-09T15:44:46.4018135Z 
-build	Verify dex generation	2026-10-09T15:44:46.4018204Z static const unsigned int kDexSize = 7004;
-build	Verify dex generation	2026-10-09T15:44:46.4018315Z 
-build	Verify dex generation	2026-10-09T15:44:46.4018378Z static const unsigned char kDexBytes[] = {
-build	Verify dex generation	2026-10-09T15:44:46.4018611Z     0x64, 0x65, 0x78, 0x0a, 0x30, 0x33, 0x37, 0x00, 0x46, 0xa0, 0xa7, 0x9a, 0x10, 0x97, 0x2e, 0xab,
-build	Verify dex generation	2026-10-09T15:44:46.4019109Z     0x9c, 0x99, 0x62, 0x83, 0x82, 0xef, 0x49, 0xc3, 0x7b, 0x20, 0x93, 0x90, 0x60, 0x02, 0xd0, 0x71,
-build	Verify dex generation	2026-10-09T15:44:46.4019389Z     0x5c, 0x1b, 0x00, 0x00, 0x70, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00,
-build	Verify dex generation	2026-10-09T15:44:46.4019672Z     0x00, 0x00, 0x00, 0x00, 0x8c, 0x1a, 0x00, 0x00, 0x88, 0x00, 0x00, 0x00, 0x70, 0x00, 0x00, 0x00,
-build	Build .so with ndk-build	﻿2026-10-09T15:44:46.4058866Z ##[group]Run set -e
-build	Build .so with ndk-build	2026-10-09T15:44:46.4059040Z ^[[36;1mset -e^[[0m
-build	Build .so with ndk-build	2026-10-09T15:44:46.4059160Z ^[[36;1mcd app/src/main/jni^[[0m
-build	Build .so with ndk-build	2026-10-09T15:44:46.4059323Z ^[[36;1m$ANDROID_HOME/ndk/$NDK_VERSION/ndk-build \^[[0m
-build	Build .so with ndk-build	2026-10-09T15:44:46.4059506Z ^[[36;1m  NDK_PROJECT_PATH=. \^[[0m
-build	Build .so with ndk-build	2026-10-09T15:44:46.4059665Z ^[[36;1m  APP_BUILD_SCRIPT=./Android.mk \^[[0m
-build	Build .so with ndk-build	2026-10-09T15:44:46.4059838Z ^[[36;1m  NDK_APPLICATION_MK=./Application.mk \^[[0m
-build	Build .so with ndk-build	2026-10-09T15:44:46.4060006Z ^[[36;1m  NDK_OUT=/tmp/ndk-out \^[[0m
-build	Build .so with ndk-build	2026-10-09T15:44:46.4060156Z ^[[36;1m  NDK_LIBS_OUT=/tmp/ndk-libs \^[[0m
-build	Build .so with ndk-build	2026-10-09T15:44:46.4060328Z ^[[36;1m  V=1 2>&1 | tee /tmp/ndk-build.log^[[0m
-build	Build .so with ndk-build	2026-10-09T15:44:46.4113141Z shell: /usr/bin/bash -e {0}
-build	Build .so with ndk-build	2026-10-09T15:44:46.4113292Z env:
-build	Build .so with ndk-build	2026-10-09T15:44:46.4113416Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Build .so with ndk-build	2026-10-09T15:44:46.4113587Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Build .so with ndk-build	2026-10-09T15:44:46.4113752Z   NDK_VERSION: 26.1.10909125
-build	Build .so with ndk-build	2026-10-09T15:44:46.4113948Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Build .so with ndk-build	2026-10-09T15:44:46.4114258Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Build .so with ndk-build	2026-10-09T15:44:46.4114467Z ##[endgroup]
-build	Build .so with ndk-build	2026-10-09T15:44:46.5596447Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:YAMGG: non-system libraries in linker flags: -lc++_static -lunwind    
-build	Build .so with ndk-build	2026-10-09T15:44:46.5597181Z Android NDK:     This is likely to result in incorrect builds. Try using LOCAL_STATIC_LIBRARIES    
-build	Build .so with ndk-build	2026-10-09T15:44:46.5597716Z Android NDK:     or LOCAL_SHARED_LIBRARIES instead to list the library dependencies of the    
-build	Build .so with ndk-build	2026-10-09T15:44:46.5598155Z Android NDK:     current module    
-build	Build .so with ndk-build	2026-10-09T15:44:46.5598565Z Android NDK: WARNING:all_libs/XDL/Android.mk:xdl: LOCAL_LDLIBS is always ignored for static libraries    
-build	Build .so with ndk-build	2026-10-09T15:44:46.5599181Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:yamcpp: LOCAL_LDLIBS is always ignored for static libraries    
-build	Build .so with ndk-build	2026-10-09T15:44:46.5599876Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:yamcpp: non-system libraries in linker flags: -lc++_static -lunwind    
-build	Build .so with ndk-build	2026-10-09T15:44:46.5600509Z Android NDK:     This is likely to result in incorrect builds. Try using LOCAL_STATIC_LIBRARIES    
-build	Build .so with ndk-build	2026-10-09T15:44:46.5601029Z Android NDK:     or LOCAL_SHARED_LIBRARIES instead to list the library dependencies of the    
-build	Build .so with ndk-build	2026-10-09T15:44:46.5601429Z Android NDK:     current module    
-build	Build .so with ndk-build	2026-10-09T15:44:46.5601691Z rm -f /tmp/ndk-libs/arm64-v8a/*
-build	Build .so with ndk-build	2026-10-09T15:44:46.5634694Z [arm64-v8a] Compile++      : YAMGG <= Main.cpp
-build	Build .so with ndk-build	2026-10-09T15:44:46.5635346Z rm -f /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o
-build	Build .so with ndk-build	2026-10-09T15:44:46.5645506Z /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ -MMD -MP -MF /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o.d -target aarch64-none-linux-android24 -fdata-sections -ffunction-sections -fstack-protector-strong -funwind-tables -no-canonical-prefixes  --sysroot /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -Wno-invalid-command-line-argument -Wno-unused-command-line-argument  -D_FORTIFY_SOURCE=2 -fno-exceptions -fno-rtti -fpic -O2 -DNDEBUG  -I. -I./Core -I./UI -I./UI/Tabs -I./UI/Widgets -I./Bridge -I./JNI -I./Generated -I./Includes -I./all_libs/imgui -I./all_libs/imgui/backends -I./all_libs/json -I./all_libs/YAM-G/LIBYAMJS/include -I./all_libs/YAM-G/wrapper/include -I./all_libs/XDL -I./all_libs/XDL/include -I./all_libs/Dobby/prebuilt/include -I./all_libs/KittyMemory/KittyMemory -I./all_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/XDL -Iall_libs/XDL/include -Iall_libs/YAM-G/wrapper/include -Iall_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/YAM-G/LIBYAMJS/include -I. -O2 -DNDEBUG -w -std=c++17 -fexceptions -frtti -O2 -DNDEBUG -w  -DANDROID -w -O2 -DNDEBUG -Wformat -Werror=format-security -std=c++17 -fexceptions -frtti -fPIC -w -O2 -DNDEBUG -DIMGUI_IMPL_OPENGL_ES3=1 -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1 -Wno-error -DYAM_ARCH_ARM64=1 -frtti -fexceptions  -c  ./Main.cpp -o /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o
-build	Build .so with ndk-build	2026-10-09T15:44:46.8582106Z [arm64-v8a] Compile++      : YAMGG <= NativeMethods.cpp
-build	Build .so with ndk-build	2026-10-09T15:44:46.8582611Z rm -f /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o
-build	Build .so with ndk-build	2026-10-09T15:44:46.8591947Z /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ -MMD -MP -MF /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o.d -target aarch64-none-linux-android24 -fdata-sections -ffunction-sections -fstack-protector-strong -funwind-tables -no-canonical-prefixes  --sysroot /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -Wno-invalid-command-line-argument -Wno-unused-command-line-argument  -D_FORTIFY_SOURCE=2 -fno-exceptions -fno-rtti -fpic -O2 -DNDEBUG  -I. -I./Core -I./UI -I./UI/Tabs -I./UI/Widgets -I./Bridge -I./JNI -I./Generated -I./Includes -I./all_libs/imgui -I./all_libs/imgui/backends -I./all_libs/json -I./all_libs/YAM-G/LIBYAMJS/include -I./all_libs/YAM-G/wrapper/include -I./all_libs/XDL -I./all_libs/XDL/include -I./all_libs/Dobby/prebuilt/include -I./all_libs/KittyMemory/KittyMemory -I./all_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/XDL -Iall_libs/XDL/include -Iall_libs/YAM-G/wrapper/include -Iall_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/YAM-G/LIBYAMJS/include -I. -O2 -DNDEBUG -w -std=c++17 -fexceptions -frtti -O2 -DNDEBUG -w  -DANDROID -w -O2 -DNDEBUG -Wformat -Werror=format-security -std=c++17 -fexceptions -frtti -fPIC -w -O2 -DNDEBUG -DIMGUI_IMPL_OPENGL_ES3=1 -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1 -Wno-error -DYAM_ARCH_ARM64=1 -frtti -fexceptions  -c  ./JNI/NativeMethods.cpp -o /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o
-build	Build .so with ndk-build	2026-10-09T15:44:47.1005608Z ./JNI/NativeMethods.cpp:42:46: error: use of undeclared identifier 'impl_nativeWantCaptureMouse'
-build	Build .so with ndk-build	2026-10-09T15:44:47.1006024Z     {"nativeWantCaptureMouse", "()Z", (void*)impl_nativeWantCaptureMouse},
-build	Build .so with ndk-build	2026-10-09T15:44:47.1006247Z                                              ^
-build	Build .so with ndk-build	2026-10-09T15:44:47.1006673Z ./JNI/NativeMethods.cpp:47:20: error: invalid application of 'sizeof' to an incomplete type 'const JNINativeMethod[]'
-build	Build .so with ndk-build	2026-10-09T15:44:47.1007021Z     jint n = sizeof(g_methods) / sizeof(g_methods[0]);
-build	Build .so with ndk-build	2026-10-09T15:44:47.1007276Z                    ^~~~~~~~~~~
-build	Build .so with ndk-build	2026-10-09T15:44:47.1064338Z ./JNI/NativeMethods.cpp:62:63: error: use of undeclared identifier 'impl_nativeWantCaptureMouse'
-build	Build .so with ndk-build	2026-10-09T15:44:47.1064959Z jboolean wantCaptureMouse(JNIEnv* env, jclass clazz) { return impl_nativeWantCaptureMouse(env, clazz); }
-build	Build .so with ndk-build	2026-10-09T15:44:47.1065420Z                                                               ^
-build	Build .so with ndk-build	2026-10-09T15:44:47.1241086Z 3 errors generated.
-build	Build .so with ndk-build	2026-10-09T15:44:47.1286449Z make: *** [/usr/local/lib/android/sdk/ndk/26.1.10909125/build/core/build-binary.mk:415: /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o] Error 1
-build	Locate .so	﻿2026-10-09T15:44:47.1323527Z ##[group]Run SO=$(find /tmp -name "libYAMGG.so" -type f 2>/dev/null | head -1)
-build	Locate .so	2026-10-09T15:44:47.1323901Z ^[[36;1mSO=$(find /tmp -name "libYAMGG.so" -type f 2>/dev/null | head -1)^[[0m
-build	Locate .so	2026-10-09T15:44:47.1324138Z ^[[36;1mif [ -z "$SO" ]; then^[[0m
-build	Locate .so	2026-10-09T15:44:47.1324293Z ^[[36;1m  echo "ERROR: libYAMGG.so not built"^[[0m
-build	Locate .so	2026-10-09T15:44:47.1324470Z ^[[36;1m  tail -150 /tmp/ndk-build.log^[[0m
-build	Locate .so	2026-10-09T15:44:47.1324623Z ^[[36;1m  exit 1^[[0m
-build	Locate .so	2026-10-09T15:44:47.1324768Z ^[[36;1mfi^[[0m
-build	Locate .so	2026-10-09T15:44:47.1324881Z ^[[36;1mecho "FOUND: $SO"^[[0m
-build	Locate .so	2026-10-09T15:44:47.1325009Z ^[[36;1mdu -h "$SO"^[[0m
-build	Locate .so	2026-10-09T15:44:47.1325136Z ^[[36;1mfile "$SO"^[[0m
-build	Locate .so	2026-10-09T15:44:47.1325265Z ^[[36;1mecho "$SO" > /tmp/so_path.txt^[[0m
-build	Locate .so	2026-10-09T15:44:47.1377251Z shell: /usr/bin/bash -e {0}
-build	Locate .so	2026-10-09T15:44:47.1377393Z env:
-build	Locate .so	2026-10-09T15:44:47.1377515Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Locate .so	2026-10-09T15:44:47.1377684Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Locate .so	2026-10-09T15:44:47.1377847Z   NDK_VERSION: 26.1.10909125
-build	Locate .so	2026-10-09T15:44:47.1378065Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Locate .so	2026-10-09T15:44:47.1378335Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Locate .so	2026-10-09T15:44:47.1378549Z ##[endgroup]
-build	Locate .so	2026-10-09T15:44:47.1459870Z ERROR: libYAMGG.so not built
-build	Locate .so	2026-10-09T15:44:47.1466832Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:YAMGG: non-system libraries in linker flags: -lc++_static -lunwind    
-build	Locate .so	2026-10-09T15:44:47.1467333Z Android NDK:     This is likely to result in incorrect builds. Try using LOCAL_STATIC_LIBRARIES    
-build	Locate .so	2026-10-09T15:44:47.1467876Z Android NDK:     or LOCAL_SHARED_LIBRARIES instead to list the library dependencies of the    
-build	Locate .so	2026-10-09T15:44:47.1468317Z Android NDK:     current module    
-build	Locate .so	2026-10-09T15:44:47.1468756Z Android NDK: WARNING:all_libs/XDL/Android.mk:xdl: LOCAL_LDLIBS is always ignored for static libraries    
-build	Locate .so	2026-10-09T15:44:47.1469456Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:yamcpp: LOCAL_LDLIBS is always ignored for static libraries    
-build	Locate .so	2026-10-09T15:44:47.1470358Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:yamcpp: non-system libraries in linker flags: -lc++_static -lunwind    
-build	Locate .so	2026-10-09T15:44:47.1471024Z Android NDK:     This is likely to result in incorrect builds. Try using LOCAL_STATIC_LIBRARIES    
-build	Locate .so	2026-10-09T15:44:47.1471579Z Android NDK:     or LOCAL_SHARED_LIBRARIES instead to list the library dependencies of the    
-build	Locate .so	2026-10-09T15:44:47.1472035Z Android NDK:     current module    
-build	Locate .so	2026-10-09T15:44:47.1472285Z rm -f /tmp/ndk-libs/arm64-v8a/*
-build	Locate .so	2026-10-09T15:44:47.1472547Z [arm64-v8a] Compile++      : YAMGG <= Main.cpp
-build	Locate .so	2026-10-09T15:44:47.1472966Z rm -f /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o
-build	Locate .so	2026-10-09T15:44:47.1476110Z /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ -MMD -MP -MF /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o.d -target aarch64-none-linux-android24 -fdata-sections -ffunction-sections -fstack-protector-strong -funwind-tables -no-canonical-prefixes  --sysroot /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -Wno-invalid-command-line-argument -Wno-unused-command-line-argument  -D_FORTIFY_SOURCE=2 -fno-exceptions -fno-rtti -fpic -O2 -DNDEBUG  -I. -I./Core -I./UI -I./UI/Tabs -I./UI/Widgets -I./Bridge -I./JNI -I./Generated -I./Includes -I./all_libs/imgui -I./all_libs/imgui/backends -I./all_libs/json -I./all_libs/YAM-G/LIBYAMJS/include -I./all_libs/YAM-G/wrapper/include -I./all_libs/XDL -I./all_libs/XDL/include -I./all_libs/Dobby/prebuilt/include -I./all_libs/KittyMemory/KittyMemory -I./all_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/XDL -Iall_libs/XDL/include -Iall_libs/YAM-G/wrapper/include -Iall_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/YAM-G/LIBYAMJS/include -I. -O2 -DNDEBUG -w -std=c++17 -fexceptions -frtti -O2 -DNDEBUG -w  -DANDROID -w -O2 -DNDEBUG -Wformat -Werror=format-security -std=c++17 -fexceptions -frtti -fPIC -w -O2 -DNDEBUG -DIMGUI_IMPL_OPENGL_ES3=1 -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1 -Wno-error -DYAM_ARCH_ARM64=1 -frtti -fexceptions  -c  ./Main.cpp -o /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o
-build	Locate .so	2026-10-09T15:44:47.1479350Z [arm64-v8a] Compile++      : YAMGG <= NativeMethods.cpp
-build	Locate .so	2026-10-09T15:44:47.1479594Z rm -f /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o
-build	Locate .so	2026-10-09T15:44:47.1482656Z /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ -MMD -MP -MF /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o.d -target aarch64-none-linux-android24 -fdata-sections -ffunction-sections -fstack-protector-strong -funwind-tables -no-canonical-prefixes  --sysroot /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -Wno-invalid-command-line-argument -Wno-unused-command-line-argument  -D_FORTIFY_SOURCE=2 -fno-exceptions -fno-rtti -fpic -O2 -DNDEBUG  -I. -I./Core -I./UI -I./UI/Tabs -I./UI/Widgets -I./Bridge -I./JNI -I./Generated -I./Includes -I./all_libs/imgui -I./all_libs/imgui/backends -I./all_libs/json -I./all_libs/YAM-G/LIBYAMJS/include -I./all_libs/YAM-G/wrapper/include -I./all_libs/XDL -I./all_libs/XDL/include -I./all_libs/Dobby/prebuilt/include -I./all_libs/KittyMemory/KittyMemory -I./all_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/XDL -Iall_libs/XDL/include -Iall_libs/YAM-G/wrapper/include -Iall_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/YAM-G/LIBYAMJS/include -I. -O2 -DNDEBUG -w -std=c++17 -fexceptions -frtti -O2 -DNDEBUG -w  -DANDROID -w -O2 -DNDEBUG -Wformat -Werror=format-security -std=c++17 -fexceptions -frtti -fPIC -w -O2 -DNDEBUG -DIMGUI_IMPL_OPENGL_ES3=1 -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1 -Wno-error -DYAM_ARCH_ARM64=1 -frtti -fexceptions  -c  ./JNI/NativeMethods.cpp -o /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o
-build	Locate .so	2026-10-09T15:44:47.1486133Z ./JNI/NativeMethods.cpp:42:46: error: use of undeclared identifier 'impl_nativeWantCaptureMouse'
-build	Locate .so	2026-10-09T15:44:47.1486474Z     {"nativeWantCaptureMouse", "()Z", (void*)impl_nativeWantCaptureMouse},
-build	Locate .so	2026-10-09T15:44:47.1486724Z                                              ^
-build	Locate .so	2026-10-09T15:44:47.1487039Z ./JNI/NativeMethods.cpp:47:20: error: invalid application of 'sizeof' to an incomplete type 'const JNINativeMethod[]'
-build	Locate .so	2026-10-09T15:44:47.1487351Z     jint n = sizeof(g_methods) / sizeof(g_methods[0]);
-build	Locate .so	2026-10-09T15:44:47.1487519Z                    ^~~~~~~~~~~
-build	Locate .so	2026-10-09T15:44:47.1487740Z ./JNI/NativeMethods.cpp:62:63: error: use of undeclared identifier 'impl_nativeWantCaptureMouse'
-build	Locate .so	2026-10-09T15:44:47.1488118Z jboolean wantCaptureMouse(JNIEnv* env, jclass clazz) { return impl_nativeWantCaptureMouse(env, clazz); }
-build	Locate .so	2026-10-09T15:44:47.1488424Z                                                               ^
-build	Locate .so	2026-10-09T15:44:47.1488594Z 3 errors generated.
-build	Locate .so	2026-10-09T15:44:47.1488937Z make: *** [/usr/local/lib/android/sdk/ndk/26.1.10909125/build/core/build-binary.mk:415: /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o] Error 1
-build	Locate .so	2026-10-09T15:44:47.1492261Z ##[error]Process completed with exit code 1.
-build	Upload build log	﻿2026-10-09T15:44:47.1537499Z ##[group]Run actions/upload-artifact@v4
-build	Upload build log	2026-10-09T15:44:47.1537661Z with:
-build	Upload build log	2026-10-09T15:44:47.1537783Z   name: YAMGG-build-log
-build	Upload build log	2026-10-09T15:44:47.1537935Z   path: /tmp/ndk-build.log
-build	Upload build log	2026-10-09T15:44:47.1538072Z   if-no-files-found: warn
-build	Upload build log	2026-10-09T15:44:47.1538204Z   compression-level: 6
-build	Upload build log	2026-10-09T15:44:47.1538328Z   overwrite: false
-build	Upload build log	2026-10-09T15:44:47.1538454Z   include-hidden-files: false
-build	Upload build log	2026-10-09T15:44:47.1538585Z env:
-build	Upload build log	2026-10-09T15:44:47.1538703Z   ANDROID_HOME: /usr/local/lib/android/sdk
-build	Upload build log	2026-10-09T15:44:47.1538870Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-build	Upload build log	2026-10-09T15:44:47.1539042Z   NDK_VERSION: 26.1.10909125
-build	Upload build log	2026-10-09T15:44:47.1539230Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Upload build log	2026-10-09T15:44:47.1539494Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
-build	Upload build log	2026-10-09T15:44:47.1539702Z ##[endgroup]
-build	Upload build log	2026-10-09T15:44:47.2639818Z (node:2477) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
-build	Upload build log	2026-10-09T15:44:47.2640395Z (Use `node --trace-deprecation ...` to show where the warning was created)
-build	Upload build log	2026-10-09T15:44:47.2670858Z With the provided path, there will be 1 file uploaded
-build	Upload build log	2026-10-09T15:44:47.2683550Z Artifact name is valid!
-build	Upload build log	2026-10-09T15:44:47.2703673Z Root directory input is valid!
-build	Upload build log	2026-10-09T15:44:47.5519738Z Beginning upload of artifact content to blob storage
-build	Upload build log	2026-10-09T15:44:47.5630523Z (node:2477) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
-build	Upload build log	2026-10-09T15:44:47.6991847Z Uploaded bytes 1377
-build	Upload build log	2026-10-09T15:44:47.7370097Z Finished uploading artifact content to blob storage!
-build	Upload build log	2026-10-09T15:44:47.7370518Z SHA256 digest of uploaded artifact zip is 7b8f5966ef10fc1081a91f9a8b7acfadc3c6a205183d692c8fb685ec752774cf
-build	Upload build log	2026-10-09T15:44:47.7371142Z Finalizing artifact upload
-build	Upload build log	2026-10-09T15:44:48.0221291Z Artifact YAMGG-build-log.zip successfully finalized. Artifact ID 11626543364
-build	Upload build log	2026-10-09T15:44:48.0221953Z Artifact YAMGG-build-log has been successfully uploaded! Final size is 1377 bytes. Artifact ID is 11626543364
-build	Upload build log	2026-10-09T15:44:48.0225471Z Artifact download URL: https://github.com/Yamin843/YAM-GG/actions/runs/37953924454/artifacts/11626543364
-build	Post Setup Java 17	﻿2026-10-09T15:44:48.0367630Z Post job cleanup.
-build	Post Setup Java 17	2026-10-09T15:44:48.1241564Z (node:2489) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
-build	Post Setup Java 17	2026-10-09T15:44:48.1242039Z (Use `node --trace-deprecation ...` to show where the warning was created)
-build	Post Checkout	﻿2026-10-09T15:44:48.1419545Z Post job cleanup.
-build	Post Checkout	2026-10-09T15:44:48.2024894Z [command]/usr/bin/git version
-build	Post Checkout	2026-10-09T15:44:48.2058297Z git version 2.55.0
-build	Post Checkout	2026-10-09T15:44:48.2081778Z Temporarily overriding HOME='/home/runner/work/_temp/924c8e8e-f9d3-4f3f-90e5-b1e844c6a2bb' before making global git config changes
-build	Post Checkout	2026-10-09T15:44:48.2083272Z Adding repository directory to the temporary git global config as a safe directory
-build	Post Checkout	2026-10-09T15:44:48.2085251Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/YAM-GG/YAM-GG
-build	Post Checkout	2026-10-09T15:44:48.2126639Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
-build	Post Checkout	2026-10-09T15:44:48.2158037Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
-build	Post Checkout	2026-10-09T15:44:48.2384103Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
-build	Post Checkout	2026-10-09T15:44:48.2413873Z http.https://github.com/.extraheader
-build	Post Checkout	2026-10-09T15:44:48.2415791Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
-build	Post Checkout	2026-10-09T15:44:48.2451666Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
-build	Post Checkout	2026-10-09T15:44:48.2693105Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
-build	Post Checkout	2026-10-09T15:44:48.2725674Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
-build	Complete job	﻿2026-10-09T15:44:48.3037011Z Cleaning up orphan processes
-build	Complete job	2026-10-09T15:44:48.3223779Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-java@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build	Set up job	﻿2026-10-09T15:46:48.5206407Z Current runner version: '2.337.0'
+build	Set up job	2026-10-09T15:46:48.5246876Z ##[group]Runner Image Provisioner
+build	Set up job	2026-10-09T15:46:48.5248340Z Hosted Compute Agent
+build	Set up job	2026-10-09T15:46:48.5249452Z Version: 20261002.596
+build	Set up job	2026-10-09T15:46:48.5250448Z Commit: c3d12f3313a95f25162a1503be624f3b0617f8c0
+build	Set up job	2026-10-09T15:46:48.5251777Z Build Date: 2026-10-02T22:28:27Z
+build	Set up job	2026-10-09T15:46:48.5253004Z Worker ID: {cd693028-c178-4b91-8438-407d12e7a5e7}
+build	Set up job	2026-10-09T15:46:48.5254228Z Region: eastus
+build	Set up job	2026-10-09T15:46:48.5255208Z Cloud: Azure
+build	Set up job	2026-10-09T15:46:48.5256327Z ##[endgroup]
+build	Set up job	2026-10-09T15:46:48.5258854Z ##[group]Operating System
+build	Set up job	2026-10-09T15:46:48.5259878Z Ubuntu
+build	Set up job	2026-10-09T15:46:48.5260775Z 24.04.5
+build	Set up job	2026-10-09T15:46:48.5261690Z LTS
+build	Set up job	2026-10-09T15:46:48.5262567Z ##[endgroup]
+build	Set up job	2026-10-09T15:46:48.5263531Z ##[group]Runner Image
+build	Set up job	2026-10-09T15:46:48.5264528Z Image: ubuntu-24.04
+build	Set up job	2026-10-09T15:46:48.5265588Z Version: 20261004.327.1
+build	Set up job	2026-10-09T15:46:48.5267732Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261004.327/images/ubuntu/Ubuntu2404-Readme.md
+build	Set up job	2026-10-09T15:46:48.5271640Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261004.327
+build	Set up job	2026-10-09T15:46:48.5273298Z ##[endgroup]
+build	Set up job	2026-10-09T15:46:48.5275082Z ##[group]GITHUB_TOKEN Permissions
+build	Set up job	2026-10-09T15:46:48.5278330Z Contents: read
+build	Set up job	2026-10-09T15:46:48.5279438Z Metadata: read
+build	Set up job	2026-10-09T15:46:48.5280328Z ##[endgroup]
+build	Set up job	2026-10-09T15:46:48.5283792Z Secret source: Actions
+build	Set up job	2026-10-09T15:46:48.5285457Z Cache mode: write
+build	Set up job	2026-10-09T15:46:48.5287040Z Prepare workflow directory
+build	Set up job	2026-10-09T15:46:48.5813589Z Prepare all required actions
+build	Set up job	2026-10-09T15:46:48.5864038Z Getting action download info
+build	Set up job	2026-10-09T15:46:48.7641081Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+build	Set up job	2026-10-09T15:46:48.8792135Z Download action repository 'actions/setup-java@v4' (SHA:cf277c60eb25467037889841efdb72551f06f6c3)
+build	Set up job	2026-10-09T15:46:49.1005331Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+build	Set up job	2026-10-09T15:46:49.3525410Z Complete job name: build
+build	Checkout	﻿2026-10-09T15:46:49.4577805Z ##[group]Run actions/checkout@v4
+build	Checkout	2026-10-09T15:46:49.4579251Z with:
+build	Checkout	2026-10-09T15:46:49.4580052Z   submodules: false
+build	Checkout	2026-10-09T15:46:49.4580925Z   repository: Yamin843/YAM-GG
+build	Checkout	2026-10-09T15:46:49.4590661Z   token: ***
+build	Checkout	2026-10-09T15:46:49.4591474Z   ssh-strict: true
+build	Checkout	2026-10-09T15:46:49.4592284Z   ssh-user: git
+build	Checkout	2026-10-09T15:46:49.4593108Z   persist-credentials: true
+build	Checkout	2026-10-09T15:46:49.4594025Z   clean: true
+build	Checkout	2026-10-09T15:46:49.4594863Z   sparse-checkout-cone-mode: true
+build	Checkout	2026-10-09T15:46:49.4595996Z   fetch-depth: 1
+build	Checkout	2026-10-09T15:46:49.4596833Z   fetch-tags: false
+build	Checkout	2026-10-09T15:46:49.4597679Z   show-progress: true
+build	Checkout	2026-10-09T15:46:49.4598524Z   lfs: false
+build	Checkout	2026-10-09T15:46:49.4599377Z   set-safe-directory: true
+build	Checkout	2026-10-09T15:46:49.4600338Z   allow-unsafe-pr-checkout: false
+build	Checkout	2026-10-09T15:46:49.4601761Z env:
+build	Checkout	2026-10-09T15:46:49.4602612Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Checkout	2026-10-09T15:46:49.4603759Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Checkout	2026-10-09T15:46:49.4604907Z   NDK_VERSION: 26.1.10909125
+build	Checkout	2026-10-09T15:46:49.4606005Z ##[endgroup]
+build	Checkout	2026-10-09T15:46:49.5829059Z Syncing repository: Yamin843/YAM-GG
+build	Checkout	2026-10-09T15:46:49.5831911Z ##[group]Getting Git version info
+build	Checkout	2026-10-09T15:46:49.5833225Z Working directory is '/home/runner/work/YAM-GG/YAM-GG'
+build	Checkout	2026-10-09T15:46:49.5873107Z [command]/usr/bin/git version
+build	Checkout	2026-10-09T15:46:49.6037492Z git version 2.55.0
+build	Checkout	2026-10-09T15:46:49.6083419Z ##[endgroup]
+build	Checkout	2026-10-09T15:46:49.6093782Z Temporarily overriding HOME='/home/runner/work/_temp/e85c46e0-3531-4dff-beae-a9b7cffae3e5' before making global git config changes
+build	Checkout	2026-10-09T15:46:49.6098962Z Adding repository directory to the temporary git global config as a safe directory
+build	Checkout	2026-10-09T15:46:49.6102792Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/YAM-GG/YAM-GG
+build	Checkout	2026-10-09T15:46:49.6177820Z Deleting the contents of '/home/runner/work/YAM-GG/YAM-GG'
+build	Checkout	2026-10-09T15:46:49.6181350Z ##[group]Initializing the repository
+build	Checkout	2026-10-09T15:46:49.6186640Z [command]/usr/bin/git init /home/runner/work/YAM-GG/YAM-GG
+build	Checkout	2026-10-09T15:46:49.6334881Z hint: Using 'master' as the name for the initial branch. This default branch name
+build	Checkout	2026-10-09T15:46:49.6338976Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+build	Checkout	2026-10-09T15:46:49.6342166Z hint: to use in all of your new repositories, which will suppress this warning,
+build	Checkout	2026-10-09T15:46:49.6344626Z hint: call:
+build	Checkout	2026-10-09T15:46:49.6345831Z hint:
+build	Checkout	2026-10-09T15:46:49.6347584Z hint: 	git config --global init.defaultBranch <name>
+build	Checkout	2026-10-09T15:46:49.6349478Z hint:
+build	Checkout	2026-10-09T15:46:49.6351262Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+build	Checkout	2026-10-09T15:46:49.6354258Z hint: 'development'. The just-created branch can be renamed via this command:
+build	Checkout	2026-10-09T15:46:49.6357057Z hint:
+build	Checkout	2026-10-09T15:46:49.6358467Z hint: 	git branch -m <name>
+build	Checkout	2026-10-09T15:46:49.6360059Z hint:
+build	Checkout	2026-10-09T15:46:49.6361976Z hint: Disable this message with "git config set advice.defaultBranchName false"
+build	Checkout	2026-10-09T15:46:49.6365190Z Initialized empty Git repository in /home/runner/work/YAM-GG/YAM-GG/.git/
+build	Checkout	2026-10-09T15:46:49.6470521Z [command]/usr/bin/git remote add origin https://github.com/Yamin843/YAM-GG
+build	Checkout	2026-10-09T15:46:49.6499563Z ##[endgroup]
+build	Checkout	2026-10-09T15:46:49.6502305Z ##[group]Disabling automatic garbage collection
+build	Checkout	2026-10-09T15:46:49.6504644Z [command]/usr/bin/git config --local gc.auto 0
+build	Checkout	2026-10-09T15:46:49.6510338Z ##[endgroup]
+build	Checkout	2026-10-09T15:46:49.6512698Z ##[group]Setting up auth
+build	Checkout	2026-10-09T15:46:49.6515216Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+build	Checkout	2026-10-09T15:46:49.6524974Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+build	Checkout	2026-10-09T15:46:49.6990077Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build	Checkout	2026-10-09T15:46:49.7031254Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+build	Checkout	2026-10-09T15:46:49.7271177Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+build	Checkout	2026-10-09T15:46:49.7313199Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+build	Checkout	2026-10-09T15:46:49.7547526Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+build	Checkout	2026-10-09T15:46:49.7592863Z ##[endgroup]
+build	Checkout	2026-10-09T15:46:49.7603940Z ##[group]Fetching the repository
+build	Checkout	2026-10-09T15:46:49.7608661Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +c839b44a37c495678bc2f96aacbf013147870a74:refs/remotes/origin/main
+build	Checkout	2026-10-09T15:46:51.3953706Z From https://github.com/Yamin843/YAM-GG
+build	Checkout	2026-10-09T15:46:51.3955103Z  * [new ref]         c839b44a37c495678bc2f96aacbf013147870a74 -> origin/main
+build	Checkout	2026-10-09T15:46:51.3957878Z ##[endgroup]
+build	Checkout	2026-10-09T15:46:51.3958753Z ##[group]Determining the checkout info
+build	Checkout	2026-10-09T15:46:51.3960111Z ##[endgroup]
+build	Checkout	2026-10-09T15:46:51.3967236Z [command]/usr/bin/git sparse-checkout disable
+build	Checkout	2026-10-09T15:46:51.4026351Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+build	Checkout	2026-10-09T15:46:51.4065572Z ##[group]Checking out the ref
+build	Checkout	2026-10-09T15:46:51.4071387Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+build	Checkout	2026-10-09T15:46:51.6355690Z Switched to a new branch 'main'
+build	Checkout	2026-10-09T15:46:51.6361134Z branch 'main' set up to track 'origin/main'.
+build	Checkout	2026-10-09T15:46:51.6402430Z ##[endgroup]
+build	Checkout	2026-10-09T15:46:51.6452946Z [command]/usr/bin/git log -1 --format=%H
+build	Checkout	2026-10-09T15:46:51.6484422Z c839b44a37c495678bc2f96aacbf013147870a74
+build	Setup Java 17	﻿2026-10-09T15:46:51.6790022Z ##[group]Run actions/setup-java@v4
+build	Setup Java 17	2026-10-09T15:46:51.6790450Z with:
+build	Setup Java 17	2026-10-09T15:46:51.6790977Z   java-version: 17
+build	Setup Java 17	2026-10-09T15:46:51.6791214Z   distribution: temurin
+build	Setup Java 17	2026-10-09T15:46:51.6791451Z   java-package: jdk
+build	Setup Java 17	2026-10-09T15:46:51.6791673Z   check-latest: false
+build	Setup Java 17	2026-10-09T15:46:51.6791882Z   server-id: github
+build	Setup Java 17	2026-10-09T15:46:51.6792093Z   server-username: GITHUB_ACTOR
+build	Setup Java 17	2026-10-09T15:46:51.6792353Z   server-password: GITHUB_TOKEN
+build	Setup Java 17	2026-10-09T15:46:51.6792602Z   overwrite-settings: true
+build	Setup Java 17	2026-10-09T15:46:51.6792837Z   job-status: success
+build	Setup Java 17	2026-10-09T15:46:51.6795577Z   token: ***
+build	Setup Java 17	2026-10-09T15:46:51.6795781Z env:
+build	Setup Java 17	2026-10-09T15:46:51.6796296Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Setup Java 17	2026-10-09T15:46:51.6796626Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Setup Java 17	2026-10-09T15:46:51.6796945Z   NDK_VERSION: 26.1.10909125
+build	Setup Java 17	2026-10-09T15:46:51.6797219Z ##[endgroup]
+build	Setup Java 17	2026-10-09T15:46:51.8575396Z ##[warning]setup-java v4 is deprecated and will no longer receive updates. Please migrate to actions/setup-java@v5.
+build	Setup Java 17	2026-10-09T15:46:51.8588585Z ##[group]Installed distributions
+build	Setup Java 17	2026-10-09T15:46:51.8631272Z Resolved Java 17.0.20+1 from tool-cache
+build	Setup Java 17	2026-10-09T15:46:51.8631710Z Setting Java 17.0.20+1 as the default
+build	Setup Java 17	2026-10-09T15:46:51.8644090Z (node:2305) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+build	Setup Java 17	2026-10-09T15:46:51.8645366Z (Use `node --trace-deprecation ...` to show where the warning was created)
+build	Setup Java 17	2026-10-09T15:46:51.8649282Z Creating toolchains.xml for JDK version 17 from temurin
+build	Setup Java 17	2026-10-09T15:46:51.8732347Z Writing to /home/runner/.m2/toolchains.xml
+build	Setup Java 17	2026-10-09T15:46:51.8732950Z 
+build	Setup Java 17	2026-10-09T15:46:51.8733155Z Java configuration:
+build	Setup Java 17	2026-10-09T15:46:51.8733597Z   Distribution: temurin
+build	Setup Java 17	2026-10-09T15:46:51.8734014Z   Version: 17.0.20+1
+build	Setup Java 17	2026-10-09T15:46:51.8734588Z   Path: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Setup Java 17	2026-10-09T15:46:51.8735152Z 
+build	Setup Java 17	2026-10-09T15:46:51.8735788Z ##[endgroup]
+build	Setup Java 17	2026-10-09T15:46:51.8763584Z Creating settings.xml with server-id: github
+build	Setup Java 17	2026-10-09T15:46:51.8792309Z Writing to /home/runner/.m2/settings.xml
+build	Reassemble libyamjs.a from parts	﻿2026-10-09T15:46:51.8973662Z ##[group]Run LIB_DIR=app/src/main/jni/all_libs/YAM-G/LIBYAMJS
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8974243Z ^[[36;1mLIB_DIR=app/src/main/jni/all_libs/YAM-G/LIBYAMJS^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8974592Z ^[[36;1mcd "$LIB_DIR"^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8974817Z ^[[36;1m^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8975031Z ^[[36;1mecho "=== parts available ==="^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8975355Z ^[[36;1mls -la libyamjs.a.part* 2>/dev/null || {^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8975686Z ^[[36;1m  echo "ERROR: no .part files found"^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8976263Z ^[[36;1m  exit 1^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8976465Z ^[[36;1m}^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8976651Z ^[[36;1m^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8976832Z ^[[36;1mecho ""^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8977044Z ^[[36;1mecho "=== concatenating ==="^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8977327Z ^[[36;1mcat libyamjs.a.part* > libyamjs.a^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8977593Z ^[[36;1m^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8977772Z ^[[36;1mecho ""^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8977978Z ^[[36;1mecho "=== result ==="^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8978229Z ^[[36;1mls -la libyamjs.a^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8978547Z ^[[36;1mSIZE=$(stat -c%s libyamjs.a)^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8978813Z ^[[36;1mecho "Size: $SIZE bytes"^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8979051Z ^[[36;1m^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8979250Z ^[[36;1mif [ "$SIZE" -lt 100000000 ]; then^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8979560Z ^[[36;1m  echo "ERROR: reassembled file too small"^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8979848Z ^[[36;1m  exit 1^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8980045Z ^[[36;1mfi^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8980229Z ^[[36;1m^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8980409Z ^[[36;1mecho ""^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8980623Z ^[[36;1mecho "=== cleanup parts ==="^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8980892Z ^[[36;1mrm -f libyamjs.a.part*^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8981130Z ^[[36;1m^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.8981309Z ^[[36;1mecho "OK"^[[0m
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9308803Z shell: /usr/bin/bash -e {0}
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9309212Z env:
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9309490Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9309876Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9310260Z   NDK_VERSION: 26.1.10909125
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9310963Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9311554Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9312009Z ##[endgroup]
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9435256Z === parts available ===
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9451668Z -rw-r--r-- 1 runner runner 62914560 Oct  9 15:46 libyamjs.a.part00
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9452529Z -rw-r--r-- 1 runner runner 58531068 Oct  9 15:46 libyamjs.a.part01
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9453137Z 
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9453349Z === concatenating ===
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9823531Z 
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9839562Z === result ===
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9839996Z -rw-r--r-- 1 runner runner 121445628 Oct  9 15:46 libyamjs.a
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9857351Z Size: 121445628 bytes
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9857688Z 
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9857865Z === cleanup parts ===
+build	Reassemble libyamjs.a from parts	2026-10-09T15:46:51.9966845Z OK
+build	Inspect preinstalled SDK	﻿2026-10-09T15:46:52.0010907Z ##[group]Run echo "ANDROID_HOME=$ANDROID_HOME"
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0011358Z ^[[36;1mecho "ANDROID_HOME=$ANDROID_HOME"^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0011762Z ^[[36;1mls -la $ANDROID_HOME/ 2>/dev/null || echo "(no $ANDROID_HOME)"^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0012124Z ^[[36;1mecho ""^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0012345Z ^[[36;1mecho "cmdline-tools:"^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0012677Z ^[[36;1mls $ANDROID_HOME/cmdline-tools/ 2>/dev/null || echo "(none)"^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0013021Z ^[[36;1mecho ""^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0013238Z ^[[36;1mecho "ndk preinstalled:"^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0013541Z ^[[36;1mls $ANDROID_HOME/ndk/ 2>/dev/null || echo "(none)"^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0013846Z ^[[36;1mecho ""^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0014053Z ^[[36;1mecho "build-tools:"^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0014360Z ^[[36;1mls $ANDROID_HOME/build-tools/ 2>/dev/null || echo "(none)"^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0014689Z ^[[36;1mecho ""^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0014889Z ^[[36;1mecho "platforms:"^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0015194Z ^[[36;1mls $ANDROID_HOME/platforms/ 2>/dev/null || echo "(none)"^[[0m
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0085587Z shell: /usr/bin/bash -e {0}
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0086200Z env:
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0086447Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0086776Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0087065Z   NDK_VERSION: 26.1.10909125
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0087413Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0087922Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0088305Z ##[endgroup]
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0189039Z ANDROID_HOME=/usr/local/lib/android/sdk
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0400025Z total 72
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0400624Z drwxrwxrwx 11 root root  4096 Oct  4 21:51 .
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0401393Z drwxr-xr-x  3 root root  4096 Oct  4 21:48 ..
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0402162Z -rw-r--r--  1 root root    16 Oct  4 21:51 .knownPackages
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0402966Z drwxrwxrwx  2 root root  4096 Oct  4 21:51 .temp
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0403861Z drwxrwxrwx  8 root root  4096 Oct  4 21:49 build-tools
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0404433Z drwxrwxrwx  4 root root  4096 Oct  4 21:51 cmake
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0404947Z drwxrwxrwx  3 root root  4096 Oct  4 21:48 cmdline-tools
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0405446Z drwxrwxrwx  4 root root  4096 Oct  4 21:51 extras
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0406263Z drwxrwxrwx  2 root root  4096 Oct  4 21:49 licenses
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0406754Z drwxrwxrwx  5 root root  4096 Oct  4 21:51 ndk
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0407269Z -rw-r--r--  1 root root 21987 Oct  4 21:51 packages-list.txt
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0407876Z drwxrwxrwx  3 root root  4096 Oct  4 21:49 platform-tools
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0408394Z drwxrwxrwx 20 root root  4096 Oct  4 21:50 platforms
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0408723Z 
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0408851Z cmdline-tools:
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0458195Z latest
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0460423Z 
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0460657Z ndk preinstalled:
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0520084Z 27.3.13750724
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0520568Z 29.0.14206865
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0520913Z 30.0.16248370
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0521715Z 
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0521930Z build-tools:
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0578335Z 34.0.0
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0578635Z 35.0.0
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0578861Z 35.0.1
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0579076Z 36.0.0
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0579283Z 36.1.0
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0579489Z 37.0.0
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0580050Z 
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0580204Z platforms:
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0646595Z android-34
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0646944Z android-34-ext10
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0647215Z android-34-ext11
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0647478Z android-34-ext12
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0647836Z android-34-ext8
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0648184Z android-35
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0648539Z android-35-ext14
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0648940Z android-35-ext15
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0649388Z android-36
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0649852Z android-36-ext18
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0650312Z android-36-ext19
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0650662Z android-36.1
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0650985Z android-37.0
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0651351Z android-37.1
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0651701Z android-37.2
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0652438Z android-37.2-beta1
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0652828Z android-37.2-beta2
+build	Inspect preinstalled SDK	2026-10-09T15:46:52.0653300Z android-37.2-beta3
+build	Install NDK + Build Tools	﻿2026-10-09T15:46:52.0694997Z ##[group]Run set -e
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0695323Z ^[[36;1mset -e^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0695532Z ^[[36;1m^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0695723Z ^[[36;1mCMDPATH=""^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0696311Z ^[[36;1mfor v in 19.0 18.0 17.0 16.0 15.0 latest; do^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0696701Z ^[[36;1m    if [ -d "$ANDROID_HOME/cmdline-tools/$v/bin" ]; then^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0697087Z ^[[36;1m        CMDPATH="$ANDROID_HOME/cmdline-tools/$v/bin"^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0697404Z ^[[36;1m        break^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0697617Z ^[[36;1m    fi^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0697811Z ^[[36;1mdone^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0698003Z ^[[36;1m^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0698198Z ^[[36;1mif [ -z "$CMDPATH" ]; then^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0698491Z ^[[36;1m    echo "ERROR: cmdline-tools not found"^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0698864Z ^[[36;1m    find $ANDROID_HOME -name sdkmanager -type f 2>/dev/null^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0699203Z ^[[36;1m    exit 1^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0699424Z ^[[36;1mfi^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0699608Z ^[[36;1m^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0699865Z ^[[36;1mecho "Using cmdline-tools at: $CMDPATH"^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0700169Z ^[[36;1mSDKMANAGER="$CMDPATH/sdkmanager"^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0700428Z ^[[36;1m^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0700677Z ^[[36;1myes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0700989Z ^[[36;1m^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0701250Z ^[[36;1m"$SDKMANAGER" --install "ndk;$NDK_VERSION" 2>&1 | tail -3^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0701673Z ^[[36;1m"$SDKMANAGER" --install "build-tools;34.0.0" 2>&1 | tail -3^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0702096Z ^[[36;1m"$SDKMANAGER" --install "platforms;android-34" 2>&1 | tail -3^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0702442Z ^[[36;1m^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0702618Z ^[[36;1mecho ""^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0702814Z ^[[36;1mecho "NDK:"^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0703035Z ^[[36;1mls -la $ANDROID_HOME/ndk/^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0703365Z ^[[36;1m$ANDROID_HOME/ndk/$NDK_VERSION/ndk-build --version^[[0m
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0786440Z shell: /usr/bin/bash -e {0}
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0786742Z env:
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0786982Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0787301Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0787598Z   NDK_VERSION: 26.1.10909125
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0787948Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0788441Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0788822Z ##[endgroup]
+build	Install NDK + Build Tools	2026-10-09T15:46:52.0892693Z Using cmdline-tools at: /usr/local/lib/android/sdk/cmdline-tools/latest/bin
+build	Install NDK + Build Tools	2026-10-09T15:46:57.3651877Z yes: standard output: Broken pipe
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3430219Z Loading package information...                                                  
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3431117Z Loading local repository...                                                     
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3435024Z [                                       ] 3% Loading local repository...        
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3436375Z [                                       ] 3% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3437064Z [=                                      ] 3% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3437684Z [=                                      ] 4% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3438295Z [=                                      ] 5% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3438922Z [==                                     ] 5% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3439596Z [==                                     ] 6% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3440292Z [==                                     ] 7% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3440930Z [==                                     ] 7% Computing updates...               
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3441563Z [===                                    ] 8% Computing updates...               
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3442175Z [===                                    ] 10% Computing updates...              
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3443169Z [===                                    ] 10% Installing NDK (Side by side) 26.1
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3443832Z [===                                    ] 10% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3444478Z [====                                   ] 10% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3445112Z [====                                   ] 11% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3445671Z [====                                   ] 12% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3446681Z [=====                                  ] 13% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3465228Z [=====                                  ] 14% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3466113Z [=====                                  ] 15% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3466768Z [======                                 ] 15% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3467438Z [======                                 ] 16% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3468062Z [======                                 ] 17% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3468453Z [=======                                ] 18% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3468842Z [=======                                ] 19% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3469202Z [=======                                ] 20% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3469556Z [========                               ] 20% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3469968Z [========                               ] 21% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3470320Z [========                               ] 22% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3470668Z [=========                              ] 23% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3471021Z [=========                              ] 24% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3471374Z [=========                              ] 25% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3471725Z [==========                             ] 25% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3472070Z [==========                             ] 26% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3472433Z [==========                             ] 27% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3472787Z [===========                            ] 28% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3473135Z [===========                            ] 29% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3473485Z [===========                            ] 30% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3473831Z [============                           ] 30% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3474400Z [============                           ] 31% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3474759Z [============                           ] 32% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3475106Z [============                           ] 33% Downloading android-ndk-r26b-linux
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3475461Z [============                           ] 33% Unzipping...                      
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3475811Z [============                           ] 33% Unzipping... android-ndk-r26b/    
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3476500Z [============                           ] 33% Unzipping... android-ndk-r26b/CHAN
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3476870Z [=============                          ] 33% Unzipping... android-ndk-r26b/CHAN
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3477240Z [=============                          ] 33% Unzipping... android-ndk-r26b/wrap
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3477598Z [=============                          ] 33% Unzipping... android-ndk-r26b/preb
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3477977Z [=============                          ] 33% Unzipping... android-ndk-r26b/buil
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3478334Z [=============                          ] 33% Unzipping... android-ndk-r26b/NOTI
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3478857Z [=============                          ] 33% Unzipping... android-ndk-r26b/ndk-
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3479205Z [=============                          ] 33% Unzipping... android-ndk-r26b/NOTI
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3479550Z [=============                          ] 33% Unzipping... android-ndk-r26b/meta
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3479894Z [=============                          ] 33% Unzipping... android-ndk-r26b/ndk-
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3480241Z [=============                          ] 33% Unzipping... android-ndk-r26b/pyth
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3480590Z [=============                          ] 33% Unzipping... android-ndk-r26b/sour
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3480935Z [=============                          ] 33% Unzipping... android-ndk-r26b/simp
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3481285Z [=============                          ] 33% Unzipping... android-ndk-r26b/ndk-
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3481639Z [=============                          ] 33% Unzipping... android-ndk-r26b/READ
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3481990Z [=============                          ] 33% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3482337Z [=============                          ] 34% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3482680Z [=============                          ] 35% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3483024Z [==============                         ] 35% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3483368Z [==============                         ] 36% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3483717Z [==============                         ] 37% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3484071Z [===============                        ] 38% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3484424Z [===============                        ] 39% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3484789Z [===============                        ] 40% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3485142Z [================                       ] 40% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3485486Z [================                       ] 41% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3486105Z [================                       ] 42% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3486520Z [=================                      ] 43% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3486879Z [=================                      ] 44% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3487242Z [=================                      ] 45% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3487591Z [==================                     ] 45% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3488112Z [==================                     ] 46% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3488732Z [==================                     ] 47% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3489558Z [===================                    ] 48% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3490210Z [===================                    ] 49% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3490846Z [===================                    ] 50% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3491519Z [====================                   ] 50% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3492246Z [====================                   ] 51% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3492924Z [====================                   ] 52% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3493582Z [=====================                  ] 53% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3494225Z [=====================                  ] 54% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3494886Z [=====================                  ] 55% Unzipping... android-ndk-r26b/tool
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3495580Z [=====================                  ] 55% Unzipping... android-ndk-r26b/ndk-
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3496776Z [=====================                  ] 55% Unzipping... android-ndk-r26b/shad
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3497422Z [=======================================] 100% Unzipping... android-ndk-r26b/sha
+build	Install NDK + Build Tools	2026-10-09T15:47:12.3497838Z 
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9550605Z Loading package information...                                                  
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9551232Z Loading local repository...                                                     
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9551688Z [                                       ] 3% Loading local repository...        
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9552072Z [                                       ] 3% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9552431Z [=                                      ] 3% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9552784Z [=                                      ] 4% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9553161Z [=                                      ] 5% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9553521Z [==                                     ] 5% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9553871Z [==                                     ] 6% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9554223Z [==                                     ] 7% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9554573Z [==                                     ] 7% Computing updates...               
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9554919Z [===                                    ] 8% Computing updates...               
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9555275Z [===                                    ] 10% Computing updates...              
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9555635Z [=======================================] 100% Computing updates...             
+build	Install NDK + Build Tools	2026-10-09T15:47:13.9556238Z 
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5356397Z Loading package information...                                                  
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5357224Z Loading local repository...                                                     
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5357694Z [                                       ] 3% Loading local repository...        
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5358076Z [                                       ] 3% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5358442Z [=                                      ] 3% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5358807Z [=                                      ] 4% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5359166Z [=                                      ] 5% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5359662Z [==                                     ] 5% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5360199Z [==                                     ] 6% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5360573Z [==                                     ] 7% Fetch remote repository...         
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5361454Z [==                                     ] 7% Computing updates...               
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5361841Z [===                                    ] 8% Computing updates...               
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5362304Z [===                                    ] 10% Computing updates...              
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5362945Z [=======================================] 100% Computing updates...             
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5363233Z 
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5363246Z 
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5363329Z NDK:
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5378972Z total 24
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5379247Z drwxrwxrwx  6 root   root   4096 Oct  9 15:47 .
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5379590Z drwxrwxrwx 11 root   root   4096 Oct  4 21:51 ..
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5379940Z drwxr-xr-x 11 runner runner 4096 Oct  9 15:47 26.1.10909125
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5380313Z drwxrwxrwx 11 root   root   4096 Oct  4 21:51 27.3.13750724
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5380671Z drwxrwxrwx 11 root   root   4096 Oct  4 21:51 29.0.14206865
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5381027Z drwxrwxrwx 10 root   root   4096 Oct  4 21:50 30.0.16248370
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5473248Z GNU Make 4.3
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5473978Z Built for x86_64-pc-linux-gnu
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5474521Z Copyright (C) 1988-2020 Free Software Foundation, Inc.
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5475467Z License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5476676Z This is free software: you are free to change and redistribute it.
+build	Install NDK + Build Tools	2026-10-09T15:47:15.5477307Z There is NO WARRANTY, to the extent permitted by law.
+build	Verify project layout	﻿2026-10-09T15:47:15.5516655Z ##[group]Run echo "=== jni ==="
+build	Verify project layout	2026-10-09T15:47:15.5517005Z ^[[36;1mecho "=== jni ==="^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5517258Z ^[[36;1mls app/src/main/jni/^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5517497Z ^[[36;1mecho ""^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5517712Z ^[[36;1mecho "=== all_libs ==="^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5517971Z ^[[36;1mls app/src/main/jni/all_libs/^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5518235Z ^[[36;1mecho ""^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5518443Z ^[[36;1mecho "=== YAM-G/LIBYAMJS ==="^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5518767Z ^[[36;1mls -la app/src/main/jni/all_libs/YAM-G/LIBYAMJS/^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5519092Z ^[[36;1mecho ""^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5519287Z ^[[36;1mecho "=== imgui ==="^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5519567Z ^[[36;1mls app/src/main/jni/all_libs/imgui/ | head -10^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5519862Z ^[[36;1mecho ""^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5520059Z ^[[36;1mecho "=== java ==="^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5520327Z ^[[36;1mls app/src/main/java/com/yamgg/modview/^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5520611Z ^[[36;1mecho ""^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5520809Z ^[[36;1mecho "=== scripts ==="^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5521079Z ^[[36;1mls scripts/^[[0m
+build	Verify project layout	2026-10-09T15:47:15.5582708Z shell: /usr/bin/bash -e {0}
+build	Verify project layout	2026-10-09T15:47:15.5582970Z env:
+build	Verify project layout	2026-10-09T15:47:15.5583188Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Verify project layout	2026-10-09T15:47:15.5583509Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Verify project layout	2026-10-09T15:47:15.5583798Z   NDK_VERSION: 26.1.10909125
+build	Verify project layout	2026-10-09T15:47:15.5584129Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Verify project layout	2026-10-09T15:47:15.5584637Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Verify project layout	2026-10-09T15:47:15.5585020Z ##[endgroup]
+build	Verify project layout	2026-10-09T15:47:15.5668554Z === jni ===
+build	Verify project layout	2026-10-09T15:47:15.5680275Z Android.mk
+build	Verify project layout	2026-10-09T15:47:15.5680662Z Application.mk
+build	Verify project layout	2026-10-09T15:47:15.5681005Z Bridge
+build	Verify project layout	2026-10-09T15:47:15.5681309Z Core
+build	Verify project layout	2026-10-09T15:47:15.5681534Z Includes
+build	Verify project layout	2026-10-09T15:47:15.5681711Z JNI
+build	Verify project layout	2026-10-09T15:47:15.5682015Z Main.cpp
+build	Verify project layout	2026-10-09T15:47:15.5682305Z UI
+build	Verify project layout	2026-10-09T15:47:15.5682482Z all_libs
+build	Verify project layout	2026-10-09T15:47:15.5682597Z 
+build	Verify project layout	2026-10-09T15:47:15.5682699Z === all_libs ===
+build	Verify project layout	2026-10-09T15:47:15.5693215Z Dobby
+build	Verify project layout	2026-10-09T15:47:15.5693577Z KittyMemory
+build	Verify project layout	2026-10-09T15:47:15.5693892Z XDL
+build	Verify project layout	2026-10-09T15:47:15.5694186Z YAM-G
+build	Verify project layout	2026-10-09T15:47:15.5694440Z asmjit
+build	Verify project layout	2026-10-09T15:47:15.5694634Z imgui
+build	Verify project layout	2026-10-09T15:47:15.5694931Z json
+build	Verify project layout	2026-10-09T15:47:15.5695114Z 
+build	Verify project layout	2026-10-09T15:47:15.5695202Z === YAM-G/LIBYAMJS ===
+build	Verify project layout	2026-10-09T15:47:15.5708305Z total 118620
+build	Verify project layout	2026-10-09T15:47:15.5709040Z drwxr-xr-x 3 runner runner      4096 Oct  9 15:46 .
+build	Verify project layout	2026-10-09T15:47:15.5709894Z drwxr-xr-x 4 runner runner      4096 Oct  9 15:46 ..
+build	Verify project layout	2026-10-09T15:47:15.5710292Z -rw-r--r-- 1 runner runner       189 Oct  9 15:46 Android.mk
+build	Verify project layout	2026-10-09T15:47:15.5710687Z drwxr-xr-x 2 runner runner      4096 Oct  9 15:46 include
+build	Verify project layout	2026-10-09T15:47:15.5711066Z -rw-r--r-- 1 runner runner 121445628 Oct  9 15:46 libyamjs.a
+build	Verify project layout	2026-10-09T15:47:15.5712633Z 
+build	Verify project layout	2026-10-09T15:47:15.5713043Z === imgui ===
+build	Verify project layout	2026-10-09T15:47:15.5726440Z LICENSE.txt
+build	Verify project layout	2026-10-09T15:47:15.5726872Z backends
+build	Verify project layout	2026-10-09T15:47:15.5727178Z docs
+build	Verify project layout	2026-10-09T15:47:15.5727494Z examples
+build	Verify project layout	2026-10-09T15:47:15.5727784Z imconfig.h
+build	Verify project layout	2026-10-09T15:47:15.5728077Z imgui.cpp
+build	Verify project layout	2026-10-09T15:47:15.5728368Z imgui.h
+build	Verify project layout	2026-10-09T15:47:15.5728621Z imgui_demo.cpp
+build	Verify project layout	2026-10-09T15:47:15.5728828Z imgui_draw.cpp
+build	Verify project layout	2026-10-09T15:47:15.5729030Z imgui_internal.h
+build	Verify project layout	2026-10-09T15:47:15.5731666Z 
+build	Verify project layout	2026-10-09T15:47:15.5732070Z === java ===
+build	Verify project layout	2026-10-09T15:47:15.5740940Z ModView.java
+build	Verify project layout	2026-10-09T15:47:15.5741311Z ModView.java.pre_passthrough
+build	Verify project layout	2026-10-09T15:47:15.5741751Z ModViewHelper.java
+build	Verify project layout	2026-10-09T15:47:15.5742493Z 
+build	Verify project layout	2026-10-09T15:47:15.5742664Z === scripts ===
+build	Verify project layout	2026-10-09T15:47:15.5753513Z dex_to_header.py
+build	Verify project layout	2026-10-09T15:47:15.5753854Z errors_only.sh
+build	Verify project layout	2026-10-09T15:47:15.5754171Z generate-dex.sh
+build	Verify project layout	2026-10-09T15:47:15.5754437Z git_setup.sh
+build	Verify project layout	2026-10-09T15:47:15.5754628Z push.sh
+build	Verify project layout	2026-10-09T15:47:15.5754833Z show_build_error.sh
+build	Verify project layout	2026-10-09T15:47:15.5755032Z verify.sh
+build	Verify Dobby source	﻿2026-10-09T15:47:15.5787982Z ##[group]Run echo "=== Dobby dir ==="
+build	Verify Dobby source	2026-10-09T15:47:15.5788442Z ^[[36;1mecho "=== Dobby dir ==="^[[0m
+build	Verify Dobby source	2026-10-09T15:47:15.5788733Z ^[[36;1mls app/src/main/jni/all_libs/Dobby/^[[0m
+build	Verify Dobby source	2026-10-09T15:47:15.5789021Z ^[[36;1mecho ""^[[0m
+build	Verify Dobby source	2026-10-09T15:47:15.5789231Z ^[[36;1mecho "=== source/ ==="^[[0m
+build	Verify Dobby source	2026-10-09T15:47:15.5789548Z ^[[36;1mls app/src/main/jni/all_libs/Dobby/source/ | head -10^[[0m
+build	Verify Dobby source	2026-10-09T15:47:15.5789876Z ^[[36;1mecho ""^[[0m
+build	Verify Dobby source	2026-10-09T15:47:15.5790090Z ^[[36;1mecho "=== source file count ==="^[[0m
+build	Verify Dobby source	2026-10-09T15:47:15.5790515Z ^[[36;1mfind app/src/main/jni/all_libs/Dobby/source -name "*.cc" -o -name "*.c" | wc -l^[[0m
+build	Verify Dobby source	2026-10-09T15:47:15.5852656Z shell: /usr/bin/bash -e {0}
+build	Verify Dobby source	2026-10-09T15:47:15.5852913Z env:
+build	Verify Dobby source	2026-10-09T15:47:15.5853130Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Verify Dobby source	2026-10-09T15:47:15.5853435Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Verify Dobby source	2026-10-09T15:47:15.5853726Z   NDK_VERSION: 26.1.10909125
+build	Verify Dobby source	2026-10-09T15:47:15.5854063Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Verify Dobby source	2026-10-09T15:47:15.5854605Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Verify Dobby source	2026-10-09T15:47:15.5854982Z ##[endgroup]
+build	Verify Dobby source	2026-10-09T15:47:15.5934119Z === Dobby dir ===
+build	Verify Dobby source	2026-10-09T15:47:15.5945182Z Android.mk
+build	Verify Dobby source	2026-10-09T15:47:15.5945499Z builtin-plugin
+build	Verify Dobby source	2026-10-09T15:47:15.5945709Z cmake
+build	Verify Dobby source	2026-10-09T15:47:15.5946091Z external
+build	Verify Dobby source	2026-10-09T15:47:15.5946279Z include
+build	Verify Dobby source	2026-10-09T15:47:15.5946456Z source
+build	Verify Dobby source	2026-10-09T15:47:15.5947316Z 
+build	Verify Dobby source	2026-10-09T15:47:15.5947448Z === source/ ===
+build	Verify Dobby source	2026-10-09T15:47:15.5959172Z Backend
+build	Verify Dobby source	2026-10-09T15:47:15.5959565Z InstructionRelocation
+build	Verify Dobby source	2026-10-09T15:47:15.5960070Z InterceptEntry.cpp
+build	Verify Dobby source	2026-10-09T15:47:15.5960303Z InterceptEntry.h
+build	Verify Dobby source	2026-10-09T15:47:15.5960509Z InterceptRouting
+build	Verify Dobby source	2026-10-09T15:47:15.5960821Z Interceptor.cpp
+build	Verify Dobby source	2026-10-09T15:47:15.5961154Z Interceptor.h
+build	Verify Dobby source	2026-10-09T15:47:15.5961471Z MemoryAllocator
+build	Verify Dobby source	2026-10-09T15:47:15.5961812Z PlatformUnifiedInterface
+build	Verify Dobby source	2026-10-09T15:47:15.5962152Z TrampolineBridge
+build	Verify Dobby source	2026-10-09T15:47:15.5963108Z 
+build	Verify Dobby source	2026-10-09T15:47:15.5963275Z === source file count ===
+build	Verify Dobby source	2026-10-09T15:47:15.5988535Z 83
+build	Generate embedded dex	﻿2026-10-09T15:47:15.6021736Z ##[group]Run chmod +x scripts/generate-dex.sh scripts/dex_to_header.py
+build	Generate embedded dex	2026-10-09T15:47:15.6022283Z ^[[36;1mchmod +x scripts/generate-dex.sh scripts/dex_to_header.py^[[0m
+build	Generate embedded dex	2026-10-09T15:47:15.6022661Z ^[[36;1mbash scripts/generate-dex.sh^[[0m
+build	Generate embedded dex	2026-10-09T15:47:15.6083176Z shell: /usr/bin/bash -e {0}
+build	Generate embedded dex	2026-10-09T15:47:15.6083437Z env:
+build	Generate embedded dex	2026-10-09T15:47:15.6083651Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Generate embedded dex	2026-10-09T15:47:15.6083956Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Generate embedded dex	2026-10-09T15:47:15.6084441Z   NDK_VERSION: 26.1.10909125
+build	Generate embedded dex	2026-10-09T15:47:15.6084780Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Generate embedded dex	2026-10-09T15:47:15.6085276Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Generate embedded dex	2026-10-09T15:47:15.6085652Z ##[endgroup]
+build	Generate embedded dex	2026-10-09T15:47:15.6288359Z Build tools: 37.0.0
+build	Generate embedded dex	2026-10-09T15:47:15.6288839Z Platform: android-37.2-beta3
+build	Generate embedded dex	2026-10-09T15:47:15.6289504Z Android JAR: /usr/local/lib/android/sdk/platforms/android-37.2-beta3/android.jar
+build	Generate embedded dex	2026-10-09T15:47:15.6290329Z D8: /usr/local/lib/android/sdk/build-tools/37.0.0/d8
+build	Generate embedded dex	2026-10-09T15:47:15.6290862Z Compiling Java sources...
+build	Generate embedded dex	2026-10-09T15:47:17.1429332Z Note: /home/runner/work/YAM-GG/YAM-GG/app/src/main/java/com/yamgg/modview/ModView.java uses or overrides a deprecated API.
+build	Generate embedded dex	2026-10-09T15:47:17.1430314Z Note: Recompile with -Xlint:deprecation for details.
+build	Generate embedded dex	2026-10-09T15:47:17.1432492Z Compiled classes:
+build	Generate embedded dex	2026-10-09T15:47:17.1447855Z /home/runner/work/YAM-GG/YAM-GG/build/dex-build/classes/com/yamgg/modview/ModView$2.class
+build	Generate embedded dex	2026-10-09T15:47:17.1448909Z /home/runner/work/YAM-GG/YAM-GG/build/dex-build/classes/com/yamgg/modview/ModViewHelper.class
+build	Generate embedded dex	2026-10-09T15:47:17.1449768Z /home/runner/work/YAM-GG/YAM-GG/build/dex-build/classes/com/yamgg/modview/ModView.class
+build	Generate embedded dex	2026-10-09T15:47:17.1450706Z /home/runner/work/YAM-GG/YAM-GG/build/dex-build/classes/com/yamgg/modview/ModView$1.class
+build	Generate embedded dex	2026-10-09T15:47:17.1451633Z Converting to DEX...
+build	Generate embedded dex	2026-10-09T15:47:20.4611627Z DEX size: 7004 bytes
+build	Generate embedded dex	2026-10-09T15:47:20.4612134Z Generating C header...
+build	Generate embedded dex	2026-10-09T15:47:20.4810785Z Generated header:
+build	Generate embedded dex	2026-10-09T15:47:20.4821932Z 454 /home/runner/work/YAM-GG/YAM-GG/app/src/main/jni/Generated/embedded_dex.h
+build	Generate embedded dex	2026-10-09T15:47:20.4832985Z // Auto-generated. Do not edit.
+build	Generate embedded dex	2026-10-09T15:47:20.4833486Z #ifndef YAMGG_EMBEDDED_DEX_H
+build	Generate embedded dex	2026-10-09T15:47:20.4833884Z #define YAMGG_EMBEDDED_DEX_H
+build	Generate embedded dex	2026-10-09T15:47:20.4834123Z 
+build	Generate embedded dex	2026-10-09T15:47:20.4834258Z #include <cstddef>
+build	Generate embedded dex	2026-10-09T15:47:20.4834469Z 
+build	Generate embedded dex	2026-10-09T15:47:20.4834623Z namespace yamgg {
+build	Generate embedded dex	2026-10-09T15:47:20.4834860Z 
+build	Generate embedded dex	2026-10-09T15:47:20.4835063Z static const unsigned int kDexSize = 7004;
+build	Generate embedded dex	2026-10-09T15:47:20.4835404Z 
+build	Generate embedded dex	2026-10-09T15:47:20.4836994Z DEX generation complete
+build	Verify dex generation	﻿2026-10-09T15:47:20.4873075Z ##[group]Run ls -la app/src/main/jni/Generated/
+build	Verify dex generation	2026-10-09T15:47:20.4873483Z ^[[36;1mls -la app/src/main/jni/Generated/^[[0m
+build	Verify dex generation	2026-10-09T15:47:20.4873836Z ^[[36;1mwc -l app/src/main/jni/Generated/embedded_dex.h^[[0m
+build	Verify dex generation	2026-10-09T15:47:20.4874237Z ^[[36;1mhead -15 app/src/main/jni/Generated/embedded_dex.h^[[0m
+build	Verify dex generation	2026-10-09T15:47:20.4937405Z shell: /usr/bin/bash -e {0}
+build	Verify dex generation	2026-10-09T15:47:20.4937671Z env:
+build	Verify dex generation	2026-10-09T15:47:20.4937894Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Verify dex generation	2026-10-09T15:47:20.4938205Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Verify dex generation	2026-10-09T15:47:20.4938490Z   NDK_VERSION: 26.1.10909125
+build	Verify dex generation	2026-10-09T15:47:20.4938846Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Verify dex generation	2026-10-09T15:47:20.4939347Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Verify dex generation	2026-10-09T15:47:20.4939741Z ##[endgroup]
+build	Verify dex generation	2026-10-09T15:47:20.5039040Z total 52
+build	Verify dex generation	2026-10-09T15:47:20.5039510Z drwxr-xr-x 2 runner runner  4096 Oct  9 15:47 .
+build	Verify dex generation	2026-10-09T15:47:20.5040003Z drwxr-xr-x 9 runner runner  4096 Oct  9 15:47 ..
+build	Verify dex generation	2026-10-09T15:47:20.5040441Z -rw-r--r-- 1 runner runner 44051 Oct  9 15:47 embedded_dex.h
+build	Verify dex generation	2026-10-09T15:47:20.5049871Z 454 app/src/main/jni/Generated/embedded_dex.h
+build	Verify dex generation	2026-10-09T15:47:20.5060300Z // Auto-generated. Do not edit.
+build	Verify dex generation	2026-10-09T15:47:20.5060798Z #ifndef YAMGG_EMBEDDED_DEX_H
+build	Verify dex generation	2026-10-09T15:47:20.5061177Z #define YAMGG_EMBEDDED_DEX_H
+build	Verify dex generation	2026-10-09T15:47:20.5061331Z 
+build	Verify dex generation	2026-10-09T15:47:20.5061426Z #include <cstddef>
+build	Verify dex generation	2026-10-09T15:47:20.5061559Z 
+build	Verify dex generation	2026-10-09T15:47:20.5061649Z namespace yamgg {
+build	Verify dex generation	2026-10-09T15:47:20.5061777Z 
+build	Verify dex generation	2026-10-09T15:47:20.5061897Z static const unsigned int kDexSize = 7004;
+build	Verify dex generation	2026-10-09T15:47:20.5062101Z 
+build	Verify dex generation	2026-10-09T15:47:20.5062208Z static const unsigned char kDexBytes[] = {
+build	Verify dex generation	2026-10-09T15:47:20.5062626Z     0x64, 0x65, 0x78, 0x0a, 0x30, 0x33, 0x37, 0x00, 0x46, 0xa0, 0xa7, 0x9a, 0x10, 0x97, 0x2e, 0xab,
+build	Verify dex generation	2026-10-09T15:47:20.5064006Z     0x9c, 0x99, 0x62, 0x83, 0x82, 0xef, 0x49, 0xc3, 0x7b, 0x20, 0x93, 0x90, 0x60, 0x02, 0xd0, 0x71,
+build	Verify dex generation	2026-10-09T15:47:20.5064892Z     0x5c, 0x1b, 0x00, 0x00, 0x70, 0x00, 0x00, 0x00, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00,
+build	Verify dex generation	2026-10-09T15:47:20.5065428Z     0x00, 0x00, 0x00, 0x00, 0x8c, 0x1a, 0x00, 0x00, 0x88, 0x00, 0x00, 0x00, 0x70, 0x00, 0x00, 0x00,
+build	Build .so with ndk-build	﻿2026-10-09T15:47:20.5093811Z ##[group]Run set -e
+build	Build .so with ndk-build	2026-10-09T15:47:20.5094083Z ^[[36;1mset -e^[[0m
+build	Build .so with ndk-build	2026-10-09T15:47:20.5094294Z ^[[36;1mcd app/src/main/jni^[[0m
+build	Build .so with ndk-build	2026-10-09T15:47:20.5094574Z ^[[36;1m$ANDROID_HOME/ndk/$NDK_VERSION/ndk-build \^[[0m
+build	Build .so with ndk-build	2026-10-09T15:47:20.5094889Z ^[[36;1m  NDK_PROJECT_PATH=. \^[[0m
+build	Build .so with ndk-build	2026-10-09T15:47:20.5095161Z ^[[36;1m  APP_BUILD_SCRIPT=./Android.mk \^[[0m
+build	Build .so with ndk-build	2026-10-09T15:47:20.5095493Z ^[[36;1m  NDK_APPLICATION_MK=./Application.mk \^[[0m
+build	Build .so with ndk-build	2026-10-09T15:47:20.5095793Z ^[[36;1m  NDK_OUT=/tmp/ndk-out \^[[0m
+build	Build .so with ndk-build	2026-10-09T15:47:20.5096421Z ^[[36;1m  NDK_LIBS_OUT=/tmp/ndk-libs \^[[0m
+build	Build .so with ndk-build	2026-10-09T15:47:20.5096728Z ^[[36;1m  V=1 2>&1 | tee /tmp/ndk-build.log^[[0m
+build	Build .so with ndk-build	2026-10-09T15:47:20.5157491Z shell: /usr/bin/bash -e {0}
+build	Build .so with ndk-build	2026-10-09T15:47:20.5157754Z env:
+build	Build .so with ndk-build	2026-10-09T15:47:20.5157982Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Build .so with ndk-build	2026-10-09T15:47:20.5158301Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Build .so with ndk-build	2026-10-09T15:47:20.5158584Z   NDK_VERSION: 26.1.10909125
+build	Build .so with ndk-build	2026-10-09T15:47:20.5158928Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Build .so with ndk-build	2026-10-09T15:47:20.5159498Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Build .so with ndk-build	2026-10-09T15:47:20.5159876Z ##[endgroup]
+build	Build .so with ndk-build	2026-10-09T15:47:20.7037457Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:YAMGG: non-system libraries in linker flags: -lc++_static -lunwind    
+build	Build .so with ndk-build	2026-10-09T15:47:20.7038843Z Android NDK:     This is likely to result in incorrect builds. Try using LOCAL_STATIC_LIBRARIES    
+build	Build .so with ndk-build	2026-10-09T15:47:20.7039964Z Android NDK:     or LOCAL_SHARED_LIBRARIES instead to list the library dependencies of the    
+build	Build .so with ndk-build	2026-10-09T15:47:20.7040824Z Android NDK:     current module    
+build	Build .so with ndk-build	2026-10-09T15:47:20.7041686Z Android NDK: WARNING:all_libs/XDL/Android.mk:xdl: LOCAL_LDLIBS is always ignored for static libraries    
+build	Build .so with ndk-build	2026-10-09T15:47:20.7043058Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:yamcpp: LOCAL_LDLIBS is always ignored for static libraries    
+build	Build .so with ndk-build	2026-10-09T15:47:20.7044565Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:yamcpp: non-system libraries in linker flags: -lc++_static -lunwind    
+build	Build .so with ndk-build	2026-10-09T15:47:20.7046282Z Android NDK:     This is likely to result in incorrect builds. Try using LOCAL_STATIC_LIBRARIES    
+build	Build .so with ndk-build	2026-10-09T15:47:20.7047405Z Android NDK:     or LOCAL_SHARED_LIBRARIES instead to list the library dependencies of the    
+build	Build .so with ndk-build	2026-10-09T15:47:20.7048222Z Android NDK:     current module    
+build	Build .so with ndk-build	2026-10-09T15:47:20.7049744Z rm -f /tmp/ndk-libs/arm64-v8a/*
+build	Build .so with ndk-build	2026-10-09T15:47:20.7082170Z [arm64-v8a] Compile++      : YAMGG <= Main.cpp
+build	Build .so with ndk-build	2026-10-09T15:47:20.7082820Z rm -f /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o
+build	Build .so with ndk-build	2026-10-09T15:47:20.7101258Z /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ -MMD -MP -MF /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o.d -target aarch64-none-linux-android24 -fdata-sections -ffunction-sections -fstack-protector-strong -funwind-tables -no-canonical-prefixes  --sysroot /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -Wno-invalid-command-line-argument -Wno-unused-command-line-argument  -D_FORTIFY_SOURCE=2 -fno-exceptions -fno-rtti -fpic -O2 -DNDEBUG  -I. -I./Core -I./UI -I./UI/Tabs -I./UI/Widgets -I./Bridge -I./JNI -I./Generated -I./Includes -I./all_libs/imgui -I./all_libs/imgui/backends -I./all_libs/json -I./all_libs/YAM-G/LIBYAMJS/include -I./all_libs/YAM-G/wrapper/include -I./all_libs/XDL -I./all_libs/XDL/include -I./all_libs/Dobby/prebuilt/include -I./all_libs/KittyMemory/KittyMemory -I./all_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/XDL -Iall_libs/XDL/include -Iall_libs/YAM-G/wrapper/include -Iall_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/YAM-G/LIBYAMJS/include -I. -O2 -DNDEBUG -w -std=c++17 -fexceptions -frtti -O2 -DNDEBUG -w  -DANDROID -w -O2 -DNDEBUG -Wformat -Werror=format-security -std=c++17 -fexceptions -frtti -fPIC -w -O2 -DNDEBUG -DIMGUI_IMPL_OPENGL_ES3=1 -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1 -Wno-error -DYAM_ARCH_ARM64=1 -frtti -fexceptions  -c  ./Main.cpp -o /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o
+build	Build .so with ndk-build	2026-10-09T15:47:21.1718182Z [arm64-v8a] Compile++      : YAMGG <= NativeMethods.cpp
+build	Build .so with ndk-build	2026-10-09T15:47:21.1718955Z rm -f /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o
+build	Build .so with ndk-build	2026-10-09T15:47:21.1734552Z /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ -MMD -MP -MF /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o.d -target aarch64-none-linux-android24 -fdata-sections -ffunction-sections -fstack-protector-strong -funwind-tables -no-canonical-prefixes  --sysroot /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -Wno-invalid-command-line-argument -Wno-unused-command-line-argument  -D_FORTIFY_SOURCE=2 -fno-exceptions -fno-rtti -fpic -O2 -DNDEBUG  -I. -I./Core -I./UI -I./UI/Tabs -I./UI/Widgets -I./Bridge -I./JNI -I./Generated -I./Includes -I./all_libs/imgui -I./all_libs/imgui/backends -I./all_libs/json -I./all_libs/YAM-G/LIBYAMJS/include -I./all_libs/YAM-G/wrapper/include -I./all_libs/XDL -I./all_libs/XDL/include -I./all_libs/Dobby/prebuilt/include -I./all_libs/KittyMemory/KittyMemory -I./all_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/XDL -Iall_libs/XDL/include -Iall_libs/YAM-G/wrapper/include -Iall_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/YAM-G/LIBYAMJS/include -I. -O2 -DNDEBUG -w -std=c++17 -fexceptions -frtti -O2 -DNDEBUG -w  -DANDROID -w -O2 -DNDEBUG -Wformat -Werror=format-security -std=c++17 -fexceptions -frtti -fPIC -w -O2 -DNDEBUG -DIMGUI_IMPL_OPENGL_ES3=1 -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1 -Wno-error -DYAM_ARCH_ARM64=1 -frtti -fexceptions  -c  ./JNI/NativeMethods.cpp -o /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o
+build	Build .so with ndk-build	2026-10-09T15:47:21.5414406Z ./JNI/NativeMethods.cpp:42:46: error: use of undeclared identifier 'impl_nativeWantCaptureMouse'
+build	Build .so with ndk-build	2026-10-09T15:47:21.5415721Z     {"nativeWantCaptureMouse", "()Z", (void*)impl_nativeWantCaptureMouse},
+build	Build .so with ndk-build	2026-10-09T15:47:21.5416939Z                                              ^
+build	Build .so with ndk-build	2026-10-09T15:47:21.5417909Z ./JNI/NativeMethods.cpp:47:20: error: invalid application of 'sizeof' to an incomplete type 'const JNINativeMethod[]'
+build	Build .so with ndk-build	2026-10-09T15:47:21.5418871Z     jint n = sizeof(g_methods) / sizeof(g_methods[0]);
+build	Build .so with ndk-build	2026-10-09T15:47:21.5419358Z                    ^~~~~~~~~~~
+build	Build .so with ndk-build	2026-10-09T15:47:21.5497076Z ./JNI/NativeMethods.cpp:62:63: error: use of undeclared identifier 'impl_nativeWantCaptureMouse'
+build	Build .so with ndk-build	2026-10-09T15:47:21.5498311Z jboolean wantCaptureMouse(JNIEnv* env, jclass clazz) { return impl_nativeWantCaptureMouse(env, clazz); }
+build	Build .so with ndk-build	2026-10-09T15:47:21.5499227Z                                                               ^
+build	Build .so with ndk-build	2026-10-09T15:47:21.5818881Z 3 errors generated.
+build	Build .so with ndk-build	2026-10-09T15:47:21.5864080Z make: *** [/usr/local/lib/android/sdk/ndk/26.1.10909125/build/core/build-binary.mk:415: /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o] Error 1
+build	Locate .so	﻿2026-10-09T15:47:21.5904104Z ##[group]Run SO=$(find /tmp -name "libYAMGG.so" -type f 2>/dev/null | head -1)
+build	Locate .so	2026-10-09T15:47:21.5904656Z ^[[36;1mSO=$(find /tmp -name "libYAMGG.so" -type f 2>/dev/null | head -1)^[[0m
+build	Locate .so	2026-10-09T15:47:21.5905029Z ^[[36;1mif [ -z "$SO" ]; then^[[0m
+build	Locate .so	2026-10-09T15:47:21.5905301Z ^[[36;1m  echo "ERROR: libYAMGG.so not built"^[[0m
+build	Locate .so	2026-10-09T15:47:21.5905608Z ^[[36;1m  tail -150 /tmp/ndk-build.log^[[0m
+build	Locate .so	2026-10-09T15:47:21.5906247Z ^[[36;1m  exit 1^[[0m
+build	Locate .so	2026-10-09T15:47:21.5906551Z ^[[36;1mfi^[[0m
+build	Locate .so	2026-10-09T15:47:21.5906747Z ^[[36;1mecho "FOUND: $SO"^[[0m
+build	Locate .so	2026-10-09T15:47:21.5906978Z ^[[36;1mdu -h "$SO"^[[0m
+build	Locate .so	2026-10-09T15:47:21.5907183Z ^[[36;1mfile "$SO"^[[0m
+build	Locate .so	2026-10-09T15:47:21.5907402Z ^[[36;1mecho "$SO" > /tmp/so_path.txt^[[0m
+build	Locate .so	2026-10-09T15:47:21.5969742Z shell: /usr/bin/bash -e {0}
+build	Locate .so	2026-10-09T15:47:21.5970004Z env:
+build	Locate .so	2026-10-09T15:47:21.5970213Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Locate .so	2026-10-09T15:47:21.5970523Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Locate .so	2026-10-09T15:47:21.5970807Z   NDK_VERSION: 26.1.10909125
+build	Locate .so	2026-10-09T15:47:21.5971189Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Locate .so	2026-10-09T15:47:21.5971693Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Locate .so	2026-10-09T15:47:21.5972067Z ##[endgroup]
+build	Locate .so	2026-10-09T15:47:21.6076807Z ERROR: libYAMGG.so not built
+build	Locate .so	2026-10-09T15:47:21.6085691Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:YAMGG: non-system libraries in linker flags: -lc++_static -lunwind    
+build	Locate .so	2026-10-09T15:47:21.6086899Z Android NDK:     This is likely to result in incorrect builds. Try using LOCAL_STATIC_LIBRARIES    
+build	Locate .so	2026-10-09T15:47:21.6087543Z Android NDK:     or LOCAL_SHARED_LIBRARIES instead to list the library dependencies of the    
+build	Locate .so	2026-10-09T15:47:21.6088123Z Android NDK:     current module    
+build	Locate .so	2026-10-09T15:47:21.6089087Z Android NDK: WARNING:all_libs/XDL/Android.mk:xdl: LOCAL_LDLIBS is always ignored for static libraries    
+build	Locate .so	2026-10-09T15:47:21.6089941Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:yamcpp: LOCAL_LDLIBS is always ignored for static libraries    
+build	Locate .so	2026-10-09T15:47:21.6090784Z Android NDK: WARNING:all_libs/YAM-G/wrapper/Android.mk:yamcpp: non-system libraries in linker flags: -lc++_static -lunwind    
+build	Locate .so	2026-10-09T15:47:21.6091510Z Android NDK:     This is likely to result in incorrect builds. Try using LOCAL_STATIC_LIBRARIES    
+build	Locate .so	2026-10-09T15:47:21.6092112Z Android NDK:     or LOCAL_SHARED_LIBRARIES instead to list the library dependencies of the    
+build	Locate .so	2026-10-09T15:47:21.6092548Z Android NDK:     current module    
+build	Locate .so	2026-10-09T15:47:21.6092822Z rm -f /tmp/ndk-libs/arm64-v8a/*
+build	Locate .so	2026-10-09T15:47:21.6093128Z [arm64-v8a] Compile++      : YAMGG <= Main.cpp
+build	Locate .so	2026-10-09T15:47:21.6093475Z rm -f /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o
+build	Locate .so	2026-10-09T15:47:21.6098821Z /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ -MMD -MP -MF /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o.d -target aarch64-none-linux-android24 -fdata-sections -ffunction-sections -fstack-protector-strong -funwind-tables -no-canonical-prefixes  --sysroot /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -Wno-invalid-command-line-argument -Wno-unused-command-line-argument  -D_FORTIFY_SOURCE=2 -fno-exceptions -fno-rtti -fpic -O2 -DNDEBUG  -I. -I./Core -I./UI -I./UI/Tabs -I./UI/Widgets -I./Bridge -I./JNI -I./Generated -I./Includes -I./all_libs/imgui -I./all_libs/imgui/backends -I./all_libs/json -I./all_libs/YAM-G/LIBYAMJS/include -I./all_libs/YAM-G/wrapper/include -I./all_libs/XDL -I./all_libs/XDL/include -I./all_libs/Dobby/prebuilt/include -I./all_libs/KittyMemory/KittyMemory -I./all_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/XDL -Iall_libs/XDL/include -Iall_libs/YAM-G/wrapper/include -Iall_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/YAM-G/LIBYAMJS/include -I. -O2 -DNDEBUG -w -std=c++17 -fexceptions -frtti -O2 -DNDEBUG -w  -DANDROID -w -O2 -DNDEBUG -Wformat -Werror=format-security -std=c++17 -fexceptions -frtti -fPIC -w -O2 -DNDEBUG -DIMGUI_IMPL_OPENGL_ES3=1 -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1 -Wno-error -DYAM_ARCH_ARM64=1 -frtti -fexceptions  -c  ./Main.cpp -o /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/Main.o
+build	Locate .so	2026-10-09T15:47:21.6104335Z [arm64-v8a] Compile++      : YAMGG <= NativeMethods.cpp
+build	Locate .so	2026-10-09T15:47:21.6104743Z rm -f /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o
+build	Locate .so	2026-10-09T15:47:21.6110834Z /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ -MMD -MP -MF /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o.d -target aarch64-none-linux-android24 -fdata-sections -ffunction-sections -fstack-protector-strong -funwind-tables -no-canonical-prefixes  --sysroot /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -Wno-invalid-command-line-argument -Wno-unused-command-line-argument  -D_FORTIFY_SOURCE=2 -fno-exceptions -fno-rtti -fpic -O2 -DNDEBUG  -I. -I./Core -I./UI -I./UI/Tabs -I./UI/Widgets -I./Bridge -I./JNI -I./Generated -I./Includes -I./all_libs/imgui -I./all_libs/imgui/backends -I./all_libs/json -I./all_libs/YAM-G/LIBYAMJS/include -I./all_libs/YAM-G/wrapper/include -I./all_libs/XDL -I./all_libs/XDL/include -I./all_libs/Dobby/prebuilt/include -I./all_libs/KittyMemory/KittyMemory -I./all_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/XDL -Iall_libs/XDL/include -Iall_libs/YAM-G/wrapper/include -Iall_libs/KittyMemory/KittyMemory/Deps/Keystone/includes -Iall_libs/YAM-G/LIBYAMJS/include -I. -O2 -DNDEBUG -w -std=c++17 -fexceptions -frtti -O2 -DNDEBUG -w  -DANDROID -w -O2 -DNDEBUG -Wformat -Werror=format-security -std=c++17 -fexceptions -frtti -fPIC -w -O2 -DNDEBUG -DIMGUI_IMPL_OPENGL_ES3=1 -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1 -Wno-error -DYAM_ARCH_ARM64=1 -frtti -fexceptions  -c  ./JNI/NativeMethods.cpp -o /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o
+build	Locate .so	2026-10-09T15:47:21.6116984Z ./JNI/NativeMethods.cpp:42:46: error: use of undeclared identifier 'impl_nativeWantCaptureMouse'
+build	Locate .so	2026-10-09T15:47:21.6117569Z     {"nativeWantCaptureMouse", "()Z", (void*)impl_nativeWantCaptureMouse},
+build	Locate .so	2026-10-09T15:47:21.6117969Z                                              ^
+build	Locate .so	2026-10-09T15:47:21.6118479Z ./JNI/NativeMethods.cpp:47:20: error: invalid application of 'sizeof' to an incomplete type 'const JNINativeMethod[]'
+build	Locate .so	2026-10-09T15:47:21.6119033Z     jint n = sizeof(g_methods) / sizeof(g_methods[0]);
+build	Locate .so	2026-10-09T15:47:21.6119338Z                    ^~~~~~~~~~~
+build	Locate .so	2026-10-09T15:47:21.6119747Z ./JNI/NativeMethods.cpp:62:63: error: use of undeclared identifier 'impl_nativeWantCaptureMouse'
+build	Locate .so	2026-10-09T15:47:21.6120427Z jboolean wantCaptureMouse(JNIEnv* env, jclass clazz) { return impl_nativeWantCaptureMouse(env, clazz); }
+build	Locate .so	2026-10-09T15:47:21.6120940Z                                                               ^
+build	Locate .so	2026-10-09T15:47:21.6121223Z 3 errors generated.
+build	Locate .so	2026-10-09T15:47:21.6121799Z make: *** [/usr/local/lib/android/sdk/ndk/26.1.10909125/build/core/build-binary.mk:415: /tmp/ndk-out/local/arm64-v8a/objs/YAMGG/JNI/NativeMethods.o] Error 1
+build	Locate .so	2026-10-09T15:47:21.6126367Z ##[error]Process completed with exit code 1.
+build	Upload build log	﻿2026-10-09T15:47:21.6197313Z ##[group]Run actions/upload-artifact@v4
+build	Upload build log	2026-10-09T15:47:21.6197619Z with:
+build	Upload build log	2026-10-09T15:47:21.6197823Z   name: YAMGG-build-log
+build	Upload build log	2026-10-09T15:47:21.6198056Z   path: /tmp/ndk-build.log
+build	Upload build log	2026-10-09T15:47:21.6198295Z   if-no-files-found: warn
+build	Upload build log	2026-10-09T15:47:21.6198521Z   compression-level: 6
+build	Upload build log	2026-10-09T15:47:21.6198733Z   overwrite: false
+build	Upload build log	2026-10-09T15:47:21.6198941Z   include-hidden-files: false
+build	Upload build log	2026-10-09T15:47:21.6199164Z env:
+build	Upload build log	2026-10-09T15:47:21.6199361Z   ANDROID_HOME: /usr/local/lib/android/sdk
+build	Upload build log	2026-10-09T15:47:21.6199654Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+build	Upload build log	2026-10-09T15:47:21.6199947Z   NDK_VERSION: 26.1.10909125
+build	Upload build log	2026-10-09T15:47:21.6200278Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Upload build log	2026-10-09T15:47:21.6200761Z   JAVA_HOME_17_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.20-1/x64
+build	Upload build log	2026-10-09T15:47:21.6201126Z ##[endgroup]
+build	Upload build log	2026-10-09T15:47:21.7878795Z (node:2699) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+build	Upload build log	2026-10-09T15:47:21.7880122Z (Use `node --trace-deprecation ...` to show where the warning was created)
+build	Upload build log	2026-10-09T15:47:21.7957636Z With the provided path, there will be 1 file uploaded
+build	Upload build log	2026-10-09T15:47:21.7960846Z Artifact name is valid!
+build	Upload build log	2026-10-09T15:47:21.7961199Z Root directory input is valid!
+build	Upload build log	2026-10-09T15:47:22.0257437Z Beginning upload of artifact content to blob storage
+build	Upload build log	2026-10-09T15:47:22.0461356Z (node:2699) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+build	Upload build log	2026-10-09T15:47:22.0904917Z Uploaded bytes 1377
+build	Upload build log	2026-10-09T15:47:22.1067995Z Finished uploading artifact content to blob storage!
+build	Upload build log	2026-10-09T15:47:22.1068899Z SHA256 digest of uploaded artifact zip is afd5807a09b4a187213192ba162a7bb586998c09c3431530ae5d9c3fe6a03e00
+build	Upload build log	2026-10-09T15:47:22.1071074Z Finalizing artifact upload
+build	Upload build log	2026-10-09T15:47:22.3207197Z Artifact YAMGG-build-log.zip successfully finalized. Artifact ID 11626723768
+build	Upload build log	2026-10-09T15:47:22.3217515Z Artifact YAMGG-build-log has been successfully uploaded! Final size is 1377 bytes. Artifact ID is 11626723768
+build	Upload build log	2026-10-09T15:47:22.3218964Z Artifact download URL: https://github.com/Yamin843/YAM-GG/actions/runs/37954256302/artifacts/11626723768
+build	Post Setup Java 17	﻿2026-10-09T15:47:22.3398634Z Post job cleanup.
+build	Post Setup Java 17	2026-10-09T15:47:22.4749186Z (node:2711) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+build	Post Setup Java 17	2026-10-09T15:47:22.4750470Z (Use `node --trace-deprecation ...` to show where the warning was created)
+build	Post Checkout	﻿2026-10-09T15:47:22.4934818Z Post job cleanup.
+build	Post Checkout	2026-10-09T15:47:22.5979480Z [command]/usr/bin/git version
+build	Post Checkout	2026-10-09T15:47:22.6039188Z git version 2.55.0
+build	Post Checkout	2026-10-09T15:47:22.6088033Z Temporarily overriding HOME='/home/runner/work/_temp/5258dd64-0e78-45df-831e-6d53147cc73c' before making global git config changes
+build	Post Checkout	2026-10-09T15:47:22.6089680Z Adding repository directory to the temporary git global config as a safe directory
+build	Post Checkout	2026-10-09T15:47:22.6095669Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/YAM-GG/YAM-GG
+build	Post Checkout	2026-10-09T15:47:22.6139936Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+build	Post Checkout	2026-10-09T15:47:22.6183509Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+build	Post Checkout	2026-10-09T15:47:22.6451600Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build	Post Checkout	2026-10-09T15:47:22.6486586Z http.https://github.com/.extraheader
+build	Post Checkout	2026-10-09T15:47:22.6499068Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+build	Post Checkout	2026-10-09T15:47:22.6552618Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+build	Post Checkout	2026-10-09T15:47:22.6815279Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+build	Post Checkout	2026-10-09T15:47:22.6894016Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+build	Complete job	﻿2026-10-09T15:47:22.7295280Z Cleaning up orphan processes
+build	Complete job	2026-10-09T15:47:22.7567281Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-java@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
