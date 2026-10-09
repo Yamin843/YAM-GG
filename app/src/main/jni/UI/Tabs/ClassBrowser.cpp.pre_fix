@@ -68,7 +68,10 @@ void ClassBrowser::registerEvents() {
                             }
                             pi.scalar[0] = 0;
                             pi.booleanVal = false;
-                            mi.args.push_back(std::move(pi));
+                            list.push_back(std::move(pi));
+                            // restore last arg into list.back()
+                            mi.args.push_back(list.back());
+                            list.pop_back();
                         }
                     }
                 }
