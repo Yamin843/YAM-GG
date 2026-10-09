@@ -100,14 +100,12 @@ static const char kBootstrapSrc[] = R"YAMJS(
             var FOS = Java.use("java.io.FileOutputStream");
             var fos = FOS.$new(LOG_PATH, true);
             try {
-                var String_ = Java.use("java.lang.String");
-                var bytes = String_.$new(line + "\n").getBytes("UTF-8");
+                var S = Java.use("java.lang.String");
+                var bytes = S.$new(line + "\n").getBytes("UTF-8");
                 fos.write(bytes);
                 fos.flush();
             } finally { fos.close(); }
-        } catch (e) {
-            send({type:"appsflyer_log_error", message:"" + e});
-        }
+        } catch (e) { send({type:"appsflyer_log_error", message:"" + e}); }
     }
 
     var handlers = {
@@ -160,12 +158,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
         cpp_get_field: function (cmd) {
             var cls = Java.use(cmd.className); var f = cls[cmd.fieldName];
             if (!f) throw new Error("no field: " + cmd.fieldName);
-            var isStatic = false;
-            try { var af = cls.class.getDeclaredFields();
-                  for (var j = 0; j < af.length; j++) {
-                      if (String(af[j].getName()) === cmd.fieldName) {
-                          isStatic = (Number(af[j].getModifiers()) & 8) !== 0; break; } } } catch (e) {}
-            replyValue(cmd.id, JSON.stringify({ static: isStatic, handle: alloc(f) }));
+            replyValue(cmd.id, JSON.stringify({ static: false, handle: alloc(f) }));
         },
         cpp_inspect_handle: function (cmd) {
             var obj = get(cmd.handleId); if (!obj) throw new Error("no handle");
@@ -188,22 +181,74 @@ static const char kBootstrapSrc[] = R"YAMJS(
     });
 
     // ═══════════════════════════════════════════════════════
-    // ATTACH — 5 strategies, no attempt limit
+    // CLASS LOADER RESOLVER — find the InMemoryDexClassLoader
+    // that contains com.yamgg.modview.ModView
+    // ═══════════════════════════════════════════════════════
+    var g_targetLoader = null;
+    var g_modViewClass = null;
+    var g_loaderAttempts = 0;
+
+    function resolveLoader() {
+        if (g_targetLoader !== null) return g_targetLoader;
+        g_loaderAttempts++;
+        try {
+            var loaders = Java.enumerateClassLoadersSync();
+            for (var i = 0; i < loaders.length; i++) {
+                try {
+                    var cls = loaders[i].loadClass("com.yamgg.modview.ModView");
+                    if (cls) {
+                        g_targetLoader = loaders[i];
+                        Java.classFactory.loader = g_targetLoader;
+                        send({ type: "loader_resolved", index: i, total: loaders.length });
+                        return g_targetLoader;
+                    }
+                } catch (e) {}
+            }
+            send({ type: "loader_scan_none", attempts: g_loaderAttempts, total: loaders.length });
+        } catch (e) {
+            send({ type: "loader_scan_err", message: "" + e, attempts: g_loaderAttempts });
+        }
+        return null;
+    }
+
+    function getModViewClass() {
+        if (g_modViewClass !== null) return g_modViewClass;
+        var ldr = resolveLoader();
+        if (!ldr) return null;
+        try {
+            g_modViewClass = Java.use("com.yamgg.modview.ModView");
+            send({ type: "modview_class_ok" });
+        } catch (e) {
+            send({ type: "modview_class_err", message: "" + e });
+            return null;
+        }
+        return g_modViewClass;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // ATTACH — 4 strategies, cached class, smart retry
     // ═══════════════════════════════════════════════════════
     var attachDone = false;
     var attachAttempts = 0;
-    var lastDiagSent = 0;
+    var chooseUsed = 0;
 
     function tryOne(tag, act) {
-        if (!act) return false;
+        if (!act || attachDone) return false;
+        var Mv = getModViewClass();
+        if (!Mv) {
+            // loader not yet available — don't burn more Java.use calls
+            return false;
+        }
+        try { if (act.isFinishing()) return false; } catch (e) {}
         try {
-            try { if (act.isFinishing()) return false; } catch (e) {}
-            var ModView = Java.use("com.yamgg.modview.ModView");
-            ModView.attach(act);
+            Mv.attach(act);
             attachDone = true;
-            send({ type: "attach_ok", strategy: tag,
-                   className: "" + act.getClass().getName(),
-                   attempts: attachAttempts });
+            send({
+                type: "attach_ok",
+                strategy: tag,
+                className: "" + act.getClass().getName(),
+                attempts: attachAttempts
+            });
             return true;
         } catch (e) {
             send({ type: "attach_try_err", strategy: tag, message: "" + e });
@@ -236,7 +281,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
             }
             if (!map) return false;
             var n = map.size();
-            if (attachAttempts === 1) send({ type: "diag_mActivities_size", value: n });
             for (var i = 0; i < n; i++) {
                 try {
                     var rec = map.valueAt(i);
@@ -261,7 +305,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
             var roots = inst.mRoots.value;
             if (!roots) return false;
             var n = roots.size();
-            if (attachAttempts === 1) send({ type: "diag_roots_size", value: n });
             var ActCls = Java.use("android.app.Activity");
             for (var j = 0; j < n; j++) {
                 try {
@@ -280,11 +323,13 @@ static const char kBootstrapSrc[] = R"YAMJS(
     }
 
     function tryJavaChoose() {
+        if (attachDone) return false;
+        chooseUsed++;
         var found = false;
         try {
             Java.choose("android.app.Activity", {
                 onMatch: function (a) {
-                    if (found) return "stop";
+                    if (found || attachDone) return "stop";
                     if (tryOne("Java.choose", a)) { found = true; return "stop"; }
                 },
                 onComplete: function () {}
@@ -296,16 +341,13 @@ static const char kBootstrapSrc[] = R"YAMJS(
     function tryAttachOnce() {
         attachAttempts++;
         Java.performNow(function () {
+            if (attachDone) return;
             if (tryUnityPlayer())  return;
             if (tryMActivities())  return;
             if (tryWindowManager()) return;
-            if (tryJavaChoose())   return;
+            // Java.choose is expensive — only use every 5th attempt
+            if (attachAttempts % 5 === 0) tryJavaChoose();
         });
-
-        if (!attachDone && (attachAttempts - lastDiagSent) >= 30) {
-            lastDiagSent = attachAttempts;
-            send({ type: "attach_still_trying", attempts: attachAttempts });
-        }
     }
 
     function loopAttach() {
@@ -325,9 +367,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     var origOnResume = Activity.onResume;
                     Activity.onResume.implementation = function () {
                         try { origOnResume.call(this); } catch (e) {}
-                        if (!attachDone) {
-                            try { tryOne("onResume", this); } catch (e) {}
-                        }
+                        if (!attachDone) { try { tryOne("onResume", this); } catch (e) {} }
                     };
                     send({type:"hook_installed"});
                 } catch (e) { send({type:"hook_error", message: "install: " + e}); }
