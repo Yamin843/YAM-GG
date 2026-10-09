@@ -265,7 +265,7 @@ void ClassBrowser::drawSearchBar() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Find", ImVec2(80, 0))) {
-        filter_ = searchBuf_.empty() ? "com." : searchBuf_;
+        filter_ = (searchBuf_[0] == 0) ? "com." : std::string(searchBuf_);
         triggerLoadClasses();
     }
     if (loading_) { ImGui::SameLine(); ImGui::TextDisabled("..."); }
@@ -359,8 +359,25 @@ void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
         for (size_t i = 0; i < m.args.size(); ++i) drawParamWidget(cls, m, m.args[i], (int)i);
         ImGui::Separator();
         if (!m.isStatic) drawInstancePicker(cls, m);
-        if (ImGui::Button(m.tracing ? "Stop" : "Trace", ImVec2(110, 38)))
-            m.tracing ? (triggerTrace(cls, m), m.tracing=false) : triggerTrace(cls, m);
+        if (ImGui::Button(m.tracing ? "Stop" : "Trace", ImVec2(110, 38))) {
+            if (m.tracing) {
+                // off: restore original implementations
+                std::string cn = yam::JsonValue(cls).stringify();
+                std::string mn = yam::JsonValue(m.name).stringify();
+                std::string js = "(function(){try{var C=Java.use(" + cn + ");"
+                    "var MM=C[" + mn + "];"
+                    "if(MM&&MM.overloads)for(var i=0;i<MM.overloads.length;i++){"
+                    "var ov=MM.overloads[i];"
+                    "if(ov.__ygg!==undefined){ov.implementation=ov.__ygg;delete ov.__ygg;}"
+                    "else{ov.implementation=null;}}"
+                    "send({type:'trace_off_ok'});}catch(e){}})();";
+                sendJS(js);
+                m.tracing = false;
+            } else {
+                triggerTrace(cls, m);
+                m.tracing = true;
+            }
+        }
         ImGui::SameLine();
         if (ImGui::Button("Call", ImVec2(110, 38))) triggerCall(cls, m);
         ImGui::TreePop();

@@ -101,7 +101,7 @@ void MainWindow::drawMainWindow() {
         impl_->initializedSize = true;
     }
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove;
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
     if (impl_->fullscreen) {
         flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
     }
@@ -180,74 +180,45 @@ void MainWindow::drawMainWindow() {
     }
     ImGui::EndChild();
 
-    // ─── 5-zone custom drag/resize ───
-    // Outer 4 zones (T/B/L/R): move or resize window
-    // Inner zone: scroll content naturally (ImGui handles via BeginChild)
+    // ─── Custom big resize grip (60x60 triangle, bottom-right) ───
     if (!impl_->fullscreen) {
-        ImVec2 wPos  = ImGui::GetWindowPos();
-        ImVec2 wSize = ImGui::GetWindowSize();
-        const float edge = 24.0f;   // border zone width
+        const float gripSz = 60.0f;
+        ImVec2 winPos = ImGui::GetWindowPos();
+        ImVec2 winSize = ImGui::GetWindowSize();
+        ImVec2 gripPos(winPos.x + winSize.x - gripSz, winPos.y + winSize.y - gripSz);
 
-        // Top edge → move window
-        ImGui::SetCursorScreenPos(ImVec2(wPos.x + edge, wPos.y + 2));
-        ImGui::InvisibleButton("##ztop", ImVec2(wSize.x - 2*edge, edge),
-            ImGuiButtonFlags_MouseButtonLeft);
+        ImGui::SetCursorScreenPos(gripPos);
+        ImGui::InvisibleButton("##BigResizeGrip", ImVec2(gripSz, gripSz),
+                               ImGuiButtonFlags_MouseButtonLeft);
+
         if (ImGui::IsItemActive()) {
             ImVec2 d = ImGui::GetIO().MouseDelta;
-            ImGui::SetWindowPos(ImVec2(wPos.x + d.x, wPos.y + d.y));
+            ImVec2 ns(winSize.x + d.x, winSize.y + d.y);
+            if (ns.x < 600.0f) ns.x = 600.0f;
+            if (ns.y < 400.0f) ns.y = 400.0f;
+            if (ns.x > io.DisplaySize.x) ns.x = io.DisplaySize.x;
+            if (ns.y > io.DisplaySize.y) ns.y = io.DisplaySize.y;
+            ImGui::SetWindowSize(ns);
         }
 
-        // Bottom edge → resize vertical
-        ImGui::SetCursorScreenPos(ImVec2(wPos.x + edge, wPos.y + wSize.y - edge));
-        ImGui::InvisibleButton("##zbot", ImVec2(wSize.x - 2*edge, edge),
-            ImGuiButtonFlags_MouseButtonLeft);
-        if (ImGui::IsItemActive()) {
-            ImVec2 d = ImGui::GetIO().MouseDelta;
-            float nh = wSize.y + d.y;
-            if (nh < 450.0f) nh = 450.0f;
-            if (nh > io.DisplaySize.y) nh = io.DisplaySize.y;
-            ImGui::SetWindowSize(ImVec2(wSize.x, nh));
-        }
+        // Draw the triangle on top
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 a(gripPos.x + gripSz - 4, gripPos.y + gripSz - 4);
+        ImVec2 b(gripPos.x + 4,           gripPos.y + gripSz - 4);
+        ImVec2 c(gripPos.x + gripSz - 4, gripPos.y + 4);
 
-        // Left edge → resize horizontal
-        ImGui::SetCursorScreenPos(ImVec2(wPos.x, wPos.y + edge));
-        ImGui::InvisibleButton("##zleft", ImVec2(edge, wSize.y - 2*edge),
-            ImGuiButtonFlags_MouseButtonLeft);
-        if (ImGui::IsItemActive()) {
-            ImVec2 d = ImGui::GetIO().MouseDelta;
-            float nw = wSize.x - d.x;
-            if (nw < 650.0f) nw = 650.0f;
-            if (nw > io.DisplaySize.x) nw = io.DisplaySize.x;
-            ImGui::SetWindowSize(ImVec2(nw, wSize.y));
-        }
+        bool hovered = ImGui::IsItemHovered();
+        bool active  = ImGui::IsItemActive();
+        ImU32 col = active
+            ? ImGui::GetColorU32(ImVec4(1.00f, 1.00f, 0.80f, 1.00f))
+            : (hovered
+                ? ImGui::GetColorU32(ImVec4(1.00f, 0.95f, 0.30f, 1.00f))
+                : ImGui::GetColorU32(ImVec4(1.00f, 0.80f, 0.10f, 1.00f)));
 
-        // Right edge → resize horizontal
-        ImGui::SetCursorScreenPos(ImVec2(wPos.x + wSize.x - edge, wPos.y + edge));
-        ImGui::InvisibleButton("##zright", ImVec2(edge, wSize.y - 2*edge),
-            ImGuiButtonFlags_MouseButtonLeft);
-        if (ImGui::IsItemActive()) {
-            ImVec2 d = ImGui::GetIO().MouseDelta;
-            float nw = wSize.x + d.x;
-            if (nw < 650.0f) nw = 650.0f;
-            if (nw > io.DisplaySize.x) nw = io.DisplaySize.x;
-            ImGui::SetWindowSize(ImVec2(nw, wSize.y));
-        }
-
-        // Corner: bottom-right diagonal resize
-        ImGui::SetCursorScreenPos(ImVec2(wPos.x + wSize.x - 60, wPos.y + wSize.y - 60));
-        ImGui::InvisibleButton("##zcorner", ImVec2(60, 60),
-            ImGuiButtonFlags_MouseButtonLeft);
-        if (ImGui::IsItemActive()) {
-            ImVec2 d = ImGui::GetIO().MouseDelta;
-            float nw = wSize.x + d.x;
-            float nh = wSize.y + d.y;
-            if (nw < 650.0f) nw = 650.0f;
-            if (nh < 450.0f) nh = 450.0f;
-            if (nw > io.DisplaySize.x) nw = io.DisplaySize.x;
-            if (nh > io.DisplaySize.y) nh = io.DisplaySize.y;
-            ImGui::SetWindowSize(ImVec2(nw, nh));
-        }
+        dl->AddTriangleFilled(a, b, c, col);
+        dl->AddTriangle(a, b, c, ImGui::GetColorU32(ImVec4(0.2f, 0.1f, 0.0f, 1.0f)), 2.0f);
     }
+
     ImGui::End();
 }
 
