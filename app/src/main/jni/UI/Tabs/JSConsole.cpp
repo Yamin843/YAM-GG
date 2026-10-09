@@ -198,6 +198,12 @@ void JSConsole::drawLogTab() {
 
 void JSConsole::drawConsoleTab() {
     ImGui::Spacing();
+
+    // Escape → يُخرج التركيز من أي عنصر لتفادي حجز المفاتيح
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+        ImGui::ClearActiveID();
+    }
+
     {
         ImVec2 bs = autoBtn("fromSD");
         if (ImGui::Button("fromSD", bs)) {
@@ -239,6 +245,15 @@ void JSConsole::drawConsoleTab() {
 
     ImGui::InputTextMultiline("##code", codeBuffer_, sizeof(codeBuffer_),
                               ImVec2(-1, 220), ImGuiInputTextFlags_AllowTabInput);
+
+    // Ctrl+Enter → Run السكربت من داخل المحرر
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        bool ctrl = io.KeyCtrl || io.KeySuper;
+        if (ImGui::IsItemFocused() && ctrl && ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
+            if (codeBuffer_[0]) evaluate(std::string(codeBuffer_));
+        }
+    }
 
     {
         ImVec2 bs = autoBtn("Run");

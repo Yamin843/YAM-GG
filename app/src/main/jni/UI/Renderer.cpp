@@ -181,6 +181,83 @@ void Renderer::onTouch(int action, float x, float y, int pointerId) {
 }
 
 
+namespace {
+
+// Android KeyEvent codes (android.view.KeyEvent constants).
+enum {
+    AK_BACK           = 4,
+    AK_DPAD_UP        = 19,
+    AK_DPAD_DOWN      = 20,
+    AK_DPAD_LEFT      = 21,
+    AK_DPAD_RIGHT     = 22,
+    AK_DPAD_CENTER    = 23,
+    AK_ALT_LEFT       = 57,
+    AK_ALT_RIGHT      = 58,
+    AK_SHIFT_LEFT     = 59,
+    AK_SHIFT_RIGHT    = 60,
+    AK_TAB            = 61,
+    AK_ENTER          = 66,
+    AK_DEL            = 67,   // backspace
+    AK_ESCAPE         = 111,
+    AK_FORWARD_DEL    = 112,
+    AK_CTRL_LEFT      = 113,
+    AK_CTRL_RIGHT     = 114,
+    AK_MOVE_HOME      = 122,
+    AK_MOVE_END       = 123,
+    AK_PAGE_UP        = 92,
+    AK_PAGE_DOWN      = 93,
+    AK_INSERT         = 124,
+};
+
+ImGuiKey android_to_imgui_key(int code) {
+    switch (code) {
+    case AK_BACK:           return ImGuiKey_Escape;
+    case AK_DPAD_UP:        return ImGuiKey_UpArrow;
+    case AK_DPAD_DOWN:      return ImGuiKey_DownArrow;
+    case AK_DPAD_LEFT:      return ImGuiKey_LeftArrow;
+    case AK_DPAD_RIGHT:     return ImGuiKey_RightArrow;
+    case AK_DPAD_CENTER:    return ImGuiKey_Enter;
+    case AK_ALT_LEFT:       return ImGuiKey_LeftAlt;
+    case AK_ALT_RIGHT:      return ImGuiKey_RightAlt;
+    case AK_SHIFT_LEFT:     return ImGuiKey_LeftShift;
+    case AK_SHIFT_RIGHT:    return ImGuiKey_RightShift;
+    case AK_TAB:            return ImGuiKey_Tab;
+    case AK_ENTER:          return ImGuiKey_Enter;
+    case AK_DEL:            return ImGuiKey_Backspace;
+    case AK_ESCAPE:         return ImGuiKey_Escape;
+    case AK_FORWARD_DEL:    return ImGuiKey_Delete;
+    case AK_CTRL_LEFT:      return ImGuiKey_LeftCtrl;
+    case AK_CTRL_RIGHT:     return ImGuiKey_RightCtrl;
+    case AK_MOVE_HOME:      return ImGuiKey_Home;
+    case AK_MOVE_END:       return ImGuiKey_End;
+    case AK_PAGE_UP:        return ImGuiKey_PageUp;
+    case AK_PAGE_DOWN:      return ImGuiKey_PageDown;
+    case AK_INSERT:         return ImGuiKey_Insert;
+    default:                return ImGuiKey_None;
+    }
+}
+
+} // namespace
+
+void Renderer::onKey(int keyCode, int action) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (!initialized_.load()) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Always mark the source as keyboard so text fields work.
+    io.AddKeyEvent(ImGuiMod_None, false);   // reset implicit mods — we send explicit ones below
+
+    ImGuiKey k = android_to_imgui_key(keyCode);
+    if (k != ImGuiKey_None) {
+        bool down = (action == 0);
+        io.AddKeyEvent(k, down);
+    } else {
+        // fall back to a raw map so anything we missed still gets caught
+        // (currently unused)
+    }
+}
+
 void Renderer::onChar(unsigned int codepoint) {
     std::lock_guard<std::mutex> lk(charMu_);
     charQueue_.push_back(codepoint);

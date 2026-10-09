@@ -40,8 +40,10 @@ static jboolean JNICALL impl_nativeWantCaptureMouse(JNIEnv* env, jclass clazz) {
     return Renderer::instance().wantCaptureMouse() ? JNI_TRUE : JNI_FALSE;
 }
 
-static void JNICALL impl_nativeOnKey(JNIEnv* env, jclass clazz, jint keyCode, jint action) {
-    (void)env; (void)clazz; (void)keyCode; (void)action;
+static void JNICALL impl_nativeOnKey(JNIEnv* env, jclass clazz,
+                                        jint keyCode, jint action) {
+    (void)env; (void)clazz;
+    Renderer::instance().onKey((int)keyCode, (int)action);
 }
 
 static void JNICALL impl_nativeOnChar(JNIEnv* env, jclass clazz, jint codepoint) {

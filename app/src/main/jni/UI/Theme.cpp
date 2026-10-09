@@ -180,7 +180,7 @@ void Theme::apply() {
     // Selection / nav
     colors[ImGuiCol_TextSelectedBg]        = kGoldSoft;
     colors[ImGuiCol_DragDropTarget]        = kGoldBright;
-    colors[ImGuiCol_NavCursor]             = kGoldBright;
+    colors[ImGuiCol_NavHighlight]          = kGoldBright;
     colors[ImGuiCol_NavWindowingHighlight] = rgba(0xFF, 0xFF, 0xFF, 0.7f);
     colors[ImGuiCol_NavWindowingDimBg]     = rgba(0x00, 0x00, 0x00, 0.6f);
     colors[ImGuiCol_ModalWindowDimBg]      = rgba(0x00, 0x00, 0x00, 0.7f);

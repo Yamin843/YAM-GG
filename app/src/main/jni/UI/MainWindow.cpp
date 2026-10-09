@@ -38,9 +38,11 @@ struct MainWindow::Impl {
     ImVec2 lastFullSize{0, 0};
 
     // window drag
+    bool   dragPending{false};       // click registered, not yet dragged
     bool   windowDragging{false};
     ImVec2 dragStartMouse{0, 0};
     ImVec2 dragStartWindow{0, 0};
+    int    dragStartMs{0};           // when the click started (ms)
 };
 
 MainWindow::MainWindow() : impl_(new Impl()) {
@@ -59,14 +61,15 @@ MainWindow& MainWindow::instance() {
 
 void MainWindow::draw() {
     if (!visible_) {
-        // reset drag state so a subsequent re-show does not "jump"
         impl_->windowDragging = false;
+        impl_->dragPending    = false;
         Notification::instance().draw();
         return;
     }
 
     if (impl_->minimized) {
         impl_->windowDragging = false;
+        impl_->dragPending    = false;
         drawMinimized();
         Notification::instance().draw();
         return;
@@ -289,26 +292,47 @@ void MainWindow::drawMainWindow() {
     }
 
     // ─── Unified drag from any empty spot ───
+    // Threshold-based: click must move > 6 px before drag starts, so a
+    // simple tap on a tree node / button does not shift the window.
     if (!impl_->fullscreen) {
+        ImGuiIO& dio = ImGui::GetIO();
         bool hovered = ImGui::IsWindowHovered(
             ImGuiHoveredFlags_ChildWindows
             | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
 
+        // 1) On mouse-down over empty area, arm the pending drag.
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
             && hovered
-            && !ImGui::IsAnyItemActive()) {
-            impl_->windowDragging  = true;
-            impl_->dragStartMouse  = ImGui::GetIO().MousePos;
+            && !ImGui::IsAnyItemActive()
+            && !impl_->windowDragging) {
+            impl_->dragPending     = true;
+            impl_->dragStartMouse  = dio.MousePos;
             impl_->dragStartWindow = ImGui::GetWindowPos();
         }
 
+        // 2) If pending, check for threshold breach or release.
+        if (impl_->dragPending) {
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                // released without moving → tap, not drag
+                impl_->dragPending = false;
+            } else {
+                float dx = dio.MousePos.x - impl_->dragStartMouse.x;
+                float dy = dio.MousePos.y - impl_->dragStartMouse.y;
+                if ((dx * dx + dy * dy) > 36.0f) {   // 6 px
+                    impl_->windowDragging = true;
+                    impl_->dragPending    = false;
+                }
+            }
+        }
+
+        // 3) If dragging, move the window and stop on release.
         if (impl_->windowDragging) {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                ImVec2 mp = ImGui::GetIO().MousePos;
-                ImVec2 d(mp.x - impl_->dragStartMouse.x,
-                         mp.y - impl_->dragStartMouse.y);
-                ImGui::SetWindowPos(ImVec2(impl_->dragStartWindow.x + d.x,
-                                           impl_->dragStartWindow.y + d.y));
+                ImVec2 d(dio.MousePos.x - impl_->dragStartMouse.x,
+                         dio.MousePos.y - impl_->dragStartMouse.y);
+                ImGui::SetWindowPos(
+                    ImVec2(impl_->dragStartWindow.x + d.x,
+                           impl_->dragStartWindow.y + d.y));
             } else {
                 impl_->windowDragging = false;
             }

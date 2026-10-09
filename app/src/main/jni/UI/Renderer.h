@@ -17,6 +17,7 @@ public:
     void onTouch(int action, float x, float y, int pointerId);
     void onChar(unsigned int codepoint);
     void onScroll(float dx, float dy);
+    void onKey(int keyCode, int action);   // action: 0=down, 1=up
     bool wantTextInput() const { return wantTextInput_.load(); }
 
     bool isReady() const { return ready_.load(); }

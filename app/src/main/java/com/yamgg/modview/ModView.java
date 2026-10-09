@@ -229,13 +229,42 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
     @Override
     public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
         nativeOnKey(keyCode, 0);
-        return true;
+        // نُمرّر مفاتيح التحكم إلى ImGui؛ الباقي يذهب للـ IME إن مفتوح.
+        switch (keyCode) {
+            case android.view.KeyEvent.KEYCODE_BACK:
+            case android.view.KeyEvent.KEYCODE_ESCAPE:
+            case android.view.KeyEvent.KEYCODE_ENTER:
+            case android.view.KeyEvent.KEYCODE_TAB:
+            case android.view.KeyEvent.KEYCODE_DEL:
+            case android.view.KeyEvent.KEYCODE_FORWARD_DEL:
+            case android.view.KeyEvent.KEYCODE_DPAD_UP:
+            case android.view.KeyEvent.KEYCODE_DPAD_DOWN:
+            case android.view.KeyEvent.KEYCODE_DPAD_LEFT:
+            case android.view.KeyEvent.KEYCODE_DPAD_RIGHT:
+                return true;
+            default:
+                return super.onKeyDown(keyCode, event);
+        }
     }
 
     @Override
     public boolean onKeyUp(int keyCode, android.view.KeyEvent event) {
         nativeOnKey(keyCode, 1);
-        return true;
+        switch (keyCode) {
+            case android.view.KeyEvent.KEYCODE_BACK:
+            case android.view.KeyEvent.KEYCODE_ESCAPE:
+            case android.view.KeyEvent.KEYCODE_ENTER:
+            case android.view.KeyEvent.KEYCODE_TAB:
+            case android.view.KeyEvent.KEYCODE_DEL:
+            case android.view.KeyEvent.KEYCODE_FORWARD_DEL:
+            case android.view.KeyEvent.KEYCODE_DPAD_UP:
+            case android.view.KeyEvent.KEYCODE_DPAD_DOWN:
+            case android.view.KeyEvent.KEYCODE_DPAD_LEFT:
+            case android.view.KeyEvent.KEYCODE_DPAD_RIGHT:
+                return true;
+            default:
+                return super.onKeyUp(keyCode, event);
+        }
     }
 
 
@@ -338,15 +367,24 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                             });
                             et.setOnKeyListener(new android.view.View.OnKeyListener() {
                                 @Override public boolean onKey(android.view.View v, int keyCode, KeyEvent event) {
-                                    if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                                    int act = event.getAction();
+                                    if (act == KeyEvent.ACTION_DOWN
+                                        || act == KeyEvent.ACTION_MULTIPLE) {
                                         nativeOnKey(keyCode, 0);
-                                        if (keyCode == KeyEvent.KEYCODE_DEL
-                                            || keyCode == KeyEvent.KEYCODE_ENTER
-                                            || keyCode == KeyEvent.KEYCODE_FORWARD_DEL) {
+                                    } else if (act == KeyEvent.ACTION_UP) {
+                                        nativeOnKey(keyCode, 1);
+                                    }
+
+                                    // Enter / Tab / Del: نُبلّغ ImGui ونمنع الإدخال الافتراضي
+                                    // (الـ IME سيُرسل الحرف عبر onTextChanged للأحرف العادية).
+                                    if (act == KeyEvent.ACTION_DOWN) {
+                                        if (keyCode == KeyEvent.KEYCODE_ENTER
+                                            || keyCode == KeyEvent.KEYCODE_TAB
+                                            || keyCode == KeyEvent.KEYCODE_DEL
+                                            || keyCode == KeyEvent.KEYCODE_FORWARD_DEL
+                                            || keyCode == KeyEvent.KEYCODE_ESCAPE) {
                                             return true;
                                         }
-                                    } else if (event.getAction() == KeyEvent.ACTION_UP) {
-                                        nativeOnKey(keyCode, 1);
                                     }
                                     return false;
                                 }
