@@ -783,13 +783,7 @@ void Script::clear_message_handler() {
     cb_ = nullptr;
 }
 void Script::post(const String& msg) {
-    if (!handle_) {
-        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-            "Script::post: handle_ is NULL");
-        return;
-    }
-    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-        "Script::post: %s", msg.c_str());
+    if (!handle_) return;
     yam_script_post(static_cast<YamScript*>(handle_), msg.c_str(), nullptr);
 }
 void Script::post(const String& msg, const ByteVector& /* data */) {
@@ -1170,26 +1164,9 @@ usize Gc::live_bytes() { return registry().total_bytes(); }
 // Lives here (not in Main.cpp) because glib symbols are renamed by YAMJS.h.
 // ===========================================================================
 extern "C" void yamgg_pump_once() {
-    static std::atomic<int> call_count{0};
-    int n = call_count.fetch_add(1);
-    bool verbose = (n < 5) || (n % 500 == 0);
-
-    GMainContext* td = g_main_context_get_thread_default();
-    GMainContext* def = g_main_context_default();
-    GMainContext* ctx = td ? td : def;
+    GMainContext* ctx = g_main_context_get_thread_default();
+    if (!ctx) ctx = g_main_context_default();
     if (!ctx) return;
-
-    if (verbose) {
-        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-            "pump_once[%d]: ctx=%p thread_default=%p default=%p",
-            n, (void*)ctx, (void*)td, (void*)def);
-    }
-
-    int processed = 0;
-    while (g_main_context_iteration(ctx, FALSE)) { processed++; }
-    if (processed > 0) {
-        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-            "pump_once[%d]: processed=%d", n, processed);
-    }
+    while (g_main_context_iteration(ctx, FALSE)) {}
 }
 } // namespace yam
