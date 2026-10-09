@@ -56,6 +56,7 @@ public:
                const String& name, const String& sig, bool is_static)
         : cls_(std::move(cls)), handle_(handle),
           name_(name), sig_(sig), is_static_(is_static) {}
+    ~JavaMethod();
 
     YAM_NODISCARD u64 handle() const noexcept { return handle_; }
     YAM_NODISCARD const String& name() const noexcept { return name_; }

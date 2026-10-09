@@ -62,6 +62,11 @@ void ClassBrowser::registerEvents() {
                 ml.push_back(std::move(mi));
             }
         }
+        // استعادة حالة tracing المحفوظة (تبقى عبر reload)
+        for (auto& mi : ml) {
+            std::string key = cls + "::" + mi.name;
+            if (tracedMethods_.count(key)) mi.tracing = true;
+        }
         methods_[cls] = std::move(ml);
         // fields
         std::vector<FieldInfo> fl;

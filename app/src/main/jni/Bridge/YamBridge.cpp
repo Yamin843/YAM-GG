@@ -124,6 +124,10 @@ void YamBridge::shutdown() {
 }
 
 void YamBridge::installEventRouter() {
+    // Idempotent: even if called multiple times (from YAM::init and again
+    // from YamBridge::initialize), the handlers register exactly once.
+    static std::once_flag once_;
+    std::call_once(once_, []() {
     yam::events::on("user_script_loaded", [](const yam::Event& ev) {
         std::string name = ev.get_str("name");
         bool ok = ev.get_bool("ok", false);
@@ -149,6 +153,7 @@ void YamBridge::installEventRouter() {
     yam::events::on("agent_ready", [](const yam::Event&) {
         LOGI("bridge agent_ready");
     });
+    }); // end call_once
 }
 
 void YamBridge::onEvalResult(unsigned long long id, bool ok,
@@ -156,25 +161,9 @@ void YamBridge::onEvalResult(unsigned long long id, bool ok,
                               const std::string& error) {
     (void)id;
 
-    std::shared_ptr<EvalSync> sync;
-    {
-        std::lock_guard<std::mutex> lk(evalMu_);
-        if (!pendingEvals_.empty()) {
-            sync = pendingEvals_.front();
-            pendingEvals_.pop_front();
-        }
-    }
-
-    if (sync) {
-        std::lock_guard<std::mutex> lk(sync->mu);
-        sync->done = true;
-        sync->ok = ok;
-        sync->output = result;
-        sync->error = error;
-        sync->cv.notify_all();
-        return;
-    }
-
+    // eval is now synchronous through JavaScriptBridge::eval() — the
+    // eval_result event is informational only. We simply forward it to
+    // the on-screen console so the user can see what happened.
     if (ok) {
         if (!result.empty()) {
             JSConsole::instance().pushOutput(result);

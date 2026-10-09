@@ -73,11 +73,19 @@ void JSConsole::loadScriptFromFile(const std::string& path) {
     // إذا كان موجوداً، حدّث الكود
     for (auto& s : scripts_) {
         if (s.name == name) {
+            bool wasRunning = s.running;
             s.code = code;
             s.path = path;
             s.selected = true;
-            pushOutput("[updated] " + name +
-                       " (" + std::to_string(code.size()) + " bytes)");
+            s.running = false;   // الكود القديم لا يزال في الجسر
+            if (wasRunning) {
+                pushOutput("[updated] " + name +
+                           " (" + std::to_string(code.size()) +
+                           " bytes) — previously RUNNING, reload to apply");
+            } else {
+                pushOutput("[updated] " + name +
+                           " (" + std::to_string(code.size()) + " bytes)");
+            }
             return;
         }
     }

@@ -82,6 +82,16 @@ Result<void> JavaField::set(const JsonValue& v, Ptr<JavaInstance> inst) {
 // SECTION 3 — JavaMethod
 // ===========================================================================
 
+JavaMethod::~JavaMethod() {
+    if (hook_handle_id_ != 0) {
+        // silent unhook — error is not actionable at destruction time
+        try {
+            JavaHookManager::instance().unhook(hook_handle_id_);
+        } catch (...) {}
+        hook_handle_id_ = 0;
+    }
+}
+
 Result<JavaReply> JavaMethod::call(Ptr<JavaInstance> inst,
                                     const std::vector<JsonValue>& args)
 {
