@@ -62,7 +62,7 @@ JavaScriptBridge& JavaScriptBridge::instance() {
 
 Result<void> JavaScriptBridge::initialize() {
     if (ready_.load()) return Result<void>::ok();
-    script_ = Script::create("__yam_cpp_bootstrap__", yamgg_bootstrap::yamgg_bootstrap::kBootstrapSrc);
+    script_ = Script::create("__yam_cpp_bootstrap__", yamgg_bootstrap::kBootstrapSrc);
     script_->set_message_handler([this](const Message& m) { on_message(m); });
     auto lr = script_->load();
     if (!lr) {
