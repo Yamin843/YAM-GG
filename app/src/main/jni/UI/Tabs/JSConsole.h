@@ -12,14 +12,11 @@ public:
     static JSConsole& instance();
 
     void draw();
-
     void evaluate(const std::string& code);
     void loadScriptFromFile(const std::string& path);
     void unloadAll();
-
-    int scriptCount() const;
-    int runningCount() const;
-
+    int  scriptCount() const;
+    int  runningCount() const;
     void pushOutput(const std::string& line);
 
 private:
@@ -34,14 +31,13 @@ private:
         std::string code;
         bool running{false};
         bool selected{false};
-        int id{0};
+        int  id{0};
     };
 
     void drawToolbar();
     void drawScriptsList();
-    void drawCodeEditor();
+    void drawEditor();
     void drawOutput();
-
     void loadSelected();
     void unloadSelected();
     void clearOutput();
@@ -50,14 +46,10 @@ private:
     std::vector<std::string> output_;
     mutable std::mutex mu_;
     int nextScriptId_{1};
-
-    // Editor buffer
-    char codeBuffer_[8192]{0};
-    char pathBuffer_[512]{0};
+    char codeBuffer_[16384]{0};
 };
 
 #define YAMGG_JSCONSOLE yamgg::JSConsole::instance()
-
 } // namespace yamgg
 
 #endif

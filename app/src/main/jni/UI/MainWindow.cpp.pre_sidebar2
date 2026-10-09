@@ -96,7 +96,7 @@ void MainWindow::drawMainWindow() {
     }
 
     ImGui::SetNextWindowSizeConstraints(
-            ImVec2(650.0f, 450.0f),
+            ImVec2(500.0f, 300.0f),
             ImVec2(io.DisplaySize.x, io.DisplaySize.y));
 
     if (impl_->firstDraw) {
@@ -131,33 +131,35 @@ void MainWindow::drawMainWindow() {
 
     drawMenuBar();
 
-    // ─── Sidebar (vertical) ───
-    const float sidebarW = 100.0f;
+    // ───── Left vertical sidebar ─────
+    const float sidebarW = 90.0f;
     ImGui::BeginChild("##Sidebar", ImVec2(sidebarW, 0), true);
     {
-        const ImVec2 btnSz(sidebarW - 12.0f, 64.0f);
+        const ImVec2 btnSz(sidebarW - 12.0f, 60.0f);
+        bool selClasses = (impl_->currentTab == 0);
+        bool selJS      = (impl_->currentTab == 1);
 
-        auto tabBtn = [&](const char* label, int id) {
-            bool sel = (impl_->currentTab == id);
-            ImGui::PushStyleColor(ImGuiCol_Button,
-                sel ? ImVec4(0.45f, 0.35f, 0.0f, 1.0f)
-                    : ImVec4(0.10f, 0.08f, 0.0f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                ImVec4(0.55f, 0.42f, 0.05f, 1.0f));
-            if (ImGui::Button(label, btnSz)) impl_->currentTab = id;
-            ImGui::PopStyleColor(2);
-            ImGui::Spacing();
-        };
+        ImGui::PushStyleColor(ImGuiCol_Button,
+            selClasses ? ImVec4(0.4f, 0.32f, 0.0f, 1.0f) : ImVec4(0.08f, 0.06f, 0.0f, 1.0f));
+        if (ImGui::Button("Classes", btnSz)) impl_->currentTab = 0;
+        ImGui::PopStyleColor();
 
-        tabBtn("Classes", 0);
-        tabBtn("JS",      1);
+        ImGui::Spacing();
+
+        ImGui::PushStyleColor(ImGuiCol_Button,
+            selJS ? ImVec4(0.4f, 0.32f, 0.0f, 1.0f) : ImVec4(0.08f, 0.06f, 0.0f, 1.0f));
+        if (ImGui::Button("JS", btnSz)) impl_->currentTab = 1;
+        ImGui::PopStyleColor();
+
+        ImGui::Spacing();
+        ImGui::Separator();
     }
     ImGui::EndChild();
 
     ImGui::SameLine();
 
-    // ─── Content ───
-    ImGui::BeginChild("##ContentArea", ImVec2(0, 0), false);
+    // ───── Content area ─────
+    ImGui::BeginChild("##Content", ImVec2(0, 0), false);
     {
         if (impl_->currentTab == 0) {
             ClassBrowser::instance().draw();
@@ -166,45 +168,6 @@ void MainWindow::drawMainWindow() {
         }
     }
     ImGui::EndChild();
-
-    // ─── Custom big resize grip (60x60 triangle, bottom-right) ───
-    if (!impl_->fullscreen) {
-        const float gripSz = 60.0f;
-        ImVec2 winPos = ImGui::GetWindowPos();
-        ImVec2 winSize = ImGui::GetWindowSize();
-        ImVec2 gripPos(winPos.x + winSize.x - gripSz, winPos.y + winSize.y - gripSz);
-
-        ImGui::SetCursorScreenPos(gripPos);
-        ImGui::InvisibleButton("##BigResizeGrip", ImVec2(gripSz, gripSz),
-                               ImGuiButtonFlags_MouseButtonLeft);
-
-        if (ImGui::IsItemActive()) {
-            ImVec2 d = ImGui::GetIO().MouseDelta;
-            ImVec2 ns(winSize.x + d.x, winSize.y + d.y);
-            if (ns.x < 600.0f) ns.x = 600.0f;
-            if (ns.y < 400.0f) ns.y = 400.0f;
-            if (ns.x > io.DisplaySize.x) ns.x = io.DisplaySize.x;
-            if (ns.y > io.DisplaySize.y) ns.y = io.DisplaySize.y;
-            ImGui::SetWindowSize(ns);
-        }
-
-        // Draw the triangle on top
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 a(gripPos.x + gripSz - 4, gripPos.y + gripSz - 4);
-        ImVec2 b(gripPos.x + 4,           gripPos.y + gripSz - 4);
-        ImVec2 c(gripPos.x + gripSz - 4, gripPos.y + 4);
-
-        bool hovered = ImGui::IsItemHovered();
-        bool active  = ImGui::IsItemActive();
-        ImU32 col = active
-            ? ImGui::GetColorU32(ImVec4(1.00f, 1.00f, 0.80f, 1.00f))
-            : (hovered
-                ? ImGui::GetColorU32(ImVec4(1.00f, 0.95f, 0.30f, 1.00f))
-                : ImGui::GetColorU32(ImVec4(1.00f, 0.80f, 0.10f, 1.00f)));
-
-        dl->AddTriangleFilled(a, b, c, col);
-        dl->AddTriangle(a, b, c, ImGui::GetColorU32(ImVec4(0.2f, 0.1f, 0.0f, 1.0f)), 2.0f);
-    }
 
     ImGui::End();
 }

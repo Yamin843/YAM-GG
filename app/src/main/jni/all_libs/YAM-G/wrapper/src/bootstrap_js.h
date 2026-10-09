@@ -94,6 +94,60 @@ static const char kBootstrapSrc[] = R"YAMJS(
         return v;
     }
 
+    // ═══════════════════════════════════════════════════════
+    // describe(v) — full Java value → readable string
+    // Handles primitives, String, boxed types, arrays, List/Set, Map, objects
+    // ═══════════════════════════════════════════════════════
+    function describe(v) {
+        if (v === null) return "null";
+        if (v === undefined) return "undefined";
+        var t = typeof v;
+        if (t === "number" || t === "boolean") return String(v);
+        if (t === "string") return JSON.stringify(v);
+        try {
+            var cn = v.$className ? String(v.$className) : "";
+            if (!cn) return JSON.stringify(v);
+            if (cn === "java.lang.String") return JSON.stringify(String(v));
+            if (cn === "java.lang.Integer" || cn === "java.lang.Long" ||
+                cn === "java.lang.Short" || cn === "java.lang.Byte" ||
+                cn === "java.lang.Float" || cn === "java.lang.Double" ||
+                cn === "java.lang.Boolean" || cn === "java.lang.Character") {
+                return String(v);
+            }
+            if (cn.charAt(0) === "[") {
+                try {
+                    var n = v.length, parts = [];
+                    for (var i = 0; i < n && i < 30; i++) parts.push(describe(v[i]));
+                    return "(" + cn + ")[" + parts.join(",") + "]";
+                } catch (e) { return "<" + cn + ">"; }
+            }
+            if (cn.indexOf("Map") >= 0 || cn.indexOf("map") >= 0) {
+                try {
+                    var it = v.keySet().iterator();
+                    var parts2 = [], k2 = 0;
+                    while (it.hasNext() && k2 < 30) {
+                        var kk = it.next();
+                        parts2.push(describe(kk) + ":" + describe(v.get(kk)));
+                        k2++;
+                    }
+                    return "(" + cn + "){" + parts2.join(",") + "}";
+                } catch (e) { return "<" + cn + ">"; }
+            }
+            if (cn.indexOf("List") >= 0 || cn.indexOf("Set") >= 0 ||
+                cn.indexOf("Collection") >= 0) {
+                try {
+                    var it2 = v.iterator();
+                    var parts3 = [], k3 = 0;
+                    while (it2.hasNext() && k3 < 30) { parts3.push(describe(it2.next())); k3++; }
+                    return "(" + cn + ")[" + parts3.join(",") + "]";
+                } catch (e) { return "<" + cn + ">"; }
+            }
+            return "<" + cn + " " + String(v) + ">";
+        } catch (e) {
+            return "<err:" + e + ">";
+        }
+    }
+
     var LOG_PATH = "/storage/emulated/0/Download/appsflyer_calls.log";
     function writeLog(line) {
         try {
@@ -377,34 +431,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
         try {
             Java.performNow(function () {
                 try {
-                    var A = Java.use("com.appsflyer.AppsFlyerLib");
-                    send({type:"appsflyer_class_ok"});
-                    try {
-                        var le4 = A.logEvent.overload(
-                            "android.content.Context", "java.lang.String",
-                            "java.util.Map",
-                            "com.appsflyer.attribution.AppsFlyerRequestListener");
-                        le4.implementation = function (ctx, name, params, listener) {
-                            var n = "" + name;
-                            var p = ""; try { p = "" + params; } catch (e) {}
-                            writeLog("" + new Date() + "  logEvent/4  name=" + n + "  params=" + p);
-                            send({type:"appsflyer_logEvent", overload:"4", name: n});
-                            return le4.call(this, ctx, name, params, listener);
-                        };
-                        send({type:"appsflyer_hook_ok", overload:"4"});
-                    } catch (e) { send({type:"appsflyer_hook_err", overload:"4", message: "" + e}); }
-                    try {
-                        var le3 = A.logEvent.overload(
-                            "android.content.Context", "java.lang.String", "java.util.Map");
-                        le3.implementation = function (ctx, name, params) {
-                            var n = "" + name;
-                            writeLog("" + new Date() + "  logEvent/3  name=" + n);
-                            send({type:"appsflyer_logEvent", overload:"3", name: n});
-                            return le3.call(this, ctx, name, params);
-                        };
-                        send({type:"appsflyer_hook_ok", overload:"3"});
-                    } catch (e) { send({type:"appsflyer_hook_err", overload:"3", message: "" + e}); }
-                    send({type:"appsflyer_ready"});
+                    var A = send({type:"appsflyer_ready"})"});
                 } catch (e) { send({type:"appsflyer_class_error", message: "" + e}); }
             });
         } catch (e) { send({type:"appsflyer_outer_error", message: "" + e}); }

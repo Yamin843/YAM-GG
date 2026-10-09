@@ -1,27 +1,33 @@
 #include "ClassBrowser.h"
 #include "../../Bridge/YamBridge.h"
-#include "../../UI/Widgets/Notification.h"
+#include "../Widgets/Notification.h"
 
 #include "imgui.h"
 #include "../../all_libs/YAM-G/wrapper/include/yam.hpp"
 
 #include <android/log.h>
+#include <algorithm>
 #include <cstring>
 #include <cstdio>
+#include <sstream>
 
 #define LOG_TAG "YAMGG"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 namespace yamgg {
 
-ClassBrowser& ClassBrowser::instance() {
-    static ClassBrowser inst;
-    return inst;
-}
+ClassBrowser& ClassBrowser::instance() { static ClassBrowser i; return i; }
 
 ClassBrowser::ClassBrowser() { registerEvents(); }
 ClassBrowser::~ClassBrowser() = default;
 
+void ClassBrowser::sendJS(const std::string& js) {
+    YamBridge::instance().postEval(js);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// EVENT ROUTING
+// ═══════════════════════════════════════════════════════════════════════
 void ClassBrowser::registerEvents() {
     if (eventsRegistered_) return;
     eventsRegistered_ = true;
@@ -30,12 +36,9 @@ void ClassBrowser::registerEvents() {
         std::lock_guard<std::mutex> lk(mu_);
         classes_.clear();
         auto* arr = ev.data.get("items");
-        if (arr && arr->is_arr()) {
-            for (auto& e : arr->arr_val) {
-                std::string n = e.as_str();
-                if (!n.empty()) classes_.push_back(n);
-            }
-        }
+        if (arr && arr->is_arr())
+            for (auto& e : arr->arr_val) classes_.push_back(e.as_str());
+        std::sort(classes_.begin(), classes_.end());
         loading_ = false;
         LOGI("ClassBrowser: %zu classes", classes_.size());
     });
@@ -46,61 +49,97 @@ void ClassBrowser::registerEvents() {
         std::vector<MethodInfo> list;
         auto* arr = ev.data.get("items");
         if (arr && arr->is_arr()) {
-            for (auto& item : arr->arr_val) {
+            for (auto& it : arr->arr_val) {
                 MethodInfo mi;
-                if (auto* n = item.get("name")) mi.name = n->as_str();
-                if (auto* r = item.get("ret"))  mi.ret  = r->as_str();
-                if (auto* a = item.get("args")) {
+                if (auto* n  = it.get("name"))     mi.name     = n->as_str();
+                if (auto* r  = it.get("ret"))      mi.ret      = r->as_str();
+                if (auto* rk = it.get("retKind"))  mi.retKind  = rk->as_str();
+                if (auto* is = it.get("isStatic")) mi.isStatic = is->as_bool(true);
+                if (auto* a  = it.get("args")) {
                     if (a->is_arr()) {
                         for (auto& e : a->arr_val) {
                             ParamInfo pi;
-                            if (e.is_obj()) {
-                                if (auto* tn = e.get("typeName")) pi.typeName = tn->as_str();
-                                if (auto* jn = e.get("jniType"))  pi.jniType  = jn->as_str();
-                            } else {
-                                pi.typeName = e.as_str();
+                            if (auto* tn = e.get("typeName")) pi.typeName = tn->as_str();
+                            if (auto* kd = e.get("kind"))     pi.kind     = kd->as_str();
+                            if (auto* ev2 = e.get("enumValues")) {
+                                if (ev2->is_arr())
+                                    for (auto& x : ev2->arr_val)
+                                        pi.enumValues.push_back(x.as_str());
                             }
-                            mi.args.push_back(std::move(pi));
+                            pi.scalar[0] = 0;
+                            pi.booleanVal = false;
+                            list.push_back(std::move(pi));
+                            // restore last arg into list.back()
+                            mi.args.push_back(list.back());
+                            list.pop_back();
                         }
                     }
                 }
                 list.push_back(std::move(mi));
             }
         }
-        methodsCache_[cls] = std::move(list);
+        methods_[cls] = std::move(list);
         selectedClass_ = cls;
-        selectedMethodIdx_ = -1;
         loading_ = false;
-        LOGI("ClassBrowser: %s -> %zu methods", cls.c_str(),
-             methodsCache_[cls].size());
+        LOGI("ClassBrowser: %s -> %zu methods", cls.c_str(), methods_[cls].size());
     });
 
-    yam::events::on("classes_error", [this](const yam::Event&) {
+    auto errHandler = [this](const yam::Event&) {
         std::lock_guard<std::mutex> lk(mu_);
         loading_ = false;
+    };
+    yam::events::on("classes_error", errHandler);
+    yam::events::on("methods_error", errHandler);
+
+    yam::events::on("call_result", [](const yam::Event& ev) {
+        std::string r = ev.get_str("result");
+        Notification::instance().push("call result: " + r);
     });
-    yam::events::on("methods_error", [this](const yam::Event&) {
+
+    yam::events::on("instances_result", [this](const yam::Event& ev) {
+        std::string cls = ev.get_str("className");
         std::lock_guard<std::mutex> lk(mu_);
-        loading_ = false;
+        std::vector<InstanceEntry> list;
+        auto* arr = ev.data.get("items");
+        if (arr && arr->is_arr()) {
+            for (auto& it : arr->arr_val) {
+                InstanceEntry ie;
+                if (auto* h = it.get("handle"))
+                    ie.handle = static_cast<unsigned long long>(h->as_i64(0));
+                if (auto* cn = it.get("className"))
+                    ie.className = cn->as_str();
+                if (auto* fs = it.get("fields")) {
+                    if (fs->is_arr())
+                        for (auto& f : fs->arr_val) {
+                            std::string n, v;
+                            if (auto* fn = f.get("name")) n = fn->as_str();
+                            if (auto* fv = f.get("value")) v = fv->as_str();
+                            ie.fields.emplace_back(n, v);
+                        }
+                }
+                list.push_back(std::move(ie));
+            }
+        }
+        instances_[cls] = std::move(list);
+        selectedInstance_ = 0;
+        LOGI("instances: %s -> %zu", cls.c_str(), instances_[cls].size());
     });
 }
 
-void ClassBrowser::sendJS(const std::string& js) {
-    YamBridge::instance().postEval(js);
-}
-
+// ═══════════════════════════════════════════════════════════════════════
+// LOADERS
+// ═══════════════════════════════════════════════════════════════════════
 void ClassBrowser::triggerLoadClasses() {
     if (filter_.empty()) filter_ = "com.";
     loading_ = true;
-    classes_.clear();
-
+    { std::lock_guard<std::mutex> lk(mu_); classes_.clear(); }
     std::string f = yam::JsonValue(filter_).stringify();
     std::string js =
         "(function(){try{"
         "var all=Java.enumerateLoadedClassesSync();"
         "var f=" + f + ";"
         "var out=[];"
-        "for(var i=0;i<all.length&&out.length<500;i++){"
+        "for(var i=0;i<all.length&&out.length<800;i++){"
         "if(all[i].indexOf(f)>=0)out.push(all[i]);}"
         "send({type:'classes_result',items:out});"
         "}catch(e){send({type:'classes_error',message:''+e});}})();";
@@ -115,232 +154,416 @@ void ClassBrowser::triggerLoadMethods(const std::string& cls) {
         "var c=Java.use(" + cn + ");"
         "var ms=c.class.getDeclaredMethods();"
         "var out=[];"
-        "for(var i=0;i<ms.length;i++){"
-        "try{"
-        "var m=ms[i];"
-        "m.setAccessible(true);"
+        "for(var i=0;i<ms.length;i++){try{"
+        "var m=ms[i];m.setAccessible(true);"
         "var pts=m.getParameterTypes();"
         "var args=[];"
         "for(var j=0;j<pts.length;j++){"
         "var tn=String(pts[j].getName());"
-        "args.push({typeName:tn,jniType:tn});"
+        "var kd='object',ev=[];"
+        "if(tn==='int')kd='int';"
+        "else if(tn==='long')kd='long';"
+        "else if(tn==='short')kd='short';"
+        "else if(tn==='byte')kd='byte';"
+        "else if(tn==='float')kd='float';"
+        "else if(tn==='double')kd='double';"
+        "else if(tn==='boolean')kd='boolean';"
+        "else if(tn==='char')kd='char';"
+        "else if(tn==='java.lang.String')kd='string';"
+        "else if(tn.charAt(0)==='[')kd='array';"
+        "else if(tn.indexOf('Map')>=0)kd='map';"
+        "else if(tn.indexOf('List')>=0||tn.indexOf('Set')>=0)kd='array';"
+        "else{"
+        "  try{var pc=Java.use(tn);"
+        "  if(pc.class.isEnum()){kd='enum';"
+        "  var vals=pc.values();"
+        "  for(var e2=0;e2<vals.length;e2++)ev.push(String(vals[e2].name()));"
+        "  }}catch(ex){}"
         "}"
-        "out.push({name:String(m.getName()),"
-        "ret:String(m.getReturnType().getName()),"
-        "args:args});"
-        "}catch(e){}"
+        "args.push({typeName:tn,kind:kd,enumValues:ev});"
         "}"
+        "var mods=m.getModifiers();"
+        "var isStatic=(mods&8)!==0;"
+        "var rt=String(m.getReturnType().getName());"
+        "out.push({name:String(m.getName()),ret:rt,retKind:'object',isStatic:isStatic,args:args});"
+        "}catch(e){}}"
         "send({type:'methods_result',className:" + cn + ",items:out});"
         "}catch(e){send({type:'methods_error',message:''+e});}})();";
     sendJS(js);
 }
 
-void ClassBrowser::triggerTrace(const std::string& cls, const MethodInfo& m) {
-    // Send a run_user_script to hook the method
+// ═══════════════════════════════════════════════════════════════════════
+// TRACE
+// ═══════════════════════════════════════════════════════════════════════
+void ClassBrowser::traceOn(const std::string& cls, MethodInfo& m) {
     std::string cn = yam::JsonValue(cls).stringify();
     std::string mn = yam::JsonValue(m.name).stringify();
-    std::string code =
-        "try{var C=Java.use(" + cn + ");"
+    std::string js =
+        "(function(){try{"
+        "var C=Java.use(" + cn + ");"
         "var MM=C[" + mn + "];"
-        "if(MM&&MM.overloads){"
+        "if(!MM||!MM.overloads)throw new Error('no overloads');"
         "for(var i=0;i<MM.overloads.length;i++){"
         "(function(ov){"
         "var orig=ov.implementation;"
+        "ov.__ygg_orig=orig;"
         "ov.implementation=function(){"
-        "console.log('[trace] " + cls + "." + m.name + " called');"
-        "return ov.apply(this,arguments);"
+        "var a=Array.prototype.slice.call(arguments);"
+        "var s=[];for(var k=0;k<a.length;k++)s.push(describe(a[k]));"
+        "send({type:'console',level:'log',line:'[trace] " + cls + "." + m.name + "('+s.join(', ')+')'});"
+        "var r=ov.call(this,...a);"
+        "send({type:'console',level:'log',line:'[trace] " + cls + "." + m.name + " => '+describe(r)});"
+        "return r;"
         "};})(MM.overloads[i]);"
-        "}}"
-        "send({type:'trace_ok',className:" + cn + ",method:" + mn + "});"
-        "}catch(e){send({type:'trace_err',message:''+e});}";
-    std::string js =
-        "(function(){try{" + code + "}catch(e){send({type:'trace_err',message:''+e});}})();";
+        "}"
+        "send({type:'trace_on_ok',cls:" + cn + ",method:" + mn + "});"
+        "}catch(e){send({type:'trace_err',message:''+e});}})();";
     sendJS(js);
+    m.tracing = true;
     Notification::instance().push("Tracing: " + m.name);
 }
 
-void ClassBrowser::triggerCall(const std::string& cls, const MethodInfo& m) {
+void ClassBrowser::traceOff(const std::string& cls, MethodInfo& m) {
     std::string cn = yam::JsonValue(cls).stringify();
     std::string mn = yam::JsonValue(m.name).stringify();
-    // Try to call with null args
-    std::string code =
-        "try{var C=Java.use(" + cn + ");"
-        "var MM=C[" + mn + "];"
-        "if(MM&&MM.overloads&&MM.overloads.length>0){"
-        "var ov=MM.overloads[0];"
-        "var n=ov.argumentTypes.length;"
-        "var a=[];for(var k=0;k<n;k++)a.push(null);"
-        "var ret=ov.apply(null,a);"
-        "send({type:'call_ok',result:''+ret});"
-        "}else{send({type:'call_err',message:'no overload'});}"
-        "}catch(e){send({type:'call_err',message:''+e});}";
     std::string js =
-        "(function(){try{" + code + "}catch(e){send({type:'call_err',message:''+e});}})();";
+        "(function(){try{"
+        "var C=Java.use(" + cn + ");"
+        "var MM=C[" + mn + "];"
+        "if(MM&&MM.overloads){"
+        "for(var i=0;i<MM.overloads.length;i++){"
+        "var ov=MM.overloads[i];"
+        "if(ov.__ygg_orig!==undefined){ov.implementation=ov.__ygg_orig;delete ov.__ygg_orig;}"
+        "else{ov.implementation=null;}"
+        "}}"
+        "send({type:'trace_off_ok'});"
+        "}catch(e){}})();";
+    sendJS(js);
+    m.tracing = false;
+    Notification::instance().push("Stopped: " + m.name);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BUILD ARGS JSON
+// ═══════════════════════════════════════════════════════════════════════
+std::string ClassBrowser::buildArgsJSON(const MethodInfo& m) {
+    std::string out = "[";
+    for (size_t i = 0; i < m.args.size(); ++i) {
+        if (i) out += ",";
+        const ParamInfo& p = m.args[i];
+        std::string k = p.kind;
+        if (k == "int" || k == "long" || k == "short" || k == "byte" ||
+            k == "float" || k == "double") {
+            std::string v = p.scalar[0] ? p.scalar : "0";
+            out += "{\"kind\":\"" + k + "\",\"value\":" + v + "}";
+        } else if (k == "boolean") {
+            out += "{\"kind\":\"boolean\",\"value\":";
+            out += (p.booleanVal ? "true" : "false");
+            out += "}";
+        } else if (k == "char") {
+            std::string v = p.scalar[0] ? p.scalar : "a";
+            out += "{\"kind\":\"char\",\"value\":" + yam::JsonValue(v).stringify() + "}";
+        } else if (k == "string") {
+            out += "{\"kind\":\"string\",\"value\":" + yam::JsonValue(std::string(p.scalar)).stringify() + "}";
+        } else if (k == "enum") {
+            out += "{\"kind\":\"enum\",\"className\":" + yam::JsonValue(p.typeName).stringify() +
+                   ",\"enumName\":" + yam::JsonValue(std::string(p.scalar)).stringify() + "}";
+        } else if (k == "map") {
+            out += "{\"kind\":\"map\",\"className\":" + yam::JsonValue(p.typeName).stringify() + ",\"entries\":[";
+            for (size_t j = 0; j < p.kvs.size(); ++j) {
+                if (j) out += ",";
+                out += "{\"k\":" + yam::JsonValue(std::string(p.kvs[j].k)).stringify() +
+                       ",\"v\":" + yam::JsonValue(std::string(p.kvs[j].v)).stringify() + "}";
+            }
+            out += "]}";
+        } else if (k == "array") {
+            // scalar holds JSON array text
+            out += "{\"kind\":\"arrayJson\",\"className\":" + yam::JsonValue(p.typeName).stringify() +
+                   ",\"json\":\"" + yam::str::escape_json(std::string(p.scalar)) + "\"}";
+        } else {
+            // object / fallback — expr
+            out += "{\"kind\":\"expr\",\"value\":" + yam::JsonValue(std::string(p.scalar)).stringify() + "}";
+        }
+    }
+    out += "]";
+    return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CALL
+// ═══════════════════════════════════════════════════════════════════════
+void ClassBrowser::callMethod(const std::string& cls, MethodInfo& m) {
+    std::string cn = yam::JsonValue(cls).stringify();
+    std::string mn = yam::JsonValue(m.name).stringify();
+    std::string args = buildArgsJSON(m);
+
+    unsigned long long instHandle = 0;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        auto it = instances_.find(cls);
+        if (it != instances_.end() && selectedInstance_ >= 0 &&
+            selectedInstance_ < (int)it->second.size()) {
+            instHandle = it->second[selectedInstance_].handle;
+        }
+    }
+
+    std::string js =
+        "(function(){try{"
+        "var C=Java.use(" + cn + ");"
+        "var MM=C[" + mn + "];"
+        "if(!MM||!MM.overloads)throw new Error('no overloads');"
+        "var spec=" + args + ";"
+        "var a=spec.map(mat);"
+        "var isStatic=" + std::string(m.isStatic ? "true" : "false") + ";"
+        "var instH=" + std::to_string(instHandle) + ";"
+        "var inst=null;"
+        "if(!isStatic){"
+        "  if(instH>0){inst=get(instH);}"
+        "  else{"
+        "    Java.choose(" + cn + ",{onMatch:function(x){inst=x;return 'stop';},onComplete:function(){}});"
+        "  }"
+        "  if(!inst)throw new Error('no instance available');"
+        "}"
+        "var ov=MM.overloads[0];"
+        "var r=(isStatic?ov.apply(null,a):ov.apply(inst,a));"
+        "send({type:'call_result',result:describe(r)});"
+        "}catch(e){send({type:'call_result',result:'ERROR: '+e});}})();";
     sendJS(js);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// FIND INSTANCES
+// ═══════════════════════════════════════════════════════════════════════
+void ClassBrowser::findInstances(const std::string& cls) {
+    std::string cn = yam::JsonValue(cls).stringify();
+    std::string js =
+        "(function(){try{"
+        "var items=[];"
+        "Java.choose(" + cn + ",{"
+        "onMatch:function(x){"
+        "  try{"
+        "    var h=createHandle(x,'java'," + cn + ");"
+        "    var fields=[];"
+        "    try{var cls=Java.use(String(x.$className));"
+        "    var flds=cls.class.getDeclaredFields();"
+        "    for(var i=0;i<flds.length&&i<32;i++){var f=flds[i];"
+        "      if((f.getModifiers()&8)!==0)continue;"
+        "      try{f.setAccessible(true);"
+        "      var fv=f.get(x);"
+        "      fields.push({name:String(f.getName()),value:describe(fv)});"
+        "      }catch(e){}}}catch(e){}"
+        "    items.push({handle:h,className:String(x.$className),fields:fields});"
+        "  }catch(e){}"
+        "  if(items.length>=30)return 'stop';"
+        "},"
+        "onComplete:function(){"
+        "  send({type:'instances_result',className:" + cn + ",items:items});"
+        "}});"
+        "}catch(e){send({type:'instances_result',className:" + cn + ",items:[],error:''+e});}})();";
+    sendJS(js);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// DRAW
+// ═══════════════════════════════════════════════════════════════════════
 void ClassBrowser::draw() {
     drawTopBar();
     ImGui::Separator();
-
-    float avail = ImGui::GetContentRegionAvail().x;
-    float colW = avail * 0.4f;
-
-    ImGui::BeginChild("##ClassesPane", ImVec2(colW, -160), true);
-    drawClassesTree();
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-
-    ImGui::BeginChild("##MethodsPane", ImVec2(0, -160), true);
-    drawMethodsList();
-    ImGui::EndChild();
-
-    ImGui::Separator();
-    ImGui::BeginChild("##MethodDetail", ImVec2(0, 0), true);
-    drawMethodDetail();
+    ImGui::BeginChild("##TreePanel", ImVec2(0, 0), true);
+    drawTree();
     ImGui::EndChild();
 }
 
 void ClassBrowser::drawTopBar() {
     ImGui::Spacing();
-    ImGui::SetNextItemWidth(400);
-    if (ImGui::InputTextWithHint("##filter", "package (e.g. com.example)",
+    ImGui::SetNextItemWidth(380);
+    if (ImGui::InputTextWithHint("##filter", "package prefix (e.g. com.example)",
                                  filterBuf_, sizeof(filterBuf_),
                                  ImGuiInputTextFlags_EnterReturnsTrue)) {
-        filter_ = filterBuf_;
+        filter_ = filterBuf_; triggerLoadClasses();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load", ImVec2(80, 0))) {
+        filter_ = filterBuf_[0] ? filterBuf_ : "com.";
         triggerLoadClasses();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Load", ImVec2(90, 0))) {
-        filter_ = filterBuf_;
-        if (filter_.empty()) filter_ = "com.";
-        triggerLoadClasses();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Classes only", ImVec2(130, 0))) {
-        filter_ = "android.";
-        std::strncpy(filterBuf_, filter_.c_str(), sizeof(filterBuf_) - 1);
+    if (ImGui::Button("android.*", ImVec2(100, 0))) {
+        filter_ = "android."; std::strncpy(filterBuf_, filter_.c_str(), sizeof(filterBuf_) - 1);
         triggerLoadClasses();
     }
     ImGui::SameLine();
     if (loading_) ImGui::TextDisabled("loading...");
 }
 
-void ClassBrowser::drawClassesTree() {
+void ClassBrowser::drawTree() {
     std::lock_guard<std::mutex> lk(mu_);
-    ImGui::Text("Classes (%zu)", classes_.size());
-    ImGui::Separator();
+    if (classes_.empty()) { ImGui::TextDisabled("No classes loaded — click Load"); return; }
 
-    // Simple flat tree with package grouping
+    // Group by package
     std::string lastPkg;
+    std::vector<std::string> members;
+
+    auto flush = [&]() {
+        if (!members.empty()) {
+            drawPackageGroup(lastPkg, members);
+            members.clear();
+        }
+    };
+
     for (auto& c : classes_) {
         size_t dot = c.find_last_of('.');
-        std::string pkg = (dot == std::string::npos) ? "" : c.substr(0, dot);
-        std::string cls = (dot == std::string::npos) ? c : c.substr(dot + 1);
-
-        if (pkg != lastPkg) {
-            if (!lastPkg.empty()) ImGui::TreePop();
-            ImGuiTreeNodeFlags fl = ImGuiTreeNodeFlags_DefaultOpen
-                | ImGuiTreeNodeFlags_SpanAvailWidth;
-            if (ImGui::TreeNodeEx(pkg.c_str(), fl)) {
-                lastPkg = pkg;
-            } else {
-                lastPkg = pkg;
-                continue;
-            }
-        }
-
-        bool sel = (selectedClass_ == c);
-        if (ImGui::Selectable(cls.c_str(), sel)) {
-            if (selectedClass_ != c) {
-                triggerLoadMethods(c);
-            }
-        }
+        std::string pkg = (dot == std::string::npos) ? "<default>" : c.substr(0, dot);
+        if (pkg != lastPkg) { flush(); lastPkg = pkg; }
+        members.push_back(c);
     }
-    if (!lastPkg.empty()) ImGui::TreePop();
+    flush();
 }
 
-void ClassBrowser::drawMethodsList() {
-    std::lock_guard<std::mutex> lk(mu_);
-    if (selectedClass_.empty()) {
-        ImGui::TextDisabled("Select a class");
+void ClassBrowser::drawPackageGroup(const std::string& pkg,
+                                    std::vector<std::string>& members) {
+    ImGuiTreeNodeFlags pkgFlags = ImGuiTreeNodeFlags_SpanAvailWidth;
+    bool pkgOpen = ImGui::TreeNodeEx(pkg.c_str(), pkgFlags);
+    if (pkgOpen) {
+        for (auto& fullName : members) {
+            size_t dot = fullName.find_last_of('.');
+            std::string simple = (dot == std::string::npos) ? fullName : fullName.substr(dot + 1);
+
+            ImGuiTreeNodeFlags clsFlags = ImGuiTreeNodeFlags_SpanAvailWidth
+                | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+            if (selectedClass_ == fullName) clsFlags |= ImGuiTreeNodeFlags_Selected;
+
+            ImGui::PushID(fullName.c_str());
+            bool clsOpen = ImGui::TreeNodeEx(simple.c_str(), clsFlags);
+            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                if (selectedClass_ != fullName && methods_.find(fullName) == methods_.end()) {
+                    triggerLoadMethods(fullName);
+                }
+            }
+            if (clsOpen) {
+                if (methods_.find(fullName) == methods_.end()) {
+                    ImGui::TextDisabled("  (click to load methods)");
+                } else {
+                    auto& mlist = methods_[fullName];
+                    for (auto& m : mlist) drawMethodNode(fullName, m);
+                }
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+        ImGui::TreePop();
+    }
+}
+
+void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
+    ImGui::PushID(&m);
+    char label[512];
+    std::snprintf(label, sizeof(label), "%s %s(%zu)%s",
+                  m.ret.c_str(), m.name.c_str(), m.args.size(),
+                  m.tracing ? "  [TRACING]" : "");
+    ImGuiTreeNodeFlags f = ImGuiTreeNodeFlags_SpanAvailWidth
+        | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+    bool open = ImGui::TreeNodeEx(label, f);
+    if (open) {
+        for (size_t i = 0; i < m.args.size(); ++i)
+            drawParamWidget(cls, m, m.args[i], (int)i);
+        ImGui::Separator();
+        if (!m.isStatic) drawInstancePicker(cls, m);
+        if (ImGui::Button(m.tracing ? "Stop trace" : "Trace", ImVec2(140, 40)))
+            m.tracing ? traceOff(cls, m) : traceOn(cls, m);
+        ImGui::SameLine();
+        if (ImGui::Button("Call", ImVec2(140, 40))) callMethod(cls, m);
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
+}
+
+void ClassBrowser::drawParamWidget(const std::string&, MethodInfo&, ParamInfo& p, int idx) {
+    ImGui::PushID(idx);
+    ImGui::Text("arg%d: %s", idx, p.typeName.c_str());
+
+    const std::string& k = p.kind;
+    if (k == "boolean") {
+        ImGui::Checkbox("##b", &p.booleanVal);
+    } else if (k == "enum") {
+        ImGui::SetNextItemWidth(-1);
+        int cur = 0;
+        for (size_t i = 0; i < p.enumValues.size(); ++i)
+            if (p.enumValues[i] == p.scalar) { cur = (int)i; break; }
+        if (ImGui::BeginCombo("##enum", p.scalar[0] ? p.scalar : "(pick)")) {
+            for (size_t i = 0; i < p.enumValues.size(); ++i) {
+                bool sel = (p.enumValues[i] == p.scalar);
+                if (ImGui::Selectable(p.enumValues[i].c_str(), sel)) {
+                    std::strncpy(p.scalar, p.enumValues[i].c_str(), sizeof(p.scalar) - 1);
+                }
+            }
+            ImGui::EndCombo();
+        }
+    } else if (k == "map") {
+        ImGui::Indent();
+        for (size_t i = 0; i < p.kvs.size(); ++i) {
+            ImGui::PushID((int)i);
+            ImGui::SetNextItemWidth(180);
+            ImGui::InputText("##k", p.kvs[i].k, sizeof(p.kvs[i].k));
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(-80);
+            ImGui::InputText("##v", p.kvs[i].v, sizeof(p.kvs[i].v));
+            ImGui::SameLine();
+            if (ImGui::SmallButton("X")) { p.kvs.erase(p.kvs.begin() + i); ImGui::PopID(); break; }
+            ImGui::PopID();
+        }
+        if (ImGui::SmallButton("+ add key/value")) p.kvs.push_back({});
+        ImGui::Unindent();
+    } else if (k == "array") {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextMultiline("##arr", p.scalar, sizeof(p.scalar), ImVec2(-1, 60));
+        ImGui::TextDisabled("format: [\"a\",\"b\"] or [1,2,3]");
+    } else if (k == "int" || k == "long" || k == "short" || k == "byte" ||
+               k == "float" || k == "double") {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputText("##n", p.scalar, sizeof(p.scalar));
+        ImGui::TextDisabled("numeric value");
+    } else {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputText("##s", p.scalar, sizeof(p.scalar));
+    }
+    ImGui::Spacing();
+    ImGui::PopID();
+}
+
+void ClassBrowser::drawInstancePicker(const std::string& cls, MethodInfo&) {
+    auto it = instances_.find(cls);
+    if (it == instances_.end() || it->second.empty()) {
+        if (ImGui::Button("Find instances", ImVec2(180, 36))) findInstances(cls);
         return;
     }
-    auto it = methodsCache_.find(selectedClass_);
-    if (it == methodsCache_.end()) {
-        ImGui::TextDisabled("Loading methods...");
-        return;
-    }
-    auto& methods = it->second;
-    ImGui::Text("Methods (%zu)", methods.size());
-    ImGui::Separator();
-    for (size_t i = 0; i < methods.size(); ++i) {
-        auto& m = methods[i];
-        char buf[512];
-        std::snprintf(buf, sizeof(buf), "%s %s(%zu)",
-                      m.ret.c_str(), m.name.c_str(), m.args.size());
-        bool sel = ((int)i == selectedMethodIdx_);
+    auto& list = it->second;
+    ImGui::Text("Instances (%zu):", list.size());
+    for (size_t i = 0; i < list.size(); ++i) {
         ImGui::PushID((int)i);
-        if (ImGui::Selectable(buf, sel)) selectedMethodIdx_ = (int)i;
+        char lbl[128];
+        std::snprintf(lbl, sizeof(lbl), "#%zu  %s", i, list[i].className.c_str());
+        bool sel = ((int)i == selectedInstance_);
+        if (ImGui::Selectable(lbl, sel)) selectedInstance_ = (int)i;
+        if (sel) {
+            ImGui::Indent();
+            if (ImGui::BeginTable("##fields", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("field");
+                ImGui::TableSetupColumn("value");
+                ImGui::TableHeadersRow();
+                for (auto& f : list[i].fields) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(f.first.c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::TextWrapped("%s", f.second.c_str());
+                }
+                ImGui::EndTable();
+            }
+            ImGui::Unindent();
+        }
         ImGui::PopID();
     }
-}
-
-void ClassBrowser::drawMethodDetail() {
-    std::lock_guard<std::mutex> lk(mu_);
-    if (selectedClass_.empty() || selectedMethodIdx_ < 0) {
-        ImGui::TextDisabled("Select a method to view its parameters");
-        return;
-    }
-    auto it = methodsCache_.find(selectedClass_);
-    if (it == methodsCache_.end()) return;
-    auto& methods = it->second;
-    if (selectedMethodIdx_ >= (int)methods.size()) return;
-    auto& m = methods[selectedMethodIdx_];
-
-    ImGui::Text("%s %s", m.ret.c_str(), m.name.c_str());
-    ImGui::Separator();
-
-    if (m.args.empty()) {
-        ImGui::TextDisabled("(no parameters)");
-    } else {
-        if (ImGui::BeginTable("##params", 3,
-                ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("#");
-            ImGui::TableSetupColumn("Type");
-            ImGui::TableSetupColumn("JNI");
-            ImGui::TableHeadersRow();
-            for (size_t i = 0; i < m.args.size(); ++i) {
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::Text("%zu", i);
-                ImGui::TableSetColumnIndex(1);
-                ImGui::Text("%s", m.args[i].typeName.c_str());
-                ImGui::TableSetColumnIndex(2);
-                ImGui::TextDisabled("%s", m.args[i].jniType.c_str());
-            }
-            ImGui::EndTable();
-        }
-    }
-
     ImGui::Spacing();
-    ImGui::Separator();
-    if (ImGui::Button("trace", ImVec2(120, 40))) {
-        triggerTrace(selectedClass_, m);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("call", ImVec2(120, 40))) {
-        triggerCall(selectedClass_, m);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("copy sig", ImVec2(120, 40))) {
-        // Build JNI signature
-        std::string sig = "(";
-        for (auto& a : m.args) sig += "?";  // simplified
-        sig += ")";
-        ImGui::SetClipboardText(sig.c_str());
-    }
+    if (ImGui::Button("Refresh instances", ImVec2(180, 32))) findInstances(cls);
 }
 
 } // namespace yamgg

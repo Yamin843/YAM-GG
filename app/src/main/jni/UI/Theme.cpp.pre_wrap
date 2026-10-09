@@ -37,7 +37,7 @@ void Theme::apply() {
     style.ItemSpacing        = ImVec2(10.0f, 8.0f);
     style.ItemInnerSpacing   = ImVec2(8.0f, 6.0f);
     style.IndentSpacing      = 22.0f;
-    style.ScrollbarSize      = 48.0f;
+    style.ScrollbarSize      = 43.0f;
     style.GrabMinSize        = 18.0f;
 
     style.WindowTitleAlign   = ImVec2(0.5f, 0.5f);
@@ -80,9 +80,9 @@ void Theme::apply() {
     colors[ImGuiCol_Separator]              = ImVec4(0.75f, 0.55f, 0.00f, 1.00f);
     colors[ImGuiCol_SeparatorHovered]       = ImVec4(0.90f, 0.70f, 0.10f, 1.00f);
     colors[ImGuiCol_SeparatorActive]        = ImVec4(1.00f, 0.80f, 0.15f, 1.00f);
-    colors[ImGuiCol_ResizeGrip]             = ImVec4(1.00f, 0.85f, 0.10f, 1.00f);
-    colors[ImGuiCol_ResizeGripHovered]      = ImVec4(1.00f, 1.00f, 0.50f, 1.00f);
-    colors[ImGuiCol_ResizeGripActive]       = ImVec4(1.00f, 1.00f, 0.80f, 1.00f);
+    colors[ImGuiCol_ResizeGrip]             = ImVec4(1.00f, 0.80f, 0.00f, 1.00f);
+    colors[ImGuiCol_ResizeGripHovered]      = ImVec4(1.00f, 0.95f, 0.30f, 1.00f);
+    colors[ImGuiCol_ResizeGripActive]       = ImVec4(1.00f, 0.85f, 0.15f, 1.00f);
     colors[ImGuiCol_Tab]                    = ImVec4(0.08f, 0.06f, 0.00f, 1.00f);
     colors[ImGuiCol_TabHovered]             = ImVec4(0.25f, 0.20f, 0.00f, 1.00f);
     colors[ImGuiCol_TabSelected]              = ImVec4(0.40f, 0.32f, 0.00f, 1.00f);
