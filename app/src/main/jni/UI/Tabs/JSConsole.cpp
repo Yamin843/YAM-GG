@@ -9,22 +9,16 @@
 #include <fstream>
 #include <sstream>
 
-#define LOG_TAG "YAMGG"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-
 namespace yamgg {
 
-JSConsole::JSConsole() {
-    std::lock_guard<std::mutex> lk(mu_);
-    // no init text
-}
+JSConsole::JSConsole() = default;
 JSConsole::~JSConsole() = default;
 JSConsole& JSConsole::instance() { static JSConsole i; return i; }
 
 void JSConsole::pushOutput(const std::string& line) {
     std::lock_guard<std::mutex> lk(mu_);
     output_.push_back(line);
-    if (output_.size() > 2000) output_.erase(output_.begin(), output_.begin() + 500);
+    if (output_.size() > 3000) output_.erase(output_.begin(), output_.begin() + 800);
 }
 
 void JSConsole::evaluate(const std::string& code) {
@@ -51,10 +45,9 @@ void JSConsole::loadScriptFromFile(const std::string& path) {
 
     ScriptEntry e;
     e.name = name; e.path = path; e.code = code;
-    e.running = false; e.selected = true; e.id = nextScriptId_++;
+    e.selected = true; e.id = nextScriptId_++;
     scripts_.push_back(e);
-    pushOutput("[loaded] " + name + " (" + std::to_string(code.size()) + " bytes)");
-    Notification::instance().push("Loaded: " + name);
+    pushOutput("[loaded] " + name);
 }
 
 void JSConsole::loadSelected() {
@@ -81,87 +74,85 @@ void JSConsole::unloadAll() {
     for (auto& s : scripts_) if (s.running) { b.unloadScript(s.name); s.running = false; }
 }
 
-void JSConsole::clearOutput() {
-    std::lock_guard<std::mutex> lk(mu_);
-    output_.clear();
-}
-
+void JSConsole::clearOutput() { std::lock_guard<std::mutex> lk(mu_); output_.clear(); }
 int JSConsole::scriptCount() const { return (int)scripts_.size(); }
 int JSConsole::runningCount() const { int n = 0; for (auto& s : scripts_) if (s.running) n++; return n; }
 
-// ═══════════════════════════════════════════════════════════════════════
-// DRAW:  1) toolbar   2) editor+log in SAME frame   3) scripts list
-// ═══════════════════════════════════════════════════════════════════════
 void JSConsole::draw() {
-    // ─── Toolbar ───
+    // Sub-tabs at top
+    if (ImGui::BeginTabBar("##JSSubTabs", ImGuiTabBarFlags_None)) {
+        if (ImGui::BeginTabItem("LOG")) {
+            activeSubTab_ = 0;
+            drawLogTab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Console")) {
+            activeSubTab_ = 1;
+            drawConsoleTab();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+}
+
+void JSConsole::drawLogTab() {
     ImGui::Spacing();
-    const ImVec2 bsz(120, 44);
+    ImGui::BeginChild("##LogArea", ImVec2(0, -50), true,
+                       ImGuiWindowFlags_HorizontalScrollbar);
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        ImGui::PushTextWrapPos(0.0f);
+        for (auto& line : output_) {
+            ImVec4 col(1, 1, 1, 1);
+            if (line.rfind("[error]", 0) == 0) col = ImVec4(1, 0.45f, 0.45f, 1);
+            else if (line.rfind("[warn]", 0) == 0) col = ImVec4(1, 0.85f, 0.3f, 1);
+            else if (!line.empty() && line[0] == '>') col = ImVec4(1, 0.85f, 0.2f, 1);
+            ImGui::PushStyleColor(ImGuiCol_Text, col);
+            ImGui::TextWrapped("%s", line.c_str());
+            ImGui::PopStyleColor();
+        }
+        ImGui::PopTextWrapPos();
+        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f)
+            ImGui::SetScrollHereY(1.0f);
+    }
+    ImGui::EndChild();
+
+    if (ImGui::Button("Clear Log", ImVec2(180, 40))) clearOutput();
+}
+
+void JSConsole::drawConsoleTab() {
+    // Toolbar
+    ImGui::Spacing();
+    const ImVec2 bsz(120, 42);
+    if (ImGui::Button("Load", bsz)) loadSelected();
+    ImGui::SameLine();
+    if (ImGui::Button("Unload", bsz)) unloadSelected();
+    ImGui::SameLine();
     if (ImGui::Button("fromSD", bsz)) {
         FileBrowser::instance().setOnSelect(
             [](const std::string& p) { JSConsole::instance().loadScriptFromFile(p); });
         FileBrowser::instance().open("/storage/emulated/0/");
     }
-    ImGui::SameLine();
-    if (ImGui::Button("Load", bsz)) loadSelected();
-    ImGui::SameLine();
-    if (ImGui::Button("Unload", bsz)) unloadSelected();
-    ImGui::SameLine();
-    if (ImGui::Button("Clear", bsz)) clearOutput();
     ImGui::Spacing();
     ImGui::Separator();
 
-    // ─── Console frame: editor + output ───
-    ImGui::BeginChild("##ConsoleFrame", ImVec2(0, -180), true);
-    {
-        ImGui::TextUnformatted("Editor");
-        ImGui::Separator();
+    // Editor
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextWrapped("Script");
+    ImGui::PopTextWrapPos();
+    ImGui::InputTextMultiline("##code", codeBuffer_, sizeof(codeBuffer_),
+                              ImVec2(-1, 140), ImGuiInputTextFlags_AllowTabInput);
+    if (ImGui::Button("Run", ImVec2(120, 40)))
+        if (codeBuffer_[0]) evaluate(std::string(codeBuffer_));
+    ImGui::SameLine();
+    if (ImGui::Button("Clear", ImVec2(120, 40))) codeBuffer_[0] = 0;
 
-        // Editor area (~140px)
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::InputTextMultiline("##code", codeBuffer_, sizeof(codeBuffer_),
-                                   ImVec2(-1, 140), ImGuiInputTextFlags_AllowTabInput);
-        ImGui::PopTextWrapPos();
-
-        if (ImGui::Button("Run", ImVec2(110, 36)))
-            if (codeBuffer_[0]) evaluate(std::string(codeBuffer_));
-        ImGui::SameLine();
-        if (ImGui::Button("Clear Editor", ImVec2(140, 36)))
-            codeBuffer_[0] = 0;
-
-        ImGui::Separator();
-        ImGui::TextUnformatted("Log");
-        ImGui::Separator();
-
-        // Output area
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::BeginChild("##Output", ImVec2(0, -40), true,
-                           ImGuiWindowFlags_HorizontalScrollbar);
-        {
-            std::lock_guard<std::mutex> lk(mu_);
-            for (auto& line : output_) {
-                ImVec4 col(1, 1, 1, 1);
-                if (line.rfind("[error]", 0) == 0) col = ImVec4(1, 0.45f, 0.45f, 1);
-                else if (line.rfind("[warn]", 0) == 0) col = ImVec4(1, 0.85f, 0.3f, 1);
-                else if (line.rfind("[injected]", 0) == 0) col = ImVec4(0.5f, 1, 1, 1);
-                else if (!line.empty() && line[0] == '>') col = ImVec4(1, 0.85f, 0.2f, 1);
-                ImGui::PushStyleColor(ImGuiCol_Text, col);
-                ImGui::TextWrapped("%s", line.c_str());
-                ImGui::PopStyleColor();
-            }
-            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f)
-                ImGui::SetScrollHereY(1.0f);
-        }
-        ImGui::EndChild();
-        ImGui::PopTextWrapPos();
-
-        if (ImGui::Button("Clear Log", ImVec2(140, 32))) clearOutput();
-    }
-    ImGui::EndChild();
-
-    // ─── Scripts list (below) ───
     ImGui::Separator();
-    ImGui::Text("Loaded Scripts: %d  |  Running: %d",
-                scriptCount(), runningCount());
+
+    // Scripts list
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextWrapped("Scripts: %d  |  Running: %d", scriptCount(), runningCount());
+    ImGui::PopTextWrapPos();
     ImGui::BeginChild("##ScriptsList", ImVec2(0, 0), true);
     for (size_t i = 0; i < scripts_.size(); ++i) {
         auto& s = scripts_[i];
@@ -171,7 +162,9 @@ void JSConsole::draw() {
         ImVec4 col = s.running ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
                                : ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Text, col);
-        ImGui::TextWrapped("%s  %s", s.running ? "[RUN]" : "[OFF]", s.name.c_str());
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextWrapped("%s %s", s.running ? "[RUN]" : "[OFF]", s.name.c_str());
+        ImGui::PopTextWrapPos();
         ImGui::PopStyleColor();
         ImGui::SameLine(ImGui::GetWindowWidth() - 110);
         if (ImGui::SmallButton("Remove")) {

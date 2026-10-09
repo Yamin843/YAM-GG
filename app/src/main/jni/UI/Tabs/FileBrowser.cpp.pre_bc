@@ -103,37 +103,20 @@ void FileBrowser::draw() {
         return;
     }
 
-    // ─── Breadcrumb path ───
-    {
-        ImGui::PushTextWrapPos(0.0f);
-        std::string path = currentPath_;
-        std::vector<std::pair<std::string,std::string>> crumbs;
-        std::string acc;
-        for (size_t i = 0; i < path.size(); ++i) {
-            char c = path[i];
-            if (c == '/' && !acc.empty()) { crumbs.emplace_back(acc, acc); acc.clear(); }
-            else acc += c;
-        }
-        if (!acc.empty()) crumbs.emplace_back(acc, acc);
+    if (ImGui::Button("Up")) goUp();
+    ImGui::SameLine();
+    if (ImGui::Button("Refresh")) refresh();
+    ImGui::SameLine();
+    if (ImGui::Button("Home")) navigateTo("/storage/emulated/0/");
+    ImGui::SameLine();
+    if (ImGui::Button("/sdcard")) navigateTo("/sdcard/");
 
-        std::string cumulative;
-        bool first = true;
-        for (auto& cr : crumbs) {
-            if (!first) {
-                ImGui::SameLine();
-                ImGui::TextUnformatted("/");
-                ImGui::SameLine();
-            }
-            first = false;
-            if (ImGui::SmallButton(cr.first.c_str())) {
-                // Reconstruct path from beginning up to this crumb
-                cumulative += "/" + cr.first;
-                navigateTo(cumulative.empty() ? "/" : cumulative);
-            }
-        }
-        ImGui::PopTextWrapPos();
-    }
-    ImGui::Separator();
+    ImGui::SameLine();
+    ImGui::Checkbox("Hidden", &showHidden_);
+
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##filter", "filter...", filter_, sizeof(filter_));
 
     ImGui::TextWrapped("%s", currentPath_.c_str());
     ImGui::Separator();

@@ -43,6 +43,16 @@ static void JNICALL impl_nativeOnKey(JNIEnv* env, jclass clazz, jint keyCode, ji
     (void)env; (void)clazz; (void)keyCode; (void)action;
 }
 
+static void JNICALL impl_nativeOnChar(JNIEnv* env, jclass clazz, jint codepoint) {
+    (void)env; (void)clazz;
+    Renderer::instance().onChar((unsigned int)codepoint);
+}
+
+static jboolean JNICALL impl_nativeWantTextInput(JNIEnv* env, jclass clazz) {
+    (void)env; (void)clazz;
+    return Renderer::instance().wantTextInput() ? JNI_TRUE : JNI_FALSE;
+}
+
 static const JNINativeMethod g_methods[] = {
     {"nativeOnSurfaceCreated", "()V", (void*)impl_nativeOnSurfaceCreated},
     {"nativeOnSurfaceChanged", "(II)V", (void*)impl_nativeOnSurfaceChanged},
@@ -50,6 +60,8 @@ static const JNINativeMethod g_methods[] = {
     {"nativeOnTouch", "(IFFI)V", (void*)impl_nativeOnTouch},
     {"nativeOnKey", "(II)V", (void*)impl_nativeOnKey},
     {"nativeWantCaptureMouse", "()Z", (void*)impl_nativeWantCaptureMouse},
+    {"nativeOnChar", "(I)V", (void*)impl_nativeOnChar},
+    {"nativeWantTextInput", "()Z", (void*)impl_nativeWantTextInput},
 };
 
 bool registerNativeMethods(JNIEnv* env, jclass modViewClass) {
@@ -70,6 +82,8 @@ void onDrawFrame(JNIEnv* env, jclass clazz, jint w, jint h) { impl_nativeOnDrawF
 void onTouch(JNIEnv* env, jclass clazz, jint a, jfloat x, jfloat y, jint p) { impl_nativeOnTouch(env, clazz, a, x, y, p); }
 void onKey(JNIEnv* env, jclass clazz, jint k, jint a) { (void)env; (void)clazz; (void)k; (void)a; }
 jboolean wantCaptureMouse(JNIEnv* env, jclass clazz) { return impl_nativeWantCaptureMouse(env, clazz); }
+void onChar(JNIEnv* env, jclass clazz, jint c) { impl_nativeOnChar(env, clazz, c); }
+jboolean wantTextInput(JNIEnv* env, jclass clazz) { return impl_nativeWantTextInput(env, clazz); }
 
 } // namespace jni
 } // namespace yamgg

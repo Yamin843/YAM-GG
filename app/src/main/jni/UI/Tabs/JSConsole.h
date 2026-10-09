@@ -10,13 +10,12 @@ namespace yamgg {
 class JSConsole {
 public:
     static JSConsole& instance();
-
     void draw();
     void evaluate(const std::string& code);
     void loadScriptFromFile(const std::string& path);
     void unloadAll();
-    int  scriptCount() const;
-    int  runningCount() const;
+    int scriptCount() const;
+    int runningCount() const;
     void pushOutput(const std::string& line);
 
 private:
@@ -34,10 +33,8 @@ private:
         int  id{0};
     };
 
-    void drawToolbar();
-    void drawScriptsList();
-    void drawEditor();
-    void drawOutput();
+    void drawLogTab();
+    void drawConsoleTab();
     void loadSelected();
     void unloadSelected();
     void clearOutput();
@@ -46,10 +43,10 @@ private:
     std::vector<std::string> output_;
     mutable std::mutex mu_;
     int nextScriptId_{1};
+    int activeSubTab_{0};
     char codeBuffer_[16384]{0};
 };
 
 #define YAMGG_JSCONSOLE yamgg::JSConsole::instance()
 } // namespace yamgg
-
 #endif

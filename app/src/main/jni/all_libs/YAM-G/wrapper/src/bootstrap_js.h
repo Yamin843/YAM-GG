@@ -401,33 +401,42 @@ static const char kBootstrapSrc[] = R"YAMJS(
         setTimeout(loopAttach, 1000);
     }
 
-    // ═══════ COMMAND POLLER (C→JS via native method) ═══════
+
+    // ═══════ COMMAND POLLER ═══════
     var pollInstalled = false;
+    var pollCount = 0;
     function installPoller() {
         if (pollInstalled) return;
         pollInstalled = true;
-        var MV = null;
-        try { MV = Java.use("com.yamgg.modview.ModView"); }
-        catch (e) { send({type:"poller_no_class", message:""+e}); }
+        send({type:"poller_started"});
 
         setInterval(function () {
-            try {
-                if (!MV) {
-                    try { MV = Java.use("com.yamgg.modview.ModView"); } catch (e) { return; }
+            pollCount++;
+            Java.performNow(function () {
+                try {
+                    var MV = Java.use("com.yamgg.modview.ModView");
+                    var raw = MV.nativeGetPendingCmd();
+                    if (!raw) {
+                        if (pollCount % 50 === 0) send({type:"poller_alive", count: pollCount});
+                        return;
+                    }
+                    send({type:"poller_got", raw: raw.substring(0, 80)});
+                    var obj = null;
+                    try { obj = JSON.parse(raw); }
+                    catch (e) { send({type:"poller_parse_err", message:""+e}); return; }
+                    if (!obj || !obj.action) return;
+                    var h = handlers[obj.action];
+                    if (h) {
+                        try { h(obj); }
+                        catch (e) { try { replyError(obj.id, e); } catch (e2) {} }
+                    } else {
+                        try { replyError(obj.id, new Error("unknown: " + obj.action)); } catch (e) {}
+                    }
+                } catch (e) {
+                    if (pollCount % 20 === 0) send({type:"poller_err", message:""+e});
                 }
-                var raw = MV.nativeGetPendingCmd();
-                if (!raw) return;
-                var obj = null;
-                try { obj = JSON.parse(raw); } catch (e) { return; }
-                if (!obj || !obj.action) return;
-                var h = handlers[obj.action];
-                if (h) {
-                    try { h(obj); } catch (e) { try { replyError(obj.id, e); } catch (e2) {} }
-                }
-            } catch (e) {
-                // silent
-            }
-        }, 80);
+            });
+        }, 100);
     }
 
     // ═══════ HOOKS ═══════
@@ -455,6 +464,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
     setTimeout(function () {
         try { installAllHooks(); } catch (e) { send({type:"install_err", message: "" + e}); }
         try { loopAttach(); } catch (e) { send({type:"attach_start_err", message: "" + e}); }
+        try { installPoller(); } catch (e) { send({type:"poller_err", message: "" + e}); }
     }, 800);
 })();
 )YAMJS";

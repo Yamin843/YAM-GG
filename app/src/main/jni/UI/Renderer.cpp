@@ -84,6 +84,16 @@ void Renderer::onDrawFrame(int width, int height) {
     lastFrameTime_ = t;
 
     ImGui_ImplOpenGL3_NewFrame();
+
+    // Drain char queue before NewFrame so ImGui sees them as input
+    {
+        std::lock_guard<std::mutex> lk(charMu_);
+        for (auto cp : charQueue_) {
+            io.AddInputCharacter(cp);
+        }
+        charQueue_.clear();
+    }
+
     ImGui::NewFrame();
 
     MainWindow::instance().draw();
@@ -96,6 +106,7 @@ void Renderer::onDrawFrame(int width, int height) {
         wantCaptureMouse_.store(capture, std::memory_order_relaxed);
     }
 
+    wantTextInput_.store(io.WantTextInput, std::memory_order_relaxed);
     ImGui::Render();
 
     glViewport(0, 0, width, height);
@@ -149,6 +160,12 @@ void Renderer::onTouch(int action, float x, float y, int pointerId) {
         default:
             break;
     }
+}
+
+
+void Renderer::onChar(unsigned int codepoint) {
+    std::lock_guard<std::mutex> lk(charMu_);
+    charQueue_.push_back(codepoint);
 }
 
 void Renderer::shutdown() {

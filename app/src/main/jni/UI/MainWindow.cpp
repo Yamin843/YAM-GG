@@ -142,7 +142,7 @@ void MainWindow::drawMainWindow() {
 
     // MenuBar removed per user request
 
-    // ─── Sidebar (horizontal labels, first tab = JVI) ───
+    // ─── Sidebar (horizontal labels, first tab = JV) ───
     const float sidebarW = 110.0f;
     ImGui::BeginChild("##Sidebar", ImVec2(sidebarW, 0), true);
     {
@@ -162,7 +162,7 @@ void MainWindow::drawMainWindow() {
             ImGui::Spacing();
         };
 
-        tabBtn("JVI", 0);
+        tabBtn("JV", 0);
         tabBtn("JS",  1);
     }
     ImGui::EndChild();

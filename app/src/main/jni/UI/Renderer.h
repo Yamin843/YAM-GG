@@ -2,6 +2,7 @@
 #define YAMGG_UI_RENDERER_H
 
 #include <mutex>
+#include <vector>
 #include <atomic>
 
 namespace yamgg {
@@ -14,6 +15,8 @@ public:
     void onSurfaceChanged(int width, int height);
     void onDrawFrame(int width, int height);
     void onTouch(int action, float x, float y, int pointerId);
+    void onChar(unsigned int codepoint);
+    bool wantTextInput() const { return wantTextInput_.load(); }
 
     bool isReady() const { return ready_.load(); }
     bool wantCaptureMouse() const { return wantCaptureMouse_.load(); }
@@ -36,6 +39,9 @@ private:
     double lastFrameTime_{0.0};
     bool backendInit_{false};
     std::atomic<bool> wantCaptureMouse_{false};
+    std::atomic<bool> wantTextInput_{false};
+    std::mutex charMu_;
+    std::vector<unsigned int> charQueue_;
 };
 
 #define YAMGG_RENDERER yamgg::Renderer::instance()

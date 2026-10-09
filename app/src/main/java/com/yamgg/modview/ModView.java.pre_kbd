@@ -5,11 +5,6 @@ import android.content.Context;
 import android.graphics.PixelFormat;
 import android.opengl.GLSurfaceView;
 import android.util.Log;
-import android.text.Editable;
-import android.text.TextWatcher;
-import android.view.KeyEvent;
-import android.view.inputmethod.InputMethodManager;
-import android.widget.EditText;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -30,14 +25,11 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
     private static native void nativeOnTouch(int action, float x, float y, int pointerId);
     private static native boolean nativeWantCaptureMouse();
     private static native String nativeGetPendingCmd();
-    private static native void nativeOnChar(int codepoint);
-    private static native boolean nativeWantTextInput();
     private static native void nativeOnKey(int keyCode, int action);
 
     private static volatile ModView sInstance = null;
     private static volatile Activity sActivity = null;
     private static final Object sLock = new Object();
-    private static EditText sHiddenInput = null;
 
     public ModView(Context context) {
         super(context);
@@ -87,36 +79,6 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
         } catch (Throwable t) {
             Log.e(TAG, "onDrawFrame failed", t);
         }
-        syncSoftKeyboard();
-    }
-
-    private volatile boolean keyboardShown = false;
-    private void syncSoftKeyboard() {
-        try {
-            final boolean want = nativeWantTextInput();
-            if (want == keyboardShown) return;
-            keyboardShown = want;
-            final Activity activity = sActivity;
-            if (activity == null) return;
-            activity.runOnUiThread(new Runnable() {
-                @Override public void run() {
-                    try {
-                        if (sHiddenInput == null) return;
-                        InputMethodManager imm = (InputMethodManager)
-                            activity.getSystemService(Context.INPUT_METHOD_SERVICE);
-                        if (imm == null) return;
-                        if (want) {
-                            sHiddenInput.requestFocus();
-                            imm.showSoftInput(sHiddenInput, 0);
-                        } else {
-                            imm.hideSoftInputFromWindow(sHiddenInput.getWindowToken(), 0);
-                        }
-                    } catch (Throwable t) {
-                        Log.e(TAG, "syncSoftKeyboard", t);
-                    }
-                }
-            });
-        } catch (Throwable t) {}
     }
 
     @Override
@@ -232,54 +194,6 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT);
                     decor.addView(view, lp);
-
-                    // Hidden EditText to receive IME input
-                    try {
-                        if (sHiddenInput == null) {
-                            EditText et = new EditText(activity);
-                            et.setLayoutParams(new ViewGroup.LayoutParams(1, 1));
-                            et.setAlpha(0.0f);
-                            et.setBackground(null);
-                            et.setCursorVisible(false);
-                            et.setTextColor(0);
-                            et.setInputType(android.text.InputType.TYPE_CLASS_TEXT
-                                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-                            et.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN);
-                            et.addTextChangedListener(new TextWatcher() {
-                                @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
-                                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                                    try {
-                                        if (count == 0) return;
-                                        for (int i = start; i < start + count && i < s.length(); i++) {
-                                            nativeOnChar((int) s.charAt(i));
-                                        }
-                                        et.setText("");
-                                    } catch (Throwable t) {}
-                                }
-                                @Override public void afterTextChanged(Editable s) {}
-                            });
-                            et.setOnKeyListener(new android.view.View.OnKeyListener() {
-                                @Override public boolean onKey(android.view.View v, int keyCode, KeyEvent event) {
-                                    if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                                        nativeOnKey(keyCode, 0);
-                                        if (keyCode == KeyEvent.KEYCODE_DEL
-                                            || keyCode == KeyEvent.KEYCODE_ENTER
-                                            || keyCode == KeyEvent.KEYCODE_FORWARD_DEL) {
-                                            return true;
-                                        }
-                                    } else if (event.getAction() == KeyEvent.ACTION_UP) {
-                                        nativeOnKey(keyCode, 1);
-                                    }
-                                    return false;
-                                }
-                            });
-                            decor.addView(et);
-                            sHiddenInput = et;
-                        }
-                    } catch (Throwable t) {
-                        Log.e(TAG, "hidden EditText setup failed", t);
-                    }
-
                     Log.i(TAG, "ModView attached to DecorView");
                 } catch (Throwable t) {
                     Log.e(TAG, "attach failed", t);
