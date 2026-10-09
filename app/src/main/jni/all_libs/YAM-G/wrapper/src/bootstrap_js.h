@@ -9,7 +9,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
     "use strict";
 
     // ═══════════════════════════════════════════════════════
-    // SECTION 1 — HANDLE REGISTRY
+    // HANDLE REGISTRY
     // ═══════════════════════════════════════════════════════
     var table = Object.create(null);
     var nextHandle = 1;
@@ -19,7 +19,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
     function dropAll() { table = Object.create(null); nextHandle = 1; }
 
     // ═══════════════════════════════════════════════════════
-    // SECTION 2 — REPLY ENVELOPE
+    // REPLY ENVELOPE
     // ═══════════════════════════════════════════════════════
     function reply(id, ok, kind, value, handle, error) {
         var m = { id: id, ok: !!ok };
@@ -35,7 +35,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
     function replyError(id, e)  { reply(id, false, "error", null, null, (e && e.message) ? e.message : String(e)); }
 
     // ═══════════════════════════════════════════════════════
-    // SECTION 3 — JNI SIGNATURE PARSER
+    // JNI SIG PARSER
     // ═══════════════════════════════════════════════════════
     function prim(c) {
         switch (c) {
@@ -81,7 +81,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
     }
 
     // ═══════════════════════════════════════════════════════
-    // SECTION 4 — JSON → JAVA MATERIALIZER
+    // MATERIALIZER
     // ═══════════════════════════════════════════════════════
     function mat(v) {
         if (v === null || v === undefined) return v;
@@ -107,7 +107,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
     }
 
     // ═══════════════════════════════════════════════════════
-    // SECTION 5 — COMMAND HANDLERS
+    // COMMAND HANDLERS
     // ═══════════════════════════════════════════════════════
     var handlers = {
         cpp_use_class: function (cmd) { replyHandle(cmd.id, alloc(Java.use(cmd.className))); },
@@ -182,7 +182,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
     };
 
     // ═══════════════════════════════════════════════════════
-    // SECTION 6 — RECEIVER (yamgg_cmd channel)
+    // RECEIVER — yamgg_cmd channel
     // ═══════════════════════════════════════════════════════
     recv("yamgg_cmd", function (msg) {
         var cmd = null;
@@ -194,20 +194,46 @@ static const char kBootstrapSrc[] = R"YAMJS(
     });
 
     // ═══════════════════════════════════════════════════════
-    // SECTION 7 — INLINE HOOKS (run via setTimeout, no C→JS needed)
+    // LOG WRITER — use FileOutputStream (avoids FileWriter.write overload issue)
     // ═══════════════════════════════════════════════════════
-    function runInlineHooks() {
+    var LOG_PATH = "/storage/emulated/0/Download/appsflyer_calls.log";
+    function writeLog(line) {
         try {
-            // ── Activity: attach to current + hook onResume ──
+            var FOS = Java.use("java.io.FileOutputStream");
+            var fos = FOS.$new(LOG_PATH, true);
+            try {
+                var String_ = Java.use("java.lang.String");
+                var bytes = String_.$new(line + "\n").getBytes("UTF-8");
+                fos.write(bytes);
+                fos.flush();
+            } finally { fos.close(); }
+        } catch (e) {
+            send({type:"appsflyer_log_error", message:"" + e});
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // ATTACH — retry loop until activity found
+    // ═══════════════════════════════════════════════════════
+    var attachAttempts = 0;
+    var attachDone = false;
+    function tryAttach() {
+        if (attachDone) return;
+        attachAttempts++;
+        if (attachAttempts > 120) {  // 60 seconds
+            send({type:"attach_giveup", attempts: attachAttempts});
+            return;
+        }
+        try {
             Java.performNow(function () {
                 try {
                     Java.scheduleOnMainThread(function () {
                         try {
                             var AT = Java.use("android.app.ActivityThread");
                             var at = AT.currentActivityThread();
-                            if (!at) { send({type:"attach_now_info", message:"no ActivityThread"}); return; }
+                            if (!at) { setTimeout(tryAttach, 500); return; }
                             var mActivities = at.mActivities.value;
-                            if (!mActivities) { send({type:"attach_now_info", message:"no mActivities"}); return; }
+                            if (!mActivities) { setTimeout(tryAttach, 500); return; }
                             var n = mActivities.size();
                             for (var i = 0; i < n; i++) {
                                 try {
@@ -219,16 +245,34 @@ static const char kBootstrapSrc[] = R"YAMJS(
                                     try { if (act.isFinishing()) continue; } catch (e) {}
                                     var ModView = Java.use("com.yamgg.modview.ModView");
                                     ModView.attach(act);
-                                    send({type:"attach_now_ok", className: "" + act.getClass().getName(), index: i});
+                                    attachDone = true;
+                                    send({type:"attach_now_ok", className: "" + act.getClass().getName(), index: i, attempts: attachAttempts});
                                     return;
                                 } catch (e) { send({type:"attach_now_skip", index: i, message: "" + e}); }
                             }
-                            send({type:"attach_now_none"});
-                        } catch (e) { send({type:"attach_now_error", message: "" + e}); }
+                            setTimeout(tryAttach, 500);
+                        } catch (e) {
+                            send({type:"attach_now_error", message: "" + e});
+                            setTimeout(tryAttach, 500);
+                        }
                     });
-                } catch (e) { send({type:"attach_now_outer", message: "" + e}); }
+                } catch (e) {
+                    send({type:"attach_now_outer", message: "" + e});
+                    setTimeout(tryAttach, 500);
+                }
             });
+        } catch (e) {
+            send({type:"attach_now_outer2", message: "" + e});
+            setTimeout(tryAttach, 500);
+        }
+    }
 
+    // ═══════════════════════════════════════════════════════
+    // INSTALL HOOKS (run once)
+    // ═══════════════════════════════════════════════════════
+    function installAllHooks() {
+        // onResume hook
+        try {
             Java.performNow(function () {
                 try {
                     var Activity = Java.use("android.app.Activity");
@@ -244,27 +288,19 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     send({type:"hook_installed"});
                 } catch (e) { send({type:"hook_error", message: "install: " + e}); }
             });
+        } catch (e) { send({type:"hook_outer_error", message: "" + e}); }
 
-            // ── AppsFlyer ──
+        // AppsFlyer hooks
+        try {
             Java.performNow(function () {
                 try {
                     var C = Java.use("com.appsflyer.unity.AppsFlyerAndroidWrapper");
                     send({type:"appsflyer_class_ok"});
 
-                    var LOG_PATH = "/storage/emulated/0/Download/appsflyer_calls.log";
-                    function writeLog(line) {
-                        try {
-                            var FileWriter = Java.use("java.io.FileWriter");
-                            var fw = FileWriter.$new(LOG_PATH, true);
-                            try { fw.write(line + "\n"); fw.flush(); }
-                            finally { fw.close(); }
-                        } catch (e) { send({type:"appsflyer_log_error", message:"" + e}); }
-                    }
-
                     try {
                         var m2 = C.trackEvent.overload("java.lang.String", "java.util.HashMap");
                         m2.implementation = function (name, params) {
-                            writeLog("" + new Date() + "  trackEvent/2  name=" + name + "  params=" + params);
+                            writeLog("" + new Date() + "  trackEvent/2  name=" + name);
                             send({type:"appsflyer_hit", overload:"2", name:"" + name});
                             return m2.call(this, name, params);
                         };
@@ -274,7 +310,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     try {
                         var m4 = C.trackEvent.overload("java.lang.String", "java.util.HashMap", "boolean", "java.lang.String");
                         m4.implementation = function (name, params, isRevenue, currency) {
-                            writeLog("" + new Date() + "  trackEvent/4  name=" + name + "  params=" + params + "  isRevenue=" + isRevenue + "  currency=" + currency);
+                            writeLog("" + new Date() + "  trackEvent/4  name=" + name + "  isRevenue=" + isRevenue);
                             send({type:"appsflyer_hit", overload:"4", name:"" + name});
                             return m4.call(this, name, params, isRevenue, currency);
                         };
@@ -284,21 +320,19 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     send({type:"appsflyer_ready"});
                 } catch (e) { send({type:"appsflyer_class_error", message:"" + e}); }
             });
-        } catch (e) {
-            send({type:"inline_hooks_err", message: "" + e});
-        }
+        } catch (e) { send({type:"appsflyer_outer_error", message:"" + e}); }
     }
 
     // ═══════════════════════════════════════════════════════
-    // SECTION 8 — READY + SCHEDULE HOOKS
+    // READY + SCHEDULE
     // ═══════════════════════════════════════════════════════
     try { send({ type: "cpp_ready" }); }       catch (e) {}
     try { send({ type: "cpp_ready_final" }); } catch (e) {}
 
-    try { setTimeout(runInlineHooks, 800); } catch (e) {
-        try { send({type:"setTimeout_error", message:"" + e}); } catch (e2) {}
-        try { runInlineHooks(); } catch (e2) {}
-    }
+    setTimeout(function () {
+        try { installAllHooks(); } catch (e) { send({type:"install_err", message:"" + e}); }
+        try { tryAttach(); } catch (e) { send({type:"attach_start_err", message:"" + e}); }
+    }, 800);
 })();
 )YAMJS";
 
