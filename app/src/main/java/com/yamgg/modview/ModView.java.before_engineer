@@ -138,6 +138,12 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
             }
         }
 
+        final ModView view = new ModView(activity);
+        synchronized (sLock) {
+            sInstance = view;
+            sActivity = activity;
+        }
+
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -149,13 +155,6 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                         if (decor.getChildAt(i) instanceof ModView) {
                             return;
                         }
-                    }
-
-                    // GLSurfaceView MUST be created on UI thread.
-                    final ModView view = new ModView(activity);
-                    synchronized (sLock) {
-                        sInstance = view;
-                        sActivity = activity;
                     }
 
                     ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(

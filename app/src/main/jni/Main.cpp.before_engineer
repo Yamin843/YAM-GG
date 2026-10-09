@@ -80,84 +80,52 @@ static void* init_thread(void*) {
         LOGI("init_thread: installing Activity.onResume hook via JS");
 
         static const char* kActivityHookJs = R"JS(
-(function () {
-    "use strict";
-    if (typeof Java === "undefined") {
-        send({type:"hook_error", message:"Java undefined"});
-        return;
-    }
-
-    // ─── STEP 1: install onResume hook (no recursion) ───
+(function() {
     try {
-        Java.performNow(function () {
-            try {
-                var Activity     = Java.use("android.app.Activity");
-                var origOnResume = Activity.onResume;
+        if (typeof Java === "undefined") {
+            send({type:"hook_error", message:"Java undefined"});
+            return;
+        }
 
-                Activity.onResume.implementation = function () {
-                    origOnResume.call(this);   // ← original, not this.onResume
+        // Force class loader first
+        try {
+            Java.performNow(function() {
+                try {
+                    if (Java.classFactory.loader === null) {
+                        var AT = Java.use("android.app.ActivityThread");
+                        var app = AT.currentApplication();
+                        if (app !== null) {
+                            Java.classFactory.loader = app.getClassLoader();
+                            send({type:"hook_info", message:"loader set"});
+                        }
+                    }
+                } catch(e) {}
+            });
+        } catch(e) {}
+
+        // Install onResume hook
+        Java.performNow(function() {
+            try {
+                var Activity = Java.use("android.app.Activity");
+                var origOnResume = Activity.onResume;
+                Activity.onResume.implementation = function() {
+                    origOnResume.call(this);
                     try {
                         var ModView = Java.use("com.yamgg.modview.ModView");
                         ModView.attach(this);
-                        send({
-                            type: "modview_attached",
-                            className: "" + this.getClass().getName()
-                        });
-                    } catch (e) {
+                        send({type:"modview_attached",
+                              className:"" + this.getClass().getName()});
+                    } catch(e) {
                         send({type:"attach_error", message:"" + e});
                     }
                 };
                 send({type:"activity_hook_installed"});
-            } catch (e) {
-                send({type:"hook_error", message:"install: " + e});
+            } catch(e) {
+                send({type:"hook_error", message:"inner:" + e});
             }
         });
-    } catch (e) {
-        send({type:"hook_error", message:"performNow(install): " + e});
-    }
-
-    // ─── STEP 2: attach to current activity (safe reflection) ───
-    try {
-        Java.performNow(function () {
-            try {
-                var AT = Java.use("android.app.ActivityThread");
-                var at = AT.currentActivityThread();
-                if (at === null) {
-                    send({type:"hook_info", message:"no ActivityThread"});
-                    return;
-                }
-                var recs = at.mActivities.value;
-                if (recs === null) {
-                    send({type:"hook_info", message:"no mActivities"});
-                    return;
-                }
-                var n = recs.size();
-                for (var i = 0; i < n; i++) {
-                    try {
-                        var rec = recs.valueAt(i);
-                        if (!rec) continue;
-                        var act = rec.activity.value;
-                        if (!act) continue;
-                        try { if (act.isFinishing()) continue; } catch (e) {}
-                        var ModView = Java.use("com.yamgg.modview.ModView");
-                        ModView.attach(act);
-                        send({
-                            type: "modview_attached_now",
-                            className: "" + act.getClass().getName(),
-                            index: i
-                        });
-                        return;
-                    } catch (e) {
-                        send({type:"attach_now_error", message:"" + e, index:i});
-                    }
-                }
-                send({type:"hook_info", message:"no live activity in mActivities"});
-            } catch (e) {
-                send({type:"hook_info", message:"attach_now outer: " + e});
-            }
-        });
-    } catch (e) {
-        send({type:"hook_error", message:"performNow(attach_now): " + e});
+    } catch(e) {
+        send({type:"hook_error", message:"outer:" + e});
     }
 })();
 )JS";
