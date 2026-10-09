@@ -21,8 +21,6 @@
 // namespace yam
 // ===========================================================================
 
-extern "C" void yamgg_postCommand(const char* json);
-
 namespace yam {
 
 
@@ -771,10 +769,20 @@ Result<void> Script::load(Cancellable& c) {
 Result<void> Script::unload() { Cancellable c; return unload(c); }
 
 
-
 void Script::post(const String& msg) {
-    // C→JS via queue polled by JS. yam_script_post is unreliable after load.
-    ::yamgg_postCommand(msg.c_str());
+    if (!handle_) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "Script::post: handle_ NULL");
+        return;
+    }
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "Script::post: %s", msg.c_str());
+
+    // message-dispatcher (JS) expects the FULL JSON envelope as `message`.
+    // Our `msg` is already {"type":"cmd","payload":{...}} or
+    // {"type":"yamgg_cmd","payload":{...}}. Pass as-is.
+    yam_script_post(static_cast<YamScript*>(handle_),
+                    msg.c_str(), nullptr);
 }
 
 Result<void> Script::unload(Cancellable& c) {

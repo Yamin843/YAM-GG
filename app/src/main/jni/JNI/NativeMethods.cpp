@@ -39,11 +39,16 @@ static jboolean JNICALL impl_nativeWantCaptureMouse(JNIEnv* env, jclass clazz) {
     return Renderer::instance().wantCaptureMouse() ? JNI_TRUE : JNI_FALSE;
 }
 
+static void JNICALL impl_nativeOnKey(JNIEnv* env, jclass clazz, jint keyCode, jint action) {
+    (void)env; (void)clazz; (void)keyCode; (void)action;
+}
+
 static const JNINativeMethod g_methods[] = {
     {"nativeOnSurfaceCreated", "()V", (void*)impl_nativeOnSurfaceCreated},
     {"nativeOnSurfaceChanged", "(II)V", (void*)impl_nativeOnSurfaceChanged},
     {"nativeOnDrawFrame", "(II)V", (void*)impl_nativeOnDrawFrame},
     {"nativeOnTouch", "(IFFI)V", (void*)impl_nativeOnTouch},
+    {"nativeOnKey", "(II)V", (void*)impl_nativeOnKey},
     {"nativeWantCaptureMouse", "()Z", (void*)impl_nativeWantCaptureMouse},
 };
 

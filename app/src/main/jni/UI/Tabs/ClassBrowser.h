@@ -77,6 +77,7 @@ private:
     bool loading_{false};
     bool eventsRegistered_{false};
     char filterBuf_[256]{0};
+    char searchBuf_[256]{0};
 };
 
 #define YAMGG_CLASSBROWSER yamgg::ClassBrowser::instance()

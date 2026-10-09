@@ -24,7 +24,6 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
     private static native void nativeOnDrawFrame(int width, int height);
     private static native void nativeOnTouch(int action, float x, float y, int pointerId);
     private static native boolean nativeWantCaptureMouse();
-    private static native String nativeGetPendingCmd();
     private static native void nativeOnKey(int keyCode, int action);
 
     private static volatile ModView sInstance = null;
@@ -109,18 +108,6 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         // Fallback — should not be called because we override dispatch.
-        return true;
-    }
-
-    @Override
-    public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
-        nativeOnKey(keyCode, 0);
-        return true;
-    }
-
-    @Override
-    public boolean onKeyUp(int keyCode, android.view.KeyEvent event) {
-        nativeOnKey(keyCode, 1);
         return true;
     }
 

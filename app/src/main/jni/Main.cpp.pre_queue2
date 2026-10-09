@@ -9,7 +9,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <queue>
 #include <thread>
 
 #include "Core/Runtime.h"
@@ -30,8 +29,6 @@ static JavaVM* g_vm = nullptr;
 static jclass  g_modViewClass = nullptr;
 static std::atomic<bool> g_initialized{false};
 static std::atomic<bool> g_pump_running{true};
-static std::mutex         g_cmdMutex;
-static std::queue<std::string> g_cmdQueue;
 
 // ===========================================================================
 // init_thread
@@ -169,26 +166,6 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
 }
 
 // ===========================================================================
-// C++ → JS command queue (polled by JS via nativeGetPendingCmd)
-// ===========================================================================
-extern "C" void yamgg_postCommand(const char* json) {
-    if (!json) return;
-    std::lock_guard<std::mutex> lk(g_cmdMutex);
-    if (g_cmdQueue.size() > 1000) g_cmdQueue.pop();  // drop oldest
-    g_cmdQueue.push(std::string(json));
-}
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_yamgg_modview_ModView_nativeGetPendingCmd(JNIEnv* env, jclass clazz) {
-    (void)clazz;
-    std::lock_guard<std::mutex> lk(g_cmdMutex);
-    if (g_cmdQueue.empty()) return nullptr;
-    std::string cmd = g_cmdQueue.front();
-    g_cmdQueue.pop();
-    return env->NewStringUTF(cmd.c_str());
-}
-
-// ===========================================================================
 // JNI bridges for ModView native methods
 // ===========================================================================
 extern "C" JNIEXPORT void JNICALL
@@ -220,11 +197,6 @@ Java_com_yamgg_modview_ModView_nativeOnKey(JNIEnv* env, jclass clazz,
                                             jint keyCode, jint action) {
     jni::onKey(env, clazz, keyCode, action);
 }
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_yamgg_modview_ModView_nativeGetPendingCmd(JNIEnv*, jclass);
-
-
 
 // ===========================================================================
 // Constructor / Destructor

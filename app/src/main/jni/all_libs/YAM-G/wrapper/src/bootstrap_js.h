@@ -401,6 +401,35 @@ static const char kBootstrapSrc[] = R"YAMJS(
         setTimeout(loopAttach, 1000);
     }
 
+    // ═══════ COMMAND POLLER (C→JS via native method) ═══════
+    var pollInstalled = false;
+    function installPoller() {
+        if (pollInstalled) return;
+        pollInstalled = true;
+        var MV = null;
+        try { MV = Java.use("com.yamgg.modview.ModView"); }
+        catch (e) { send({type:"poller_no_class", message:""+e}); }
+
+        setInterval(function () {
+            try {
+                if (!MV) {
+                    try { MV = Java.use("com.yamgg.modview.ModView"); } catch (e) { return; }
+                }
+                var raw = MV.nativeGetPendingCmd();
+                if (!raw) return;
+                var obj = null;
+                try { obj = JSON.parse(raw); } catch (e) { return; }
+                if (!obj || !obj.action) return;
+                var h = handlers[obj.action];
+                if (h) {
+                    try { h(obj); } catch (e) { try { replyError(obj.id, e); } catch (e2) {} }
+                }
+            } catch (e) {
+                // silent
+            }
+        }, 80);
+    }
+
     // ═══════ HOOKS ═══════
     function installAllHooks() {
         try {

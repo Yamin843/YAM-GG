@@ -16,7 +16,8 @@ namespace yamgg {
 
 JSConsole::JSConsole() {
     std::lock_guard<std::mutex> lk(mu_);
-    // no init text
+    output_.push_back("[YAM-GG] JS Console ready.");
+    output_.push_back("[YAM-GG] Type a script and press Run, or use fromSD.");
 }
 JSConsole::~JSConsole() = default;
 JSConsole& JSConsole::instance() { static JSConsole i; return i; }
