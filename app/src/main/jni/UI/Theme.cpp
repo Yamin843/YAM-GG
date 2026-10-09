@@ -11,7 +11,7 @@
 
 namespace yamgg {
 
-static float g_fontSize = 40.0f;
+static float g_fontSize = 28.0f;
 
 void Theme::apply() {
     ImGuiStyle& style = ImGui::GetStyle();
@@ -37,7 +37,7 @@ void Theme::apply() {
     style.ItemSpacing        = ImVec2(10.0f, 8.0f);
     style.ItemInnerSpacing   = ImVec2(8.0f, 6.0f);
     style.IndentSpacing      = 22.0f;
-    style.ScrollbarSize      = 0.0f;   // hidden
+    style.ScrollbarSize      = 24.0f;
     style.GrabMinSize        = 18.0f;
 
     style.WindowTitleAlign   = ImVec2(0.5f, 0.5f);

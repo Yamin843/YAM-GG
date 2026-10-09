@@ -149,7 +149,7 @@ void FileBrowser::draw() {
     std::string f = filter_;
     std::transform(f.begin(), f.end(), f.begin(), ::tolower);
 
-    if (ImGui::BeginChild("##list", ImVec2(0, -60), true, ImGuiWindowFlags_HorizontalScrollbar)) {
+    if (ImGui::BeginChild("##list", ImVec2(0, -40), true)) {
         for (auto& e : entries_) {
             if (!f.empty()) {
                 std::string lower = e.name;
@@ -161,10 +161,12 @@ void FileBrowser::draw() {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.75f, 0.1f, 1.0f));
                 char label[512];
                 snprintf(label, sizeof(label), "[DIR]  %s", e.name.c_str());
-                if (ImGui::Selectable(label, false)) {
-                    navigateTo(e.fullPath);
-                    ImGui::PopStyleColor();
-                    break;
+                if (ImGui::Selectable(label, false, ImGuiSelectableFlags_AllowDoubleClick)) {
+                    if (ImGui::IsMouseDoubleClicked(0)) {
+                        navigateTo(e.fullPath);
+                        ImGui::PopStyleColor();
+                        break;
+                    }
                 }
                 ImGui::PopStyleColor();
             } else {
@@ -182,8 +184,8 @@ void FileBrowser::draw() {
                 char label[512];
                 snprintf(label, sizeof(label), "      %s  (%lld bytes)",
                          e.name.c_str(), (long long)e.size);
-                if (ImGui::Selectable(label, false)) {
-                    if (onSelect_) {
+                if (ImGui::Selectable(label, false, ImGuiSelectableFlags_AllowDoubleClick)) {
+                    if (ImGui::IsMouseDoubleClicked(0) && onSelect_) {
                         std::string path = e.fullPath;
                         ImGui::PopStyleColor();
                         onSelect_(path);

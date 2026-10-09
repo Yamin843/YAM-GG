@@ -10,7 +10,6 @@
 #include <atomic>
 #include <chrono>
 #include <queue>
-#include <cstring>
 #include <thread>
 
 #include "Core/Runtime.h"
@@ -172,19 +171,6 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
 // ===========================================================================
 // C++ → JS command queue (polled by JS via nativeGetPendingCmd)
 // ===========================================================================
-extern "C" int yamgg_popPendingCmd(char* out, int maxLen) {
-    if (!out || maxLen <= 0) return 0;
-    std::lock_guard<std::mutex> lk(g_cmdMutex);
-    if (g_cmdQueue.empty()) return 0;
-    std::string cmd = g_cmdQueue.front();
-    g_cmdQueue.pop();
-    int n = (int)cmd.size();
-    if (n >= maxLen) n = maxLen - 1;
-    std::memcpy(out, cmd.data(), n);
-    out[n] = 0;
-    return n;
-}
-
 extern "C" void yamgg_postCommand(const char* json) {
     if (!json) return;
     std::lock_guard<std::mutex> lk(g_cmdMutex);
@@ -192,7 +178,15 @@ extern "C" void yamgg_postCommand(const char* json) {
     g_cmdQueue.push(std::string(json));
 }
 
-
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_yamgg_modview_ModView_nativeGetPendingCmd(JNIEnv* env, jclass clazz) {
+    (void)clazz;
+    std::lock_guard<std::mutex> lk(g_cmdMutex);
+    if (g_cmdQueue.empty()) return nullptr;
+    std::string cmd = g_cmdQueue.front();
+    g_cmdQueue.pop();
+    return env->NewStringUTF(cmd.c_str());
+}
 
 // ===========================================================================
 // JNI bridges for ModView native methods

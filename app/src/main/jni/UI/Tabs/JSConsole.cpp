@@ -11,6 +11,11 @@
 
 namespace yamgg {
 
+static ImVec2 autoBtn(const char* label, float padX = 28.0f, float padY = 16.0f) {
+    ImVec2 ts = ImGui::CalcTextSize(label);
+    return ImVec2(ts.x + padX, ts.y + padY);
+}
+
 JSConsole::JSConsole() = default;
 JSConsole::~JSConsole() = default;
 JSConsole& JSConsole::instance() { static JSConsole i; return i; }
@@ -47,7 +52,7 @@ void JSConsole::loadScriptFromFile(const std::string& path) {
     e.name = name; e.path = path; e.code = code;
     e.selected = true; e.id = nextScriptId_++;
     scripts_.push_back(e);
-    pushOutput("[loaded] " + name);
+    pushOutput("[loaded] " + name + " (" + std::to_string(code.size()) + " bytes)");
 }
 
 void JSConsole::loadSelected() {
@@ -68,27 +73,24 @@ void JSConsole::unloadSelected() {
         pushOutput("[unloaded] " + s.name);
     }
 }
-
 void JSConsole::unloadAll() {
     YamBridge& b = YamBridge::instance();
     for (auto& s : scripts_) if (s.running) { b.unloadScript(s.name); s.running = false; }
 }
-
 void JSConsole::clearOutput() { std::lock_guard<std::mutex> lk(mu_); output_.clear(); }
 int JSConsole::scriptCount() const { return (int)scripts_.size(); }
 int JSConsole::runningCount() const { int n = 0; for (auto& s : scripts_) if (s.running) n++; return n; }
 
 void JSConsole::draw() {
-    // Sub-tabs at top
     if (ImGui::BeginTabBar("##JSSubTabs", ImGuiTabBarFlags_None)) {
-        if (ImGui::BeginTabItem("LOG")) {
+        if (ImGui::BeginTabItem("Console")) {
             activeSubTab_ = 0;
-            drawLogTab();
+            drawConsoleTab();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Console")) {
+        if (ImGui::BeginTabItem("Log")) {
             activeSubTab_ = 1;
-            drawConsoleTab();
+            drawLogTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -97,7 +99,7 @@ void JSConsole::draw() {
 
 void JSConsole::drawLogTab() {
     ImGui::Spacing();
-    ImGui::BeginChild("##LogArea", ImVec2(0, -50), true,
+    ImGui::BeginChild("##LogArea", ImVec2(0, -60), true,
                        ImGuiWindowFlags_HorizontalScrollbar);
     {
         std::lock_guard<std::mutex> lk(mu_);
@@ -117,57 +119,80 @@ void JSConsole::drawLogTab() {
     }
     ImGui::EndChild();
 
-    if (ImGui::Button("Clear Log", ImVec2(180, 40))) clearOutput();
+    ImVec2 bs = autoBtn("Clear Log");
+    if (ImGui::Button("Clear Log", bs)) clearOutput();
 }
 
 void JSConsole::drawConsoleTab() {
-    // Toolbar
     ImGui::Spacing();
-    const ImVec2 bsz(120, 42);
-    if (ImGui::Button("Load", bsz)) loadSelected();
-    ImGui::SameLine();
-    if (ImGui::Button("Unload", bsz)) unloadSelected();
-    ImGui::SameLine();
-    if (ImGui::Button("fromSD", bsz)) {
-        FileBrowser::instance().setOnSelect(
-            [](const std::string& p) { JSConsole::instance().loadScriptFromFile(p); });
-        FileBrowser::instance().open("/storage/emulated/0/");
+    {
+        ImVec2 bs = autoBtn("fromSD");
+        if (ImGui::Button("fromSD", bs)) {
+            FileBrowser::instance().setOnSelect(
+                [](const std::string& p) { JSConsole::instance().loadScriptFromFile(p); });
+            FileBrowser::instance().open("/storage/emulated/0/");
+        }
+        ImGui::SameLine();
+        bs = autoBtn("Load");
+        if (ImGui::Button("Load", bs)) loadSelected();
+        ImGui::SameLine();
+        bs = autoBtn("Unload");
+        if (ImGui::Button("Unload", bs)) unloadSelected();
+        ImGui::SameLine();
+        bs = autoBtn("Paste");
+        if (ImGui::Button("Paste", bs)) {
+            const char* cb = ImGui::GetClipboardText();
+            if (cb && *cb) {
+                size_t cur = std::strlen(codeBuffer_);
+                std::strncat(codeBuffer_, cb, sizeof(codeBuffer_) - cur - 1);
+            }
+        }
     }
-    ImGui::Spacing();
     ImGui::Separator();
 
     // Editor
     ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextWrapped("Script");
+    ImGui::TextWrapped("Script editor");
     ImGui::PopTextWrapPos();
+
     ImGui::InputTextMultiline("##code", codeBuffer_, sizeof(codeBuffer_),
-                              ImVec2(-1, 140), ImGuiInputTextFlags_AllowTabInput);
-    if (ImGui::Button("Run", ImVec2(120, 40)))
-        if (codeBuffer_[0]) evaluate(std::string(codeBuffer_));
-    ImGui::SameLine();
-    if (ImGui::Button("Clear", ImVec2(120, 40))) codeBuffer_[0] = 0;
+                              ImVec2(-1, 180), ImGuiInputTextFlags_AllowTabInput);
+
+    {
+        ImVec2 bs = autoBtn("Run");
+        if (ImGui::Button("Run", bs))
+            if (codeBuffer_[0]) evaluate(std::string(codeBuffer_));
+        ImGui::SameLine();
+        bs = autoBtn("Clear");
+        if (ImGui::Button("Clear", bs)) codeBuffer_[0] = 0;
+    }
 
     ImGui::Separator();
 
-    // Scripts list
+    // Scripts list with checkboxes
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextWrapped("Scripts: %d  |  Running: %d", scriptCount(), runningCount());
     ImGui::PopTextWrapPos();
     ImGui::BeginChild("##ScriptsList", ImVec2(0, 0), true);
+    if (scripts_.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextWrapped("(use fromSD to load a file)");
+        ImGui::PopTextWrapPos();
+    }
     for (size_t i = 0; i < scripts_.size(); ++i) {
         auto& s = scripts_[i];
         ImGui::PushID((int)i);
         ImGui::Checkbox("##sel", &s.selected);
         ImGui::SameLine();
         ImVec4 col = s.running ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
-                               : ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
+                               : ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Text, col);
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextWrapped("%s %s", s.running ? "[RUN]" : "[OFF]", s.name.c_str());
         ImGui::PopTextWrapPos();
         ImGui::PopStyleColor();
-        ImGui::SameLine(ImGui::GetWindowWidth() - 110);
-        if (ImGui::SmallButton("Remove")) {
+        ImGui::SameLine(ImGui::GetWindowWidth() - 100);
+        if (ImGui::SmallButton("X")) {
             if (s.running) YamBridge::instance().unloadScript(s.name);
             scripts_.erase(scripts_.begin() + i);
             ImGui::PopID(); break;

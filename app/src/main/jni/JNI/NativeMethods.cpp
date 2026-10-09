@@ -53,12 +53,23 @@ static jboolean JNICALL impl_nativeWantTextInput(JNIEnv* env, jclass clazz) {
     return Renderer::instance().wantTextInput() ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" int yamgg_popPendingCmd(char* out, int maxLen);
+
+static jstring JNICALL impl_nativeGetPendingCmd(JNIEnv* env, jclass clazz) {
+    (void)clazz;
+    char buf[8192];
+    int n = yamgg_popPendingCmd(buf, sizeof(buf));
+    if (n <= 0) return nullptr;
+    return env->NewStringUTF(buf);
+}
+
 static const JNINativeMethod g_methods[] = {
     {"nativeOnSurfaceCreated", "()V", (void*)impl_nativeOnSurfaceCreated},
     {"nativeOnSurfaceChanged", "(II)V", (void*)impl_nativeOnSurfaceChanged},
     {"nativeOnDrawFrame", "(II)V", (void*)impl_nativeOnDrawFrame},
     {"nativeOnTouch", "(IFFI)V", (void*)impl_nativeOnTouch},
     {"nativeOnKey", "(II)V", (void*)impl_nativeOnKey},
+    {"nativeGetPendingCmd", "()Ljava/lang/String;", (void*)impl_nativeGetPendingCmd},
     {"nativeWantCaptureMouse", "()Z", (void*)impl_nativeWantCaptureMouse},
     {"nativeOnChar", "(I)V", (void*)impl_nativeOnChar},
     {"nativeWantTextInput", "()Z", (void*)impl_nativeWantTextInput},
