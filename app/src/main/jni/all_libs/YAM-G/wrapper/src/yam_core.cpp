@@ -1158,4 +1158,15 @@ void Gc::sweep(i64 max_age_ms) {
 usize Gc::live_entries() { return registry().size(); }
 usize Gc::live_bytes() { return registry().total_bytes(); }
 
+
+// ===========================================================================
+// Public helper for Main.cpp — pumps GMainContext once.
+// Lives here (not in Main.cpp) because glib symbols are renamed by YAMJS.h.
+// ===========================================================================
+extern "C" void yamgg_pump_once() {
+    GMainContext* ctx = g_main_context_get_thread_default();
+    if (!ctx) ctx = g_main_context_default();
+    if (!ctx) return;
+    while (g_main_context_iteration(ctx, FALSE)) {}
+}
 } // namespace yam

@@ -12,17 +12,7 @@
 #include <chrono>
 #include <thread>
 
-// ── GLib forward declarations (avoid pulling glib.h into app source) ──
-extern "C" {
-    typedef struct _GMainContext GMainContext;
-    typedef int gboolean;
-    GMainContext* g_main_context_get_thread_default(void);
-    GMainContext* g_main_context_default(void);
-    gboolean      g_main_context_iteration(GMainContext* context, gboolean may_block);
-}
-#ifndef FALSE
-#  define FALSE 0
-#endif
+// glib access goes through the wrapper (yamgg_pump_once).
 
 #include "Core/Runtime.h"
 #include "Core/DexLoader.h"
@@ -40,6 +30,10 @@ static std::atomic<bool> g_initialized{false};
 static std::atomic<bool> g_pump_running{true};
 
 using namespace yamgg;
+
+// ── Wrapper-provided helper (see yam_core.cpp) ──
+extern "C" void yamgg_pump_once();
+
 
 // ===========================================================================
 // Activity.onResume hook + current-activity attach
@@ -258,14 +252,9 @@ static void* init_thread(void*) {
 
     // ── Pump loop — keeps JS scheduler alive ──
     {
-        GMainContext* ctx = g_main_context_get_thread_default();
-        if (!ctx) ctx = g_main_context_default();
-        LOGI("init_thread: pump loop starting (ctx=%p)", (void*)ctx);
-
+        LOGI("init_thread: pump loop starting");
         while (g_pump_running.load(std::memory_order_acquire)) {
-            int processed = 0;
-            while (g_main_context_iteration(ctx, FALSE)) { ++processed; }
-            (void)processed;
+            yamgg_pump_once();
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
         LOGI("init_thread: pump loop exited");
