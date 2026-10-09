@@ -21,9 +21,6 @@
 // namespace yam
 // ===========================================================================
 
-// Global C-linkage: defined in Main.cpp (yamgg:: namespace is skipped)
-extern "C" void yamgg_postCommand(const char* json);
-
 namespace yam {
 
 
@@ -790,7 +787,8 @@ void Script::clear_message_handler() {
 void Script::post(const String& msg) {
     // C→JS via ModView.sPendingCmd (poll-based).
     // Do NOT use yam_script_post: needs GBytes which isn't exported.
-    ::yamgg_postCommand(msg.c_str());
+    extern void yamgg_postCommand(const char* json);
+    yamgg_postCommand(msg.c_str());
 }
 void Script::post(const String& msg, const ByteVector& /* data */) {
     // Note: yam_script_post_with_data does not exist in the library. We fall
