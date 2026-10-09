@@ -23,6 +23,7 @@ LOCAL_SRC_FILES := \
     UI/Theme.cpp \
     UI/MainWindow.cpp \
     UI/Tabs/JSConsole.cpp \
+    UI/Tabs/ClassBrowser.cpp \
     UI/Tabs/FileBrowser.cpp \
     UI/Widgets/Notification.cpp \
     Bridge/YamBridge.cpp \

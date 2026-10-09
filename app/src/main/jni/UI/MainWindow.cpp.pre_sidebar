@@ -1,7 +1,6 @@
 #include "MainWindow.h"
 #include "Theme.h"
 #include "Tabs/JSConsole.h"
-#include "Tabs/ClassBrowser.h"
 #include "Tabs/FileBrowser.h"
 #include "Widgets/Notification.h"
 #include "../Core/Runtime.h"
@@ -96,7 +95,7 @@ void MainWindow::drawMainWindow() {
     }
 
     ImGui::SetNextWindowSizeConstraints(
-            ImVec2(500.0f, 300.0f),
+            ImVec2(300.0f, 200.0f),
             ImVec2(io.DisplaySize.x, io.DisplaySize.y));
 
     if (impl_->firstDraw) {
@@ -131,43 +130,44 @@ void MainWindow::drawMainWindow() {
 
     drawMenuBar();
 
-    // ───── Left vertical sidebar ─────
-    const float sidebarW = 90.0f;
-    ImGui::BeginChild("##Sidebar", ImVec2(sidebarW, 0), true);
-    {
-        const ImVec2 btnSz(sidebarW - 12.0f, 60.0f);
-        bool selClasses = (impl_->currentTab == 0);
-        bool selJS      = (impl_->currentTab == 1);
+    if (ImGui::BeginTabBar("##MainTabBar", ImGuiTabBarFlags_Reorderable)) {
+        ImGuiTabItemFlags jsFlags = impl_->changeToJSTab
+                ? ImGuiTabItemFlags_SetSelected : 0;
+        impl_->changeToJSTab = false;
 
-        ImGui::PushStyleColor(ImGuiCol_Button,
-            selClasses ? ImVec4(0.4f, 0.32f, 0.0f, 1.0f) : ImVec4(0.08f, 0.06f, 0.0f, 1.0f));
-        if (ImGui::Button("Classes", btnSz)) impl_->currentTab = 0;
-        ImGui::PopStyleColor();
-
-        ImGui::Spacing();
-
-        ImGui::PushStyleColor(ImGuiCol_Button,
-            selJS ? ImVec4(0.4f, 0.32f, 0.0f, 1.0f) : ImVec4(0.08f, 0.06f, 0.0f, 1.0f));
-        if (ImGui::Button("JS", btnSz)) impl_->currentTab = 1;
-        ImGui::PopStyleColor();
-
-        ImGui::Spacing();
-        ImGui::Separator();
-    }
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-
-    // ───── Content area ─────
-    ImGui::BeginChild("##Content", ImVec2(0, 0), false);
-    {
-        if (impl_->currentTab == 0) {
-            ClassBrowser::instance().draw();
-        } else {
+        if (ImGui::BeginTabItem("  JS Console  ", nullptr, jsFlags)) {
+            impl_->currentTab = 0;
             JSConsole::instance().draw();
+            ImGui::EndTabItem();
         }
+
+        if (ImGui::BeginTabItem("  Scripts  ")) {
+            impl_->currentTab = 1;
+            JSConsole::instance().drawScriptsTab();
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("  Info  ")) {
+            impl_->currentTab = 2;
+            ImGui::Spacing();
+            ImGui::Text("Package: %s", Runtime::instance().packageName().c_str());
+            ImGui::Text("Process: %s", Runtime::instance().processName().c_str());
+            ImGui::Text("API Level: %d", Runtime::instance().apiLevel());
+            ImGui::Text("Architecture: arm64-v8a");
+            ImGui::Separator();
+            ImGui::TextWrapped(
+                    "YAM-GG uses an independent GLSurfaceView added to the "
+                    "current Activity's DecorView. ImGui renders on its own "
+                    "OpenGL ES 3 render thread.");
+            ImGui::Spacing();
+            ImGui::TextWrapped(
+                    "Touch input is delivered directly by the View system, so "
+                    "it works regardless of the host application's UI framework.");
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
     }
-    ImGui::EndChild();
 
     ImGui::End();
 }

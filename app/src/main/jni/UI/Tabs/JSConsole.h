@@ -12,13 +12,10 @@ public:
     static JSConsole& instance();
 
     void draw();
-    void drawScriptsTab();
 
     void evaluate(const std::string& code);
     void loadScriptFromFile(const std::string& path);
-    void reloadScripts();
     void unloadAll();
-    void unloadScript(int index);
 
     int scriptCount() const;
     int runningCount() const;
@@ -31,29 +28,32 @@ private:
     JSConsole(const JSConsole&) = delete;
     JSConsole& operator=(const JSConsole&) = delete;
 
-    struct Script {
+    struct ScriptEntry {
         std::string name;
         std::string path;
         std::string code;
-        bool running;
-        bool isFile;
-        int id;
+        bool running{false};
+        bool selected{false};
+        int id{0};
     };
 
-    void drawInput();
+    void drawToolbar();
+    void drawScriptsList();
+    void drawCodeEditor();
     void drawOutput();
-    void addHistory(const std::string& cmd);
 
-    std::string input_;
+    void loadSelected();
+    void unloadSelected();
+    void clearOutput();
+
+    std::vector<ScriptEntry> scripts_;
     std::vector<std::string> output_;
-    std::vector<std::string> history_;
-    int historyPos_;
-    std::vector<Script> scripts_;
-    std::mutex mu_;
-    bool autoscroll_{true};
-    bool wrapText_{true};
+    mutable std::mutex mu_;
     int nextScriptId_{1};
-    char loadPath_[512]{0};
+
+    // Editor buffer
+    char codeBuffer_[8192]{0};
+    char pathBuffer_[512]{0};
 };
 
 #define YAMGG_JSCONSOLE yamgg::JSConsole::instance()
