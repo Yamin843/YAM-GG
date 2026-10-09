@@ -215,9 +215,17 @@ static const char kBootstrapSrc[] = R"YAMJS(
     };
 
     // ═══════ RECEIVER ═══════
+    function unwrapCmd(msg) {
+        if (!msg) return null;
+        if (typeof msg === "string") { try { return JSON.parse(msg); } catch (e) { return null; } }
+        // message-dispatcher may deliver {type, payload}
+        if (msg.payload !== undefined && msg.payload !== null) return msg.payload;
+        if (msg.action) return msg;
+        return null;
+    }
+
     recv("yamgg_cmd", function (msg) {
-        var cmd = null;
-        try { cmd = (typeof msg === "string") ? JSON.parse(msg) : msg; } catch (e) { return; }
+        var cmd = unwrapCmd(msg);
         if (!cmd || !cmd.action) return;
         var h = handlers[cmd.action];
         if (!h) { replyError(cmd.id, new Error("unknown: " + cmd.action)); return; }

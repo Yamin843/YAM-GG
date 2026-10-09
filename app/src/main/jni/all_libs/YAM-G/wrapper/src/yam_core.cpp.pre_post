@@ -768,21 +768,45 @@ Result<void> Script::load(Cancellable& c) {
 
 Result<void> Script::unload() { Cancellable c; return unload(c); }
 
-
 void Script::post(const String& msg) {
     if (!handle_) {
         __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
             "Script::post: handle_ NULL");
         return;
     }
-    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-        "Script::post: %s", msg.c_str());
 
-    // message-dispatcher (JS) expects the FULL JSON envelope as `message`.
-    // Our `msg` is already {"type":"cmd","payload":{...}} or
-    // {"type":"yamgg_cmd","payload":{...}}. Pass as-is.
-    yam_script_post(static_cast<YamScript*>(handle_),
-                    msg.c_str(), nullptr);
+    // Parse envelope {"type":"cmd","payload":{...}}
+    auto parsed = JsonValue::parse(msg);
+    if (!parsed || !parsed.value().is_obj()) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "Script::post: not JSON object");
+        return;
+    }
+
+    auto* tv = parsed.value().get("type");
+    auto* pv = parsed.value().get("payload");
+    if (!tv) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "Script::post: no type");
+        return;
+    }
+
+    String type    = tv->as_str();
+    String payload = pv ? (pv->is_str() ? pv->as_str() : pv->stringify()) : "{}";
+
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "Script::post: chan=%s payload=%s", type.c_str(), payload.c_str());
+
+    // g_bytes_new -> _yamfl_g_bytes_new (via YAMJS.h #define)
+    GBytes* bytes = g_bytes_new(payload.data(), payload.size());
+    if (!bytes) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "Script::post: g_bytes_new failed");
+        return;
+    }
+
+    yam_script_post(static_cast<YamScript*>(handle_), type.c_str(), bytes);
+    g_bytes_unref(bytes);
 }
 
 Result<void> Script::unload(Cancellable& c) {

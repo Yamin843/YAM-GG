@@ -460,9 +460,7 @@ void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
                   m.tracing ? "  [TRACING]" : "");
     ImGuiTreeNodeFlags f = ImGuiTreeNodeFlags_SpanAvailWidth
         | ImGuiTreeNodeFlags_OpenOnDoubleClick;
-    ImGui::PushTextWrapPos(0.0f);
     bool open = ImGui::TreeNodeEx(label, f);
-    ImGui::PopTextWrapPos();
     if (open) {
         for (size_t i = 0; i < m.args.size(); ++i)
             drawParamWidget(cls, m, m.args[i], (int)i);
@@ -479,9 +477,7 @@ void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
 
 void ClassBrowser::drawParamWidget(const std::string&, MethodInfo&, ParamInfo& p, int idx) {
     ImGui::PushID(idx);
-    ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextWrapped("arg%d: %s", idx, p.typeName.c_str());
-    ImGui::PopTextWrapPos();
+    ImGui::Text("arg%d: %s", idx, p.typeName.c_str());
 
     const std::string& k = p.kind;
     if (k == "boolean") {

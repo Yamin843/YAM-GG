@@ -17,7 +17,7 @@ namespace yamgg {
 JSConsole::JSConsole() {
     std::lock_guard<std::mutex> lk(mu_);
     output_.push_back("[YAM-GG] JS Console ready.");
-    output_.push_back("[YAM-GG] Use fromSD to load a script, or type below.");
+    output_.push_back("[YAM-GG] Type a script and press Run, or use fromSD.");
 }
 JSConsole::~JSConsole() = default;
 JSConsole& JSConsole::instance() { static JSConsole i; return i; }
@@ -80,7 +80,6 @@ void JSConsole::unloadSelected() {
 void JSConsole::unloadAll() {
     YamBridge& b = YamBridge::instance();
     for (auto& s : scripts_) if (s.running) { b.unloadScript(s.name); s.running = false; }
-    pushOutput("[YAM-GG] all scripts unloaded");
 }
 
 void JSConsole::clearOutput() {
@@ -91,19 +90,13 @@ void JSConsole::clearOutput() {
 int JSConsole::scriptCount() const { return (int)scripts_.size(); }
 int JSConsole::runningCount() const { int n = 0; for (auto& s : scripts_) if (s.running) n++; return n; }
 
+// ═══════════════════════════════════════════════════════════════════════
+// DRAW:  1) toolbar   2) editor+log in SAME frame   3) scripts list
+// ═══════════════════════════════════════════════════════════════════════
 void JSConsole::draw() {
-    drawToolbar();
-    ImGui::Separator();
-    drawScriptsList();
-    ImGui::Separator();
-    drawEditor();
-    ImGui::Separator();
-    drawOutput();
-}
-
-void JSConsole::drawToolbar() {
+    // ─── Toolbar ───
     ImGui::Spacing();
-    const ImVec2 bsz(130, 44);
+    const ImVec2 bsz(120, 44);
     if (ImGui::Button("fromSD", bsz)) {
         FileBrowser::instance().setOnSelect(
             [](const std::string& p) { JSConsole::instance().loadScriptFromFile(p); });
@@ -116,11 +109,61 @@ void JSConsole::drawToolbar() {
     ImGui::SameLine();
     if (ImGui::Button("Clear", bsz)) clearOutput();
     ImGui::Spacing();
-}
+    ImGui::Separator();
 
-void JSConsole::drawScriptsList() {
-    ImGui::Text("Scripts: %d  |  Running: %d", scriptCount(), runningCount());
-    ImGui::BeginChild("##ScriptsList", ImVec2(0, 130), true);
+    // ─── Console frame: editor + output ───
+    ImGui::BeginChild("##ConsoleFrame", ImVec2(0, -180), true);
+    {
+        ImGui::TextUnformatted("Editor");
+        ImGui::Separator();
+
+        // Editor area (~140px)
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::InputTextMultiline("##code", codeBuffer_, sizeof(codeBuffer_),
+                                   ImVec2(-1, 140), ImGuiInputTextFlags_AllowTabInput);
+        ImGui::PopTextWrapPos();
+
+        if (ImGui::Button("Run", ImVec2(110, 36)))
+            if (codeBuffer_[0]) evaluate(std::string(codeBuffer_));
+        ImGui::SameLine();
+        if (ImGui::Button("Clear Editor", ImVec2(140, 36)))
+            codeBuffer_[0] = 0;
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Log");
+        ImGui::Separator();
+
+        // Output area
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::BeginChild("##Output", ImVec2(0, -40), true,
+                           ImGuiWindowFlags_HorizontalScrollbar);
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            for (auto& line : output_) {
+                ImVec4 col(1, 1, 1, 1);
+                if (line.rfind("[error]", 0) == 0) col = ImVec4(1, 0.45f, 0.45f, 1);
+                else if (line.rfind("[warn]", 0) == 0) col = ImVec4(1, 0.85f, 0.3f, 1);
+                else if (line.rfind("[injected]", 0) == 0) col = ImVec4(0.5f, 1, 1, 1);
+                else if (!line.empty() && line[0] == '>') col = ImVec4(1, 0.85f, 0.2f, 1);
+                ImGui::PushStyleColor(ImGuiCol_Text, col);
+                ImGui::TextWrapped("%s", line.c_str());
+                ImGui::PopStyleColor();
+            }
+            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f)
+                ImGui::SetScrollHereY(1.0f);
+        }
+        ImGui::EndChild();
+        ImGui::PopTextWrapPos();
+
+        if (ImGui::Button("Clear Log", ImVec2(140, 32))) clearOutput();
+    }
+    ImGui::EndChild();
+
+    // ─── Scripts list (below) ───
+    ImGui::Separator();
+    ImGui::Text("Loaded Scripts: %d  |  Running: %d",
+                scriptCount(), runningCount());
+    ImGui::BeginChild("##ScriptsList", ImVec2(0, 0), true);
     for (size_t i = 0; i < scripts_.size(); ++i) {
         auto& s = scripts_[i];
         ImGui::PushID((int)i);
@@ -129,7 +172,7 @@ void JSConsole::drawScriptsList() {
         ImVec4 col = s.running ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
                                : ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Text, col);
-        ImGui::Text("%s  %s", s.running ? "[RUN]" : "[OFF]", s.name.c_str());
+        ImGui::TextWrapped("%s  %s", s.running ? "[RUN]" : "[OFF]", s.name.c_str());
         ImGui::PopStyleColor();
         ImGui::SameLine(ImGui::GetWindowWidth() - 110);
         if (ImGui::SmallButton("Remove")) {
@@ -140,42 +183,6 @@ void JSConsole::drawScriptsList() {
         ImGui::PopID();
     }
     ImGui::EndChild();
-}
-
-void JSConsole::drawEditor() {
-    ImGui::Text("Editor");
-    ImGui::BeginChild("##Editor", ImVec2(0, 180), true);
-    ImGui::InputTextMultiline("##code", codeBuffer_, sizeof(codeBuffer_),
-                              ImVec2(-1, -1), ImGuiInputTextFlags_AllowTabInput);
-    ImGui::EndChild();
-    if (ImGui::Button("Run", ImVec2(140, 40)))
-        if (codeBuffer_[0]) evaluate(std::string(codeBuffer_));
-    ImGui::SameLine();
-    if (ImGui::Button("Clear Editor", ImVec2(140, 40)))
-        codeBuffer_[0] = 0;
-}
-
-void JSConsole::drawOutput() {
-    ImGui::Text("Console");
-    ImGui::BeginChild("##Output", ImVec2(0, -44), true,
-                       ImGuiWindowFlags_HorizontalScrollbar);
-    {
-        std::lock_guard<std::mutex> lk(mu_);
-        for (auto& line : output_) {
-            ImVec4 col(1, 1, 1, 1);
-            if (line.rfind("[error]", 0) == 0) col = ImVec4(1, 0.45f, 0.45f, 1);
-            else if (line.rfind("[warn]", 0) == 0) col = ImVec4(1, 0.85f, 0.3f, 1);
-            else if (line.rfind("[injected]", 0) == 0) col = ImVec4(0.5f, 1, 1, 1);
-            else if (!line.empty() && line[0] == '>') col = ImVec4(1, 0.85f, 0.2f, 1);
-            ImGui::PushStyleColor(ImGuiCol_Text, col);
-            ImGui::TextUnformatted(line.c_str());
-            ImGui::PopStyleColor();
-        }
-        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f)
-            ImGui::SetScrollHereY(1.0f);
-    }
-    ImGui::EndChild();
-    if (ImGui::Button("Clear Console", ImVec2(180, 34))) clearOutput();
 }
 
 } // namespace yamgg
