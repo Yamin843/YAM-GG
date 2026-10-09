@@ -23,12 +23,17 @@ class JavaHook;
 class JavaField {
 public:
     JavaField() = default;
-    JavaField(Ptr<JavaClass> cls, const String& name, bool is_static)
-        : cls_(std::move(cls)), name_(name), is_static_(is_static) {}
+    JavaField(Ptr<JavaClass> cls, const String& name, bool is_static,
+              u64 bridge_handle = 0)
+        : cls_(std::move(cls)), name_(name), is_static_(is_static),
+          bridge_handle_(bridge_handle) {}
+
+    ~JavaField();
 
     YAM_NODISCARD const String& name() const noexcept { return name_; }
     YAM_NODISCARD bool is_static() const noexcept { return is_static_; }
     YAM_NODISCARD Ptr<JavaClass> holder() const noexcept { return cls_; }
+    YAM_NODISCARD u64 bridge_handle() const noexcept { return bridge_handle_; }
 
     Result<JavaReply> get(Ptr<JavaInstance> inst = nullptr) const;
     Result<void> set(const JsonValue& v, Ptr<JavaInstance> inst = nullptr);
@@ -37,6 +42,7 @@ private:
     Ptr<JavaClass> cls_;
     String name_;
     bool is_static_{false};
+    u64  bridge_handle_{0};
 };
 
 // ---------------------------------------------------------------------------

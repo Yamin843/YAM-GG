@@ -36,6 +36,14 @@ String handles_to_json(const std::vector<u64>& handles) {
 // SECTION 2 — JavaField
 // ===========================================================================
 
+JavaField::~JavaField() {
+    if (bridge_handle_ != 0) {
+        auto r = JavaScriptBridge::instance().release_handle(bridge_handle_);
+        (void)r;
+        bridge_handle_ = 0;
+    }
+}
+
 Result<JavaReply> JavaField::get(Ptr<JavaInstance> inst) const {
     if (!cls_) return Result<JavaReply>::err(ErrorCode::InvalidArgument, "no class");
     auto& b = JavaScriptBridge::instance();
@@ -255,7 +263,8 @@ Result<Ptr<JavaField>> JavaClass::field(const String& n) {
     }
 
     return Result<Ptr<JavaField>>::ok(
-        std::make_shared<JavaField>(shared_from_this(), n, is_static));
+        std::make_shared<JavaField>(shared_from_this(), n, is_static,
+                                     bridge_handle));
 }
 
 Result<Ptr<JavaInstance>> JavaClass::create(const std::vector<JsonValue>& args) {

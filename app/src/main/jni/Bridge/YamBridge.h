@@ -2,6 +2,7 @@
 #define YAMGG_BRIDGE_YAMBRIDGE_H
 
 #include <string>
+#include <cstdint>
 #include <mutex>
 #include <atomic>
 #include <vector>
@@ -39,12 +40,17 @@ public:
 
     void installEventRouter();
 
-    // Bridge hook lifecycle callback (enter/leave/exception)
+    // Bridge hook lifecycle callback (enter/leave/exception).
+    // NOTE: use std::int64_t/std::uint64_t — NOT long long — so that
+    // the types exactly match yam::i64/yam::u64 which are typedefs for
+    // std::int64_t/std::uint64_t. On aarch64-linux-android these are
+    // "long"/"unsigned long" (not "long long"), and the two are distinct
+    // C++ types even though both are 64-bit.
     using HookCb = std::function<void(
-        long long /*cbId*/, const std::string& /*phase*/,
-        const std::vector<unsigned long long>& /*args*/,
-        unsigned long long /*thisH*/,
-        unsigned long long /*retH*/,
+        std::int64_t /*cbId*/, const std::string& /*phase*/,
+        const std::vector<std::uint64_t>& /*args*/,
+        std::uint64_t /*thisH*/,
+        std::uint64_t /*retH*/,
         bool /*isVoid*/,
         const std::string& /*exMsg*/)>;
     void setHookCb(HookCb cb) { hookCb_ = std::move(cb); }
@@ -57,14 +63,7 @@ private:
     YamBridge(const YamBridge&) = delete;
     YamBridge& operator=(const YamBridge&) = delete;
 
-    struct EvalSync {
-        std::mutex mu;
-        std::condition_variable cv;
-        bool done{false};
-        bool ok{false};
-        std::string output;
-        std::string error;
-    };
+    // EvalSync removed — eval is synchronous now
 
     void onEvalResult(unsigned long long id, bool ok,
                       const std::string& result, const std::string& error);
@@ -74,9 +73,7 @@ private:
     std::atomic<bool> initialized_{false};
     mutable std::mutex mu_;
     std::vector<std::string> scriptNames_;
-    // Multiple evals can be in flight; match replies by arrival order.
-    std::deque<std::shared_ptr<EvalSync>> pendingEvals_;
-    std::mutex evalMu_;
+    // (eval is now synchronous via JavaScriptBridge::eval — no queue needed)
     HookCb hookCb_;
     void (*outputSink_)(const std::string&){nullptr};
     void (*errorSink_)(const std::string&){nullptr};

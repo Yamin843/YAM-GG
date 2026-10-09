@@ -455,6 +455,9 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 if (k === "class" || k === "valueOf") continue;
                 out.push(k);
             }
+            sendMaybeChunked({type: "list_own_result",
+                              className: cmd.className,
+                              items: out});
             replyValue(cmd.id, JSON.stringify(out));
         },
         cpp_list_overloads: function (cmd) {
@@ -472,6 +475,10 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     out.push("(" + args + ") -> " + ret);
                 }
             }
+            sendMaybeChunked({type: "list_overloads_result",
+                              className: cmd.className,
+                              methodName: cmd.methodName,
+                              items: out});
             replyValue(cmd.id, JSON.stringify(out));
         },
         cpp_list_static_fields: function (cmd) {
@@ -1006,42 +1013,65 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 try { MV = Java.use("com.yamgg.modview.ModView"); }
                 catch (e) { return; }
 
+                // ─────────────────────────────────────────────────────
+                // بلا حد صناعي. نُفرّغ الطابور بالكامل في كل دورة.
+                // الحماية الوحيدة: كشف حلقة منطقية (نفس الأمر يعود).
+                // ─────────────────────────────────────────────────────
                 var drained = 0;
-                var safety = 0;
-                while (safety < 1000000) {
-                    safety++;
-                    try {
-                        var raw = MV.nativeGetPendingCmd();
-                        if (!raw) break;
-                        drained++;
+                var lastRaw = null;
+                var sameCount = 0;
 
-                        var obj = null;
-                        try { obj = JSON.parse(raw); }
-                        catch (e) {
-                            send({type: "poller_parse_err", message: "" + e});
-                            continue;
-                        }
-                        if (!obj) continue;
-
-                        var cmd = (obj.payload && obj.payload.action) ? obj.payload : obj;
-                        if (!cmd || !cmd.action) {
-                            send({type: "poller_no_action", raw: raw.substring(0, 200)});
-                            continue;
-                        }
-                        dispatchCmd(cmd);
-                    } catch (e) {
+                for (;;) {
+                    var raw;
+                    try { raw = MV.nativeGetPendingCmd(); }
+                    catch (e) {
                         send({type: "poller_err", message: "" + e});
                         break;
                     }
+                    if (!raw) break;
+
+                    if (raw === lastRaw) {
+                        sameCount++;
+                        if (sameCount > 100) {
+                            send({type: "poller_loop_detected",
+                                  raw: raw.substring(0, 200)});
+                            break;
+                        }
+                    } else {
+                        sameCount = 0;
+                        lastRaw = raw;
+                    }
+                    drained++;
+
+                    var obj = null;
+                    try { obj = JSON.parse(raw); }
+                    catch (e) {
+                        send({type: "poller_parse_err", message: "" + e});
+                        continue;
+                    }
+                    if (!obj) continue;
+
+                    var cmd = (obj.payload && obj.payload.action)
+                        ? obj.payload
+                        : obj;
+                    if (!cmd || !cmd.action) {
+                        send({type: "poller_no_action",
+                              raw: raw.substring(0, 200)});
+                        continue;
+                    }
+                    try { dispatchCmd(cmd); }
+                    catch (e) {
+                        try { replyError(cmd.id, e); } catch (e2) {}
+                    }
                 }
 
-                // alive log فقط كل 30 ثانية وبغض النظر عن drained
-                var now = Date.now();
-                if (now - lastAliveAt >= ALIVE_EVERY_MS) {
-                    lastAliveAt = now;
-                    send({type: "poller_alive",
-                          count: pollCount,
-                          drained_total: drained});
+                // alive log فقط عندما لا يحدث أي شيء لـ ALIVE_EVERY_MS
+                if (drained === 0) {
+                    var now = Date.now();
+                    if (now - lastAliveAt >= ALIVE_EVERY_MS) {
+                        lastAliveAt = now;
+                        send({type: "poller_alive", count: pollCount});
+                    }
                 }
             });
         }, POLL_INTERVAL_MS);

@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <mutex>
+#include <set>
 
 namespace yamgg {
 
@@ -61,6 +62,9 @@ private:
     mutable std::mutex mu_;
     std::vector<std::string> classes_;
     std::map<std::string, std::vector<MethodInfo>> methods_;
+
+    // مفاتيح = "className::methodName" — تبقى حتى بعد reload
+    std::set<std::string> tracedMethods_;
     std::map<std::string, std::vector<FieldInfo>> fields_;
     std::map<std::string, std::vector<InstanceEntry>> instances_;
     std::string filter_;

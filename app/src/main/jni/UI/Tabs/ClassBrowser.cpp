@@ -108,6 +108,10 @@ void ClassBrowser::registerEvents() {
                 ml.push_back(std::move(mi));
             }
         }
+        for (auto& mi : ml) {
+            std::string key = cls + "::" + mi.name;
+            if (tracedMethods_.count(key)) mi.tracing = true;
+        }
         methods_[cls] = std::move(ml);
         std::vector<FieldInfo> fl;
         auto* fs = ev.data.get("fields");
@@ -240,6 +244,10 @@ void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
         "}catch(e){send({type:'trace_err',message:''+e});}})();";
     sendJS(js);
     m.tracing = true;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        tracedMethods_.insert(cls + "::" + m.name);
+    }
 }
 void ClassBrowser::triggerCall(const std::string& cls, MethodInfo& m) {
     std::string cn = yam::JsonValue(cls).stringify();
@@ -447,6 +455,10 @@ void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
                     "send({type:'trace_off_ok'});}catch(e){}})();";
                 sendJS(js);
                 m.tracing = false;
+                {
+                    std::lock_guard<std::mutex> lk(mu_);
+                    tracedMethods_.erase(cls + "::" + m.name);
+                }
             } else {
                 triggerTrace(cls, m);
             }

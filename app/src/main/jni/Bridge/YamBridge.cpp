@@ -203,76 +203,55 @@ void YamBridge::onConsole(const std::string& level, const std::string& line) {
 
 YamBridge::EvalResult YamBridge::evaluate(const std::string& code) {
     EvalResult out;
+
     if (!ready_.load()) {
         out.error = "bridge not ready";
         return out;
     }
 
-    auto sync = std::make_shared<EvalSync>();
-    {
-        std::lock_guard<std::mutex> lk(evalMu_);
-        pendingEvals_.push_back(sync);
-    }
-
+    // JavaScriptBridge::eval already gives us a synchronous JavaReply
+    // via the cpp_eval command (which sends a real "reply" envelope back).
+    // We do NOT need a separate callback/CV path here — that path had a
+    // race: JavaScriptBridge::eval returns, then the eval_result event
+    // also arrives asynchronously and could be assigned to the wrong
+    // pending sync if multiple evals are in flight.
     try {
         auto r = yam::JavaScriptBridge::instance().eval(code);
         if (!r) {
-            std::lock_guard<std::mutex> lk(evalMu_);
-            auto it = std::find(pendingEvals_.begin(), pendingEvals_.end(), sync);
-            if (it != pendingEvals_.end()) pendingEvals_.erase(it);
             out.error = r.error_message();
             return out;
         }
+        const auto& rep = r.value();
+        if (rep.kind == "value" || rep.kind == "pong") {
+            out.ok = true;
+            out.output = rep.result;
+        } else if (rep.kind == "null") {
+            out.ok = true;
+            out.output = "null";
+        } else if (rep.kind == "void") {
+            out.ok = true;
+            out.output = "";
+        } else if (rep.kind == "error" || !rep.error.empty()) {
+            out.ok = false;
+            out.error = rep.error.empty() ? "unknown eval error" : rep.error;
+        } else {
+            out.ok = rep.ok;
+            out.output = rep.result;
+        }
     } catch (const std::exception& e) {
-        std::lock_guard<std::mutex> lk(evalMu_);
-        auto it = std::find(pendingEvals_.begin(), pendingEvals_.end(), sync);
-        if (it != pendingEvals_.end()) pendingEvals_.erase(it);
         out.error = e.what();
-        return out;
+    } catch (...) {
+        out.error = "eval failed (unknown exception)";
     }
 
-    {
-        std::unique_lock<std::mutex> lk(sync->mu);
-        sync->cv.wait_for(lk, std::chrono::seconds(5),
-                          [&] { return sync->done; });
-    }
-
-    {
-        std::lock_guard<std::mutex> lk(evalMu_);
-        auto it = std::find(pendingEvals_.begin(), pendingEvals_.end(), sync);
-        if (it != pendingEvals_.end()) pendingEvals_.erase(it);
-    }
-
-    out.ok = sync->ok;
-    out.output = sync->output;
-    out.error = sync->error;
-    if (!sync->done) out.error = "timeout";
     return out;
 }
 
 YamBridge::LoadResult YamBridge::loadScript(const std::string& name,
                                               const std::string& code) {
-    LoadResult out;
-    if (!ready_.load()) {
-        out.error = "bridge not ready";
-        return out;
-    }
-
-    try {
-        auto r = yam::JavaScriptBridge::instance().run_user_script(name, code);
-        if (!r) {
-            out.error = r.error_message();
-            return out;
-        }
-        out.ok = true;
-        std::lock_guard<std::mutex> lk(mu_);
-        bool found = false;
-        for (auto& n : scriptNames_) if (n == name) { found = true; break; }
-        if (!found) scriptNames_.push_back(name);
-    } catch (const std::exception& e) {
-        out.error = e.what();
-    }
-    return out;
+    // الاسم يبقى للتوافق — يستخدم النسخة المتزامنة داخلياً.
+    // الآن loadScript و loadScriptSync لهما نفس السلوك الصحيح.
+    return loadScriptSync(name, code, 8000);
 }
 
 bool YamBridge::unloadScript(const std::string& name) {
@@ -342,6 +321,13 @@ YamBridge::LoadResult YamBridge::loadScriptSync(const std::string& name,
 
     g_scriptLoadResult.erase(name);
     g_scriptLoadError.erase(name);
+
+    if (out.ok) {
+        std::lock_guard<std::mutex> lk(mu_);
+        bool found = false;
+        for (auto& n : scriptNames_) if (n == name) { found = true; break; }
+        if (!found) scriptNames_.push_back(name);
+    }
     return out;
 }
 

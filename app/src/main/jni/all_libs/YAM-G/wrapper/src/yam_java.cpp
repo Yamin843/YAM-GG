@@ -211,9 +211,29 @@ void JavaScriptBridge::on_reply(const String& payload_json) {
     Ptr<detail::JavaSync> sync;
     {
         std::lock_guard<std::mutex> lk(pending_mu_);
+
+        // إذا لا يوجد pending لهذا id — هذا رد متأخر بعد timeout.
+        // لا نخزّنه للأبد: نتجاهله (المستدعي رحل).
         auto it = pending_.find(reply.id);
-        if (it != pending_.end()) sync = it->second;
+        if (it == pending_.end()) {
+            return;
+        }
+        sync = it->second;
         replies_[reply.id] = reply;
+
+        // ضمان نظافة إضافية: إذا نمت الخريطة (نظرياً)، امسح الأقدم.
+        // لا cap ثابت — نمسح فقط عند تخزين رد جديد لـ pending.
+        if (replies_.size() > pending_.size() + 16) {
+            // الـ pending الحالية هي الوحيدة التي يُتوقع إجابتها.
+            // أي شيء آخر هنا قديم — نحذفه.
+            std::vector<u64> to_remove;
+            for (auto& kv : replies_) {
+                if (pending_.find(kv.first) == pending_.end()) {
+                    to_remove.push_back(kv.first);
+                }
+            }
+            for (u64 id : to_remove) replies_.erase(id);
+        }
     }
     if (sync) sync->notify();
 }

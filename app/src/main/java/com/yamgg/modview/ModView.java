@@ -123,7 +123,9 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
     // ─── Two-finger scroll tracking ───
     private boolean twoFingerScrollActive = false;
     private float   twoFingerLastY = 0f;
-    private int     lastScrollSentMs = 0;
+    private long    lastScrollSentMs = 0;
+    // EMA smoothing للحفاظ على سرعة متسقة
+    private float   smoothedDy = 0f;
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
@@ -133,48 +135,59 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
         // ─────── Two-finger → scroll ───────
         if (pointerCount >= 2) {
             if (action == MotionEvent.ACTION_POINTER_DOWN) {
-                // أول إصبعين: ألغِ حالة السحب الأولى (الأصبع الأول قد
-                // يكون قد سحب شيئاً)، ثم فعّل نمط الـ scroll.
                 try { nativeOnTouch(MotionEvent.ACTION_CANCEL, 0f, 0f, 0); }
                 catch (Throwable t) {}
                 twoFingerScrollActive = true;
                 twoFingerLastY = (event.getY(0) + event.getY(1)) * 0.5f;
-                lastScrollSentMs = 0;
+                lastScrollSentMs = 0L;
+                smoothedDy = 0f;
                 return nativeWantCaptureMouse();
             }
+
             if (action == MotionEvent.ACTION_MOVE && twoFingerScrollActive) {
                 float curY = (event.getY(0) + event.getY(1)) * 0.5f;
                 float dy = curY - twoFingerLastY;
                 twoFingerLastY = curY;
 
-                // أرسل كل ~12ms على الأكثر لتقليل JNI overhead
-                int now = (int)(System.currentTimeMillis() & 0x7FFFFFFF);
-                if (now - lastScrollSentMs >= 12) {
+                // EMA: 70% القديم + 30% الجديد — يخفف الاهتزاز
+                smoothedDy = smoothedDy * 0.70f + dy * 0.30f;
+
+                long now = System.currentTimeMillis();
+                // 8ms = 125Hz — أعلى من refresh المتوسط
+                if (now - lastScrollSentMs >= 8L) {
                     lastScrollSentMs = now;
-                    try { nativeOnScroll(0f, -dy * 0.035f); }
+                    // 0.025 = 1/40 — تقريباً 1 بكسل لكل 40 بكسل إصبع
+                    float scroll = -smoothedDy * 0.025f;
+                    try { nativeOnScroll(0f, scroll); }
                     catch (Throwable t) {}
                 }
                 return nativeWantCaptureMouse();
             }
+
             if (action == MotionEvent.ACTION_POINTER_UP) {
                 twoFingerScrollActive = false;
+                smoothedDy = 0f;
                 try { nativeOnTouch(MotionEvent.ACTION_CANCEL, 0f, 0f, 0); }
                 catch (Throwable t) {}
                 return nativeWantCaptureMouse();
             }
-            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+
+            if (action == MotionEvent.ACTION_UP
+                || action == MotionEvent.ACTION_CANCEL) {
                 twoFingerScrollActive = false;
+                smoothedDy = 0f;
                 try { nativeOnTouch(action, 0f, 0f, 0); }
                 catch (Throwable t) {}
                 return nativeWantCaptureMouse();
             }
-            // احتفظ بالأحداث الأخرى فقط إذا كنا داخل الـ scroll
+
             if (twoFingerScrollActive) return nativeWantCaptureMouse();
         }
 
-        // ─────── Single finger → normal mouse ───────
+        // ─────── Single finger ───────
         if (pointerCount == 1) {
             twoFingerScrollActive = false;
+            smoothedDy = 0f;
         }
 
         try {
