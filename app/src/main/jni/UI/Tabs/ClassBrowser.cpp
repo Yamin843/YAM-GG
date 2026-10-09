@@ -24,11 +24,13 @@ void ClassBrowser::registerEvents() {
     if (eventsRegistered_) return;
     eventsRegistered_ = true;
 
-    yam::events::on("classes_result", [this](const yam::Event& ev) {
+    yam::events::on("classes_list", [this](const yam::Event& ev) {
         std::lock_guard<std::mutex> lk(mu_);
         classes_.clear();
-        auto* a = ev.data.get("items");
-        if (a && a->is_arr()) for (auto& e : a->arr_val) classes_.push_back(e.as_str());
+        auto* a = ev.data.get("classes");
+        if (a && a->is_arr()) {
+            for (auto& e : a->arr_val) classes_.push_back(e.as_str());
+        }
         std::sort(classes_.begin(), classes_.end());
         loading_ = false;
         LOGI("CB: %zu classes", classes_.size());
@@ -81,6 +83,47 @@ void ClassBrowser::registerEvents() {
     auto err = [this](const yam::Event&) { std::lock_guard<std::mutex> lk(mu_); loading_ = false; };
     yam::events::on("classes_error", err);
     yam::events::on("class_detail_error", err);
+
+    // استقبال class_probe (من cpp_probe_class) كحدث احتياطي
+    yam::events::on("class_probe", [this](const yam::Event& ev) {
+        std::string cls = ev.get_str("className");
+        if (cls.empty()) return;
+        std::lock_guard<std::mutex> lk(mu_);
+        std::vector<MethodInfo> ml;
+        auto* ms = ev.data.get("methods");
+        if (ms && ms->is_arr()) {
+            for (auto& it : ms->arr_val) {
+                MethodInfo mi;
+                if (auto* n = it.get("name")) mi.name = n->as_str();
+                if (auto* r = it.get("ret")) mi.ret = r->as_str();
+                if (auto* is = it.get("isStatic")) mi.isStatic = is->as_bool(true);
+                if (auto* ar = it.get("args")) if (ar->is_arr()) {
+                    for (auto& e : ar->arr_val) {
+                        ParamInfo pi;
+                        if (auto* tn = e.get("typeName")) pi.typeName = tn->as_str();
+                        pi.scalar[0] = 0;
+                        mi.args.push_back(std::move(pi));
+                    }
+                }
+                ml.push_back(std::move(mi));
+            }
+        }
+        methods_[cls] = std::move(ml);
+        std::vector<FieldInfo> fl;
+        auto* fs = ev.data.get("fields");
+        if (fs && fs->is_arr()) {
+            for (auto& it : fs->arr_val) {
+                FieldInfo fi;
+                if (auto* n = it.get("name")) fi.name = n->as_str();
+                if (auto* t = it.get("type")) fi.type = t->as_str();
+                if (auto* v = it.get("value")) fi.value = v->as_str();
+                fl.push_back(std::move(fi));
+            }
+        }
+        fields_[cls] = std::move(fl);
+        selectedClass_ = cls;
+        loading_ = false;
+    });
 
     yam::events::on("instances_result", [this](const yam::Event& ev) {
         std::string cls = ev.get_str("className");

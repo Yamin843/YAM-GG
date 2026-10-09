@@ -36,3 +36,8 @@ app/build/dex-build/
 Thumbs.db
 .ninja_deps
 .ninja_log
+
+# Backups (do not commit)
+*.bak
+*.bak_*
+*.pre_*

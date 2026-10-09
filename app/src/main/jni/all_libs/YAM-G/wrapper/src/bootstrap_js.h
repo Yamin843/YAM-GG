@@ -637,10 +637,14 @@ static const char kBootstrapSrc[] = R"YAMJS(
     // ═══════ COMMAND POLLER ═══════
     var pollInstalled = false;
     var pollCount = 0;
+    var lastAliveAt = 0;
+    var POLL_INTERVAL_MS = 150;   // 6.7 ticks/sec
+    var ALIVE_EVERY_MS  = 30000;  // 1 alive log / 30s
+
     function installPoller() {
         if (pollInstalled) return;
         pollInstalled = true;
-        send({type:"poller_started"});
+        send({type: "poller_started", interval: POLL_INTERVAL_MS});
 
         setInterval(function () {
             pollCount++;
@@ -650,40 +654,42 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 catch (e) { return; }
 
                 var drained = 0;
-                while (drained < 32) {
-                    drained++;
+                for (var i = 0; i < 32; i++) {
                     try {
                         var raw = MV.nativeGetPendingCmd();
                         if (!raw) break;
+                        drained++;
 
                         var obj = null;
                         try { obj = JSON.parse(raw); }
                         catch (e) {
-                            send({type:"poller_parse_err", message:""+e});
+                            send({type: "poller_parse_err", message: "" + e});
                             continue;
                         }
                         if (!obj) continue;
 
-                        // Unwrap {type:"cmd"|"yamgg_cmd", payload:{...}}
                         var cmd = (obj.payload && obj.payload.action) ? obj.payload : obj;
                         if (!cmd || !cmd.action) {
-                            send({type:"poller_no_action", raw: raw.substring(0,200)});
+                            send({type: "poller_no_action", raw: raw.substring(0, 200)});
                             continue;
                         }
                         dispatchCmd(cmd);
                     } catch (e) {
-                        if (pollCount % 20 === 0) {
-                            send({type:"poller_err", message:""+e});
-                        }
+                        send({type: "poller_err", message: "" + e});
                         break;
                     }
                 }
 
-                if (drained === 0 && pollCount % 100 === 0) {
-                    send({type:"poller_alive", count: pollCount});
+                // alive log فقط كل 30 ثانية وبغض النظر عن drained
+                var now = Date.now();
+                if (now - lastAliveAt >= ALIVE_EVERY_MS) {
+                    lastAliveAt = now;
+                    send({type: "poller_alive",
+                          count: pollCount,
+                          drained_total: drained});
                 }
             });
-        }, 50);
+        }, POLL_INTERVAL_MS);
     }
 
     // ═══════ HOOKS ═══════
