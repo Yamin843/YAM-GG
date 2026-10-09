@@ -36,7 +36,6 @@ private:
     bool collapsed_{false};
 
     void drawMinimized();
-    void drawYGButton();
 
     struct Impl;
     Impl* impl_;

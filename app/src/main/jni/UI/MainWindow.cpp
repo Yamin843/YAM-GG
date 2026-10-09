@@ -81,7 +81,6 @@ void MainWindow::draw() {
     }
 
     drawMainWindow();
-    drawYGButton();
     drawStatusBar();
     Notification::instance().draw();
 
@@ -120,15 +119,14 @@ void MainWindow::drawMainWindow() {
         impl_->initializedSize = true;
     }
 
-    // ملاحظة: نُبقي NoMove، ونعتمد على الحركة اليدوية أدناه (5-zone)
-    // لتفعيل السحب من أي مكان فارغ (بما في ذلك الشريط الجانبي).
+    const float kMinW = 420.0f;
+    const float kMinH = 320.0f;
+
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove;
     if (impl_->fullscreen) {
         flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
     }
 
-    const float kMinW = 420.0f;
-    const float kMinH = 320.0f;
     ImGui::SetNextWindowSizeConstraints(
             ImVec2(kMinW, kMinH),
             ImVec2(io.DisplaySize.x, io.DisplaySize.y));
@@ -163,11 +161,39 @@ void MainWindow::drawMainWindow() {
         return;
     }
 
+    // ───────────────────────────────────────────────────────────
+    // زر YG (داخل النافذة، الزاوية العلوية اليمنى)
+    // ───────────────────────────────────────────────────────────
+    {
+        ImVec2 wpos  = ImGui::GetWindowPos();
+        ImVec2 wsize = ImGui::GetWindowSize();
+        const float sz = 40.0f;
+        const float mg = 10.0f;
 
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.85f, 0.65f, 0.00f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.00f, 0.80f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1.00f, 0.90f, 0.30f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.02f, 0.02f, 0.02f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, sz * 0.5f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
 
-    // MenuBar removed per user request
+        ImGui::SetCursorScreenPos(ImVec2(wpos.x + wsize.x - sz - mg, wpos.y + mg));
+        ImGui::PushID("YG_btn");
+        if (ImGui::Button("YG", ImVec2(sz, sz))) {
+            impl_->lastFullPos  = wpos;
+            impl_->lastFullSize = wsize;
+            impl_->minimized    = true;
+        }
+        ImGui::PopID();
 
-    // ─── Sidebar (horizontal labels, first tab = JV) ───
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(4);
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // Sidebar
+    // ───────────────────────────────────────────────────────────
     const float sidebarW = 110.0f;
     ImGui::BeginChild("##Sidebar", ImVec2(sidebarW, 0), true);
     {
@@ -188,13 +214,15 @@ void MainWindow::drawMainWindow() {
         };
 
         tabBtn("JV", 0);
-        tabBtn("JS",  1);
+        tabBtn("JS", 1);
     }
     ImGui::EndChild();
 
     ImGui::SameLine();
 
-    // ─── Content ───
+    // ───────────────────────────────────────────────────────────
+    // Content
+    // ───────────────────────────────────────────────────────────
     ImGui::BeginChild("##ContentArea", ImVec2(0, 0), false);
     {
         if (impl_->currentTab == 0) {
@@ -205,19 +233,15 @@ void MainWindow::drawMainWindow() {
     }
     ImGui::EndChild();
 
-    // ─── 5-zone custom drag/resize ───
-    // Top edge + sidebar = global drag handle (سحب من أي مكان فارغ)
+    // ───────────────────────────────────────────────────────────
+    // 5-zone resize edges + corner (مع إعلانات المتغيرات)
+    // ───────────────────────────────────────────────────────────
     if (!impl_->fullscreen) {
         ImVec2 wPos  = ImGui::GetWindowPos();
         ImVec2 wSize = ImGui::GetWindowSize();
-        const float edge = 48.0f;   // border zone width
+        const float edge = 48.0f;
 
-
-
-
-        }
-
-        // Top edge → move window (يبقى كما هو)
+        // Top edge → move
         ImGui::SetCursorScreenPos(ImVec2(wPos.x + edge, wPos.y + 2));
         ImGui::InvisibleButton("##ztop", ImVec2(wSize.x - 2*edge, edge),
             ImGuiButtonFlags_MouseButtonLeft);
@@ -233,7 +257,7 @@ void MainWindow::drawMainWindow() {
         if (ImGui::IsItemActive()) {
             ImVec2 d = ImGui::GetIO().MouseDelta;
             float nh = wSize.y + d.y;
-            if (nh < 320.0f) nh = 320.0f;
+            if (nh < kMinH) nh = kMinH;
             if (nh > io.DisplaySize.y) nh = io.DisplaySize.y;
             ImGui::SetWindowSize(ImVec2(wSize.x, nh));
         }
@@ -245,7 +269,7 @@ void MainWindow::drawMainWindow() {
         if (ImGui::IsItemActive()) {
             ImVec2 d = ImGui::GetIO().MouseDelta;
             float nw = wSize.x - d.x;
-            if (nw < 420.0f) nw = 420.0f;
+            if (nw < kMinW) nw = kMinW;
             if (nw > io.DisplaySize.x) nw = io.DisplaySize.x;
             ImGui::SetWindowSize(ImVec2(nw, wSize.y));
         }
@@ -257,26 +281,56 @@ void MainWindow::drawMainWindow() {
         if (ImGui::IsItemActive()) {
             ImVec2 d = ImGui::GetIO().MouseDelta;
             float nw = wSize.x + d.x;
-            if (nw < 420.0f) nw = 420.0f;
+            if (nw < kMinW) nw = kMinW;
             if (nw > io.DisplaySize.x) nw = io.DisplaySize.x;
             ImGui::SetWindowSize(ImVec2(nw, wSize.y));
         }
 
-        // Corner: bottom-right diagonal resize
-        ImGui::SetCursorScreenPos(ImVec2(wPos.x + wSize.x - 100, wPos.y + wSize.y - 100));
+        // Corner (bottom-right) → resize both
+        ImGui::SetCursorScreenPos(
+            ImVec2(wPos.x + wSize.x - 100, wPos.y + wSize.y - 100));
         ImGui::InvisibleButton("##zcorner", ImVec2(100, 100),
             ImGuiButtonFlags_MouseButtonLeft);
         if (ImGui::IsItemActive()) {
             ImVec2 d = ImGui::GetIO().MouseDelta;
             float nw = wSize.x + d.x;
             float nh = wSize.y + d.y;
-            if (nw < 420.0f) nw = 420.0f;
-            if (nh < 320.0f) nh = 320.0f;
+            if (nw < kMinW) nw = kMinW;
+            if (nh < kMinH) nh = kMinH;
             if (nw > io.DisplaySize.x) nw = io.DisplaySize.x;
             if (nh > io.DisplaySize.y) nh = io.DisplaySize.y;
             ImGui::SetWindowSize(ImVec2(nw, nh));
         }
     }
+
+    // ───────────────────────────────────────────────────────────
+    // السحب الموحّد — من أي مكان فارغ داخل النافذة
+    // ───────────────────────────────────────────────────────────
+    if (!impl_->fullscreen) {
+        bool hovered = ImGui::IsWindowHovered(
+            ImGuiHoveredFlags_ChildWindows
+            | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+            && hovered
+            && !ImGui::IsAnyItemActive()) {
+            impl_->windowDragging   = true;
+            impl_->dragStartMouse   = ImGui::GetIO().MousePos;
+            impl_->dragStartWindow  = ImGui::GetWindowPos();
+        }
+        if (impl_->windowDragging) {
+            if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                ImVec2 d(ImGui::GetIO().MousePos.x - impl_->dragStartMouse.x,
+                         ImGui::GetIO().MousePos.y - impl_->dragStartMouse.y);
+                ImGui::SetWindowPos(ImVec2(impl_->dragStartWindow.x + d.x,
+                                           impl_->dragStartWindow.y + d.y));
+            } else {
+                impl_->windowDragging = false;
+            }
+        }
+    }
+
+    ImGui::End();
+}
 
     // ───────────────────────────────────────────────────────────────
     // السحب الموحّد — من أي مكان فارغ داخل النافذة
@@ -384,60 +438,7 @@ void MainWindow::drawMinimized() {
 }
 
 // نافذة overlay صغيرة — زر YG عائم فوق كل شيء
-void MainWindow::drawYGButton() {
-    if (impl_->minimized) return;
 
-    ImGuiIO& io = ImGui::GetIO();
-    const float sz = 44.0f;
-    const float mg = 10.0f;
-    // الموضع ثابت في الزاوية العلوية اليمنى من الشاشة
-    ImVec2 pos(io.DisplaySize.x - sz - mg, mg);
-
-    ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(sz, sz), ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.0f);
-
-    ImGuiWindowFlags f = ImGuiWindowFlags_NoTitleBar
-        | ImGuiWindowFlags_NoResize
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoScrollbar
-        | ImGuiWindowFlags_NoScrollWithMouse
-        | ImGuiWindowFlags_NoSavedSettings
-        | ImGuiWindowFlags_NoCollapse
-        | ImGuiWindowFlags_NoBringToFrontOnFocus
-        | ImGuiWindowFlags_NoNavFocus
-        | ImGuiWindowFlags_NoFocusOnAppearing
-        | ImGuiWindowFlags_NoDocking;
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
-
-    ImGui::Begin("##YG_Overlay", nullptr, f);
-
-    ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.85f, 0.65f, 0.00f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.00f, 0.80f, 0.15f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1.00f, 0.90f, 0.30f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.02f, 0.02f, 0.02f, 1.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, sz * 0.5f);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
-
-    if (ImGui::Button("YG", ImVec2(sz, sz))) {
-        impl_->lastFullPos  = ImGui::GetWindowPos();
-        impl_->lastFullSize = ImGui::GetWindowSize();
-        // خذ موضع النافذة الرئيسية الحالي قبل التصغير
-        impl_->lastFullPos  = ImVec2(60, 120);
-        impl_->lastFullSize = ImVec2(io.DisplaySize.x * 0.85f,
-                                     io.DisplaySize.y * 0.80f);
-        impl_->minimized = true;
-    }
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor(4);
-
-    ImGui::End();
-    ImGui::PopStyleColor(1);
-    ImGui::PopStyleVar(2);
-}
 
 void MainWindow::drawStatusBar() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
