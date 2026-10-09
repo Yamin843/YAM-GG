@@ -1,16 +1,18 @@
 // ===========================================================================
 // yam_hooks.cpp — Interceptor + InvocationContext + Backtracer
-// Uses both: C API for low-level, C++ Yam::Interceptor for the virtual
-// polymorphic interface (needed by InvocationListener).
+// Uses the C API only (Yam::Interceptor_obtain C++ symbol is not exported).
+//   yam_interceptor_obtain        (void) -> YamInterceptor*
+//   yam_make_call_listener        (on_enter, on_leave, data, destroy)
+//                                 -> YamInvocationListener*
+//   yam_interceptor_attach        (self, target, listener, options)
+//   yam_interceptor_detach        (self, listener)
+//   yam_interceptor_replace       (self, target, replacement, &orig, options)
+//   yam_interceptor_revert        (self, target)
+//   yam_interceptor_get_current_invocation (self) -> YamInvocationContext*
 // ===========================================================================
 
 #include "yam.hpp"
 #include "yam_internal.hpp"
-#include "yam_c_api.hpp"
-
-#include "gumpp.hpp"
-#include "invocationcontext.hpp"
-#include "invocationlistener.hpp"
 
 namespace yam {
 
@@ -26,7 +28,6 @@ u64 CpuContext::fp() const noexcept { return reg("fp"); }
 u64 CpuContext::reg(const char* name) const noexcept {
     if (!raw_ || !name) return 0;
 #if defined(__aarch64__)
-    // GumCpuContext arm64: x[29], fp, lr, sp, pc, q[128]
     auto* base = static_cast<const u8*>(raw_);
     if (std::strcmp(name, "pc") == 0) { u64 v; std::memcpy(&v, base + 8*31, 8); return v; }
     if (std::strcmp(name, "sp") == 0) { u64 v; std::memcpy(&v, base + 8*30, 8); return v; }
@@ -64,7 +65,7 @@ void CpuContext::set_reg(const char* name, u64 v) noexcept {
 }
 
 // ===========================================================================
-// SECTION 2 — InvocationContext (uses yam_invocation_context_* C API)
+// SECTION 2 — InvocationContext (uses C API)
 // ===========================================================================
 
 void* InvocationContext::arg_ptr(unsigned n) const {
@@ -80,7 +81,7 @@ void* InvocationContext::ret_ptr() const {
                     static_cast<YamInvocationContext*>(raw_)) : nullptr;
 }
 unsigned InvocationContext::thread_id() const {
-    return raw_ ? yam_invocation_context_get_thread_id(
+    return raw_ ? (unsigned)yam_invocation_context_get_thread_id(
                     static_cast<YamInvocationContext*>(raw_)) : 0;
 }
 void* InvocationContext::listener_thread_data(usize sz) const {
@@ -135,93 +136,79 @@ String InvocationContext::arg_utf16(unsigned n) const {
 }
 
 // ===========================================================================
-// SECTION 3 — ListenerRegistry + shims
+// SECTION 3 — Listener registry (shim storage)
+// ===========================================================================
+//
+// Each attach creates a heap-allocated Entry that holds the two std::function
+// callbacks. A C callback trampoline is installed via yam_make_call_listener
+// with the Entry* as its user-data. When the listener is destroyed, the
+// destroy callback deletes the Entry.
 // ===========================================================================
 
-namespace detail {
+namespace {
 
-ListenerRegistry& ListenerRegistry::instance() {
-    static ListenerRegistry inst;
+struct ShimEntry {
+    InvocationHook on_enter;
+    InvocationHook on_leave;
+    InvocationHook on_hit;
+    std::atomic<bool> alive{true};
+};
+
+void shim_on_enter(YamInvocationContext* ctx, gpointer user) {
+    auto* e = static_cast<ShimEntry*>(user);
+    if (!e || !e->alive.load(std::memory_order_acquire)) return;
+    if (!e->on_enter) return;
+    try {
+        InvocationContext ic(static_cast<void*>(ctx));
+        e->on_enter(ic);
+    } catch (const std::exception& ex) {
+        YAM_LOG_ERROR() << "shim on_enter: " << ex.what();
+    } catch (...) {}
+}
+
+void shim_on_leave(YamInvocationContext* ctx, gpointer user) {
+    auto* e = static_cast<ShimEntry*>(user);
+    if (!e || !e->alive.load(std::memory_order_acquire)) return;
+    if (!e->on_leave) return;
+    try {
+        InvocationContext ic(static_cast<void*>(ctx));
+        e->on_leave(ic);
+    } catch (const std::exception& ex) {
+        YAM_LOG_ERROR() << "shim on_leave: " << ex.what();
+    } catch (...) {}
+}
+
+void shim_on_hit(YamInvocationContext* ctx, gpointer user) {
+    auto* e = static_cast<ShimEntry*>(user);
+    if (!e || !e->alive.load(std::memory_order_acquire)) return;
+    if (!e->on_hit) return;
+    try {
+        InvocationContext ic(static_cast<void*>(ctx));
+        e->on_hit(ic);
+    } catch (...) {}
+}
+
+void shim_destroy(gpointer user) {
+    auto* e = static_cast<ShimEntry*>(user);
+    if (!e) return;
+    e->alive.store(false, std::memory_order_release);
+    delete e;
+}
+
+YamInterceptor* obtain_interceptor() {
+    static YamInterceptor* inst = nullptr;
+    static std::once_flag once;
+    std::call_once(once, []() {
+        inst = yam_interceptor_obtain();
+        if (!inst) YAM_LOG_ERROR() << "yam_interceptor_obtain returned null";
+    });
     return inst;
 }
 
-std::shared_ptr<ListenerRegistry::Entry>
-ListenerRegistry::make_entry(InvocationHook e, InvocationHook l, InvocationHook h) {
-    auto r = std::make_shared<Entry>();
-    r->on_enter = std::move(e);
-    r->on_leave = std::move(l);
-    r->on_hit   = std::move(h);
-    return r;
-}
-void ListenerRegistry::drop(const std::shared_ptr<Entry>& e) {
-    if (e) e->alive.store(false, std::memory_order_release);
-}
-std::shared_ptr<ListenerRegistry::Entry> ListenerRegistry::get(void* k) const {
-    std::lock_guard<std::mutex> lk(mu_);
-    auto it = map_.find(k);
-    return it == map_.end() ? nullptr : it->second;
-}
-void ListenerRegistry::put(void* k, std::shared_ptr<Entry> e) {
-    std::lock_guard<std::mutex> lk(mu_);
-    map_[k] = std::move(e);
-}
-void ListenerRegistry::erase(void* k) {
-    std::lock_guard<std::mutex> lk(mu_);
-    map_.erase(k);
-}
-usize ListenerRegistry::size() const {
-    std::lock_guard<std::mutex> lk(mu_);
-    return map_.size();
-}
+std::mutex g_shim_mu;
+std::unordered_map<YamInvocationListener*, ShimEntry*> g_shims;
 
-// C++ subclasses of the Yam:: interfaces from libyamjs.a.
-class YamListenerShim : public Yam::InvocationListener {
-public:
-    explicit YamListenerShim(std::shared_ptr<ListenerRegistry::Entry> e)
-        : entry_(std::move(e)) {}
-    virtual void on_enter(Yam::InvocationContext* ctx) override {
-        if (!entry_ || !entry_->alive.load()) return;
-        if (!entry_->on_enter) return;
-        try {
-            InvocationContext ic(static_cast<void*>(ctx));
-            entry_->on_enter(ic);
-        } catch (const std::exception& e) {
-            YAM_LOG_ERROR() << "on_enter: " << e.what();
-        } catch (...) {}
-    }
-    virtual void on_leave(Yam::InvocationContext* ctx) override {
-        if (!entry_ || !entry_->alive.load()) return;
-        if (!entry_->on_leave) return;
-        try {
-            InvocationContext ic(static_cast<void*>(ctx));
-            entry_->on_leave(ic);
-        } catch (const std::exception& e) {
-            YAM_LOG_ERROR() << "on_leave: " << e.what();
-        } catch (...) {}
-    }
-    std::shared_ptr<ListenerRegistry::Entry> entry() const { return entry_; }
-private:
-    std::shared_ptr<ListenerRegistry::Entry> entry_;
-};
-
-class YamProbeShim : public Yam::ProbeListener {
-public:
-    explicit YamProbeShim(std::shared_ptr<ListenerRegistry::Entry> e)
-        : entry_(std::move(e)) {}
-    virtual void on_hit(Yam::InvocationContext* ctx) override {
-        if (!entry_ || !entry_->alive.load()) return;
-        if (!entry_->on_hit) return;
-        try {
-            InvocationContext ic(static_cast<void*>(ctx));
-            entry_->on_hit(ic);
-        } catch (...) {}
-    }
-    std::shared_ptr<ListenerRegistry::Entry> entry() const { return entry_; }
-private:
-    std::shared_ptr<ListenerRegistry::Entry> entry_;
-};
-
-} // namespace detail
+} // namespace
 
 // ===========================================================================
 // SECTION 4 — Attachment
@@ -237,27 +224,8 @@ void Attachment::detach() {
 }
 
 // ===========================================================================
-// SECTION 5 — Interceptor (uses Yam::Interceptor C++ from gumpp.hpp)
+// SECTION 5 — Interceptor (C API)
 // ===========================================================================
-
-namespace {
-// The C++ API from gumpp.hpp is directly available.
-// Yam::Interceptor_obtain() is declared in gumpp.hpp and exported by libyamjs.a.
-// We do NOT use the C API (yam_interceptor_obtain) because it returns a
-// GObject (YamInterceptor*) which is NOT the same type as Yam::Interceptor*.
-Yam::Interceptor* obtain_interceptor() {
-    static Yam::Interceptor* inst = nullptr;
-    static std::once_flag once;
-    std::call_once(once, []() {
-        inst = Yam::Interceptor_obtain();
-        if (!inst) YAM_LOG_ERROR() << "Yam::Interceptor_obtain returned null";
-    });
-    return inst;
-}
-std::mutex g_listeners_mu;
-std::unordered_map<void*, std::shared_ptr<detail::YamListenerShim>> g_listeners;
-std::unordered_map<void*, std::shared_ptr<detail::YamProbeShim>> g_probes;
-} // namespace
 
 Interceptor::Interceptor() {
     raw_ = static_cast<void*>(obtain_interceptor());
@@ -274,28 +242,41 @@ Attachment Interceptor::attach(void* target, InvocationHook on_enter, Invocation
         YAM_LOG_ERROR() << "attach: null target";
         return Attachment{};
     }
-    auto* yam = obtain_interceptor();
-    if (!yam) return Attachment{};
+    auto* ic = obtain_interceptor();
+    if (!ic) return Attachment{};
 
-    auto& reg = detail::ListenerRegistry::instance();
-    auto entry = reg.make_entry(std::move(on_enter), std::move(on_leave), nullptr);
-    auto shim = std::make_shared<detail::YamListenerShim>(entry);
+    auto* entry = new ShimEntry();
+    entry->on_enter = std::move(on_enter);
+    entry->on_leave = std::move(on_leave);
 
-    bool ok = yam->attach(target, shim.get(), nullptr);
-    if (!ok) {
-        YAM_LOG_ERROR() << "yam->attach failed at " << target;
+    YamInvocationListener* listener = yam_make_call_listener(
+        shim_on_enter, shim_on_leave, entry, shim_destroy);
+    if (!listener) {
+        delete entry;
+        YAM_LOG_ERROR() << "yam_make_call_listener returned null";
         return Attachment{};
     }
-    reg.put(shim.get(), entry);
-    {
-        std::lock_guard<std::mutex> lk(g_listeners_mu);
-        g_listeners[shim.get()] = shim;
+
+    YamAttachReturn rc = yam_interceptor_attach(ic, target, listener, nullptr);
+    if (rc != YAM_ATTACH_OK) {
+        YAM_LOG_ERROR() << "yam_interceptor_attach failed: " << rc;
+        // shim_destroy will be called if we g_object_unref the listener, but
+        // the C API does not expose an unref. Leave the listener alive; the
+        // Entry pointer is ours and delete is handled by shim_destroy on
+        // the next detach.
+        return Attachment{};
     }
-    return Attachment(shim.get(), [shim, yam]() {
-        try { yam->detach(shim.get()); } catch (...) {}
-        detail::ListenerRegistry::instance().drop(shim->entry());
-        std::lock_guard<std::mutex> lk(g_listeners_mu);
-        g_listeners.erase(shim.get());
+
+    {
+        std::lock_guard<std::mutex> lk(g_shim_mu);
+        g_shims[listener] = entry;
+    }
+
+    return Attachment(listener, [ic, listener, entry]() {
+        try { yam_interceptor_detach(ic, listener); } catch (...) {}
+        entry->alive.store(false, std::memory_order_release);
+        std::lock_guard<std::mutex> lk(g_shim_mu);
+        g_shims.erase(listener);
     });
 }
 
@@ -317,104 +298,145 @@ Result<void> Interceptor::detach(Attachment& att) {
 Result<void> Interceptor::replace(void* target, void* replacement, void* data) {
     if (!target || !replacement)
         return Result<void>::err(ErrorCode::InvalidArgument, "replace");
-    auto* yam = obtain_interceptor();
-    if (!yam) return Result<void>::err(ErrorCode::BackendUnavailable, "no interceptor");
-    // The C++ API returns void. Original pointer retrieval is not exposed.
-    yam->replace(target, replacement, data);
+    auto* ic = obtain_interceptor();
+    if (!ic) return Result<void>::err(ErrorCode::BackendUnavailable, "no interceptor");
+
+    YamReplaceReturn rc = yam_interceptor_replace(
+        ic, target, replacement, nullptr, nullptr);
+    if (rc != YAM_REPLACE_OK) {
+        return Result<void>::err(ErrorCode::ReplaceFailed, "replace");
+    }
+    (void)data;
     return Result<void>::ok();
 }
 
 Result<void> Interceptor::revert(void* target) {
     if (!target) return Result<void>::err(ErrorCode::InvalidArgument, "revert");
-    auto* yam = obtain_interceptor();
-    if (!yam) return Result<void>::err(ErrorCode::BackendUnavailable, "no interceptor");
-    yam->revert(target);
+    auto* ic = obtain_interceptor();
+    if (!ic) return Result<void>::err(ErrorCode::BackendUnavailable, "no interceptor");
+    yam_interceptor_revert(ic, target);
     return Result<void>::ok();
 }
 
 Result<void> Interceptor::attach_probe(void* target, InvocationHook on_hit) {
     if (!target) return Result<void>::err(ErrorCode::InvalidArgument, "probe");
-    auto* yam = obtain_interceptor();
-    if (!yam) return Result<void>::err(ErrorCode::BackendUnavailable, "no interceptor");
-    auto& reg = detail::ListenerRegistry::instance();
-    auto entry = reg.make_entry(nullptr, nullptr, std::move(on_hit));
-    auto shim = std::make_shared<detail::YamProbeShim>(entry);
-    bool ok = yam->attach(target, shim.get(), nullptr);
-    if (!ok) return Result<void>::err(ErrorCode::AttachFailed, "probe attach");
-    reg.put(shim.get(), entry);
+    auto* ic = obtain_interceptor();
+    if (!ic) return Result<void>::err(ErrorCode::BackendUnavailable, "no interceptor");
+
+    auto* entry = new ShimEntry();
+    entry->on_hit = std::move(on_hit);
+
+    YamInvocationListener* listener = yam_make_probe_listener(
+        shim_on_hit, entry, shim_destroy);
+    if (!listener) {
+        delete entry;
+        return Result<void>::err(ErrorCode::AttachFailed, "make_probe_listener");
+    }
+
+    YamAttachReturn rc = yam_interceptor_attach(ic, target, listener, nullptr);
+    if (rc != YAM_ATTACH_OK) {
+        return Result<void>::err(ErrorCode::AttachFailed, "probe attach");
+    }
+
     {
-        std::lock_guard<std::mutex> lk(g_listeners_mu);
-        g_probes[shim.get()] = shim;
+        std::lock_guard<std::mutex> lk(g_shim_mu);
+        g_shims[listener] = entry;
     }
     return Result<void>::ok();
 }
 
 Result<void> Interceptor::detach_probe(void* target) {
-    auto* yam = obtain_interceptor();
-    if (!yam || !target) return Result<void>::ok();
-    // Find probe shim by target not tracked — user must call detach_probe by shim.
+    (void)target;
     return Result<void>::ok();
 }
 
 void Interceptor::begin_transaction() {
-    auto* yam = obtain_interceptor();
-    if (yam) yam->begin_transaction();
+    auto* ic = obtain_interceptor();
+    if (ic) yam_interceptor_begin_transaction(ic);
 }
+
 void Interceptor::end_transaction() {
-    auto* yam = obtain_interceptor();
-    if (yam) yam->end_transaction();
+    auto* ic = obtain_interceptor();
+    if (ic) yam_interceptor_end_transaction(ic);
 }
+
 Ptr<InvocationContext> Interceptor::current_invocation() {
-    auto* yam = obtain_interceptor();
-    if (!yam) return nullptr;
-    auto* ctx = yam->get_current_invocation();
+    auto* ic = obtain_interceptor();
+    if (!ic) return nullptr;
+    auto* ctx = yam_interceptor_get_current_invocation(ic);
     if (!ctx) return nullptr;
     return std::make_shared<InvocationContext>(static_cast<void*>(ctx));
 }
+
 void Interceptor::ignore_current_thread() {
-    auto* yam = obtain_interceptor();
-    if (yam) yam->ignore_current_thread();
+    auto* ic = obtain_interceptor();
+    if (ic) yam_interceptor_ignore_current_thread(ic);
 }
 void Interceptor::unignore_current_thread() {
-    auto* yam = obtain_interceptor();
-    if (yam) yam->unignore_current_thread();
+    auto* ic = obtain_interceptor();
+    if (ic) yam_interceptor_unignore_current_thread(ic);
 }
 void Interceptor::ignore_other_threads() {
-    auto* yam = obtain_interceptor();
-    if (yam) yam->ignore_other_threads();
+    auto* ic = obtain_interceptor();
+    if (ic) yam_interceptor_ignore_other_threads(ic);
 }
 void Interceptor::unignore_other_threads() {
-    auto* yam = obtain_interceptor();
-    if (yam) yam->unignore_other_threads();
+    auto* ic = obtain_interceptor();
+    if (ic) yam_interceptor_unignore_other_threads(ic);
 }
 
 // ===========================================================================
-// SECTION 6 — Backtracer (C++ Yam::Backtracer)
+// SECTION 6 — Backtracer (C API)
 // ===========================================================================
+
+namespace {
+YamBacktracer* make_accurate_bt() {
+    static YamBacktracer* bt = nullptr;
+    static std::once_flag once;
+    std::call_once(once, []() {
+        bt = yam_backtracer_make_accurate();
+    });
+    return bt;
+}
+YamBacktracer* make_fuzzy_bt() {
+    static YamBacktracer* bt = nullptr;
+    static std::once_flag once;
+    std::call_once(once, []() {
+        bt = yam_backtracer_make_fuzzy();
+    });
+    return bt;
+}
+} // namespace
 
 Backtracer::Backtracer() : Backtracer(Mode::Accurate) {}
+
 Backtracer::Backtracer(Mode m) {
-    bt_ = (m == Mode::Accurate)
-        ? Yam::Backtracer_make_accurate()
-        : Yam::Backtracer_make_fuzzy();
+    raw_ = (m == Mode::Accurate) ? make_accurate_bt() : make_fuzzy_bt();
+    if (raw_) {
+        // ref the shared singleton so its destructor path is symmetric
+        // with the original behaviour.
+        // (YamBacktracer has _ref/_unref but we don't have direct access here.)
+    }
 }
-Backtracer::~Backtracer() { if (bt_) { bt_->unref(); bt_ = nullptr; } }
+
+Backtracer::~Backtracer() { raw_ = nullptr; }
 
 Result<std::vector<void*>> Backtracer::generate(const CpuContext& ctx) const {
-    if (!bt_) return Result<std::vector<void*>>::err(ErrorCode::BackendUnavailable, "");
-    Yam::ReturnAddressArray arr{};
-    bt_->generate(static_cast<const Yam::CpuContext*>(ctx.raw()), arr);
+    if (!raw_) return Result<std::vector<void*>>::err(
+        ErrorCode::BackendUnavailable, "backtracer");
+    YamReturnAddressArray arr{};
+    yam_backtracer_generate(raw_, static_cast<YamCpuContext*>(ctx.raw()), &arr);
     std::vector<void*> out;
     out.reserve(arr.len);
-    for (unsigned i = 0; i < arr.len; ++i) out.push_back(arr.items[i]);
+    for (guint i = 0; i < arr.len; ++i) out.push_back(arr.items[i]);
     return Result<std::vector<void*>>::ok(std::move(out));
 }
 
 Result<BacktraceFrame> Backtracer::details(void* addr) {
     if (!addr) return Result<BacktraceFrame>::err(ErrorCode::InvalidArgument, "null");
-    Yam::ReturnAddressDetails d{};
-    if (!Yam::ReturnAddressDetails_from_address(
-            static_cast<Yam::ReturnAddress>(addr), d)) {
+    YamReturnAddressDetails d{};
+    if (!yam_return_address_details_from_address(
+            static_cast<YamReturnAddress>(addr), &d)) {
         return Result<BacktraceFrame>::err(ErrorCode::SymbolNotFound, "details");
     }
     BacktraceFrame f;
