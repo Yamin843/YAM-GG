@@ -57,6 +57,7 @@ void onSurfaceCreated(JNIEnv* env, jclass clazz) { impl_nativeOnSurfaceCreated(e
 void onSurfaceChanged(JNIEnv* env, jclass clazz, jint w, jint h) { impl_nativeOnSurfaceChanged(env, clazz, w, h); }
 void onDrawFrame(JNIEnv* env, jclass clazz, jint w, jint h) { impl_nativeOnDrawFrame(env, clazz, w, h); }
 void onTouch(JNIEnv* env, jclass clazz, jint a, jfloat x, jfloat y, jint p) { impl_nativeOnTouch(env, clazz, a, x, y, p); }
+void onKey(JNIEnv* env, jclass clazz, jint k, jint a) { (void)env; (void)clazz; (void)k; (void)a; }
 
 } // namespace jni
 } // namespace yamgg

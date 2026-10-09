@@ -1,30 +1,192 @@
+// ===========================================================================
+// Main.cpp — YAM-GG entry point
+// ===========================================================================
+
 #include <jni.h>
 #include <pthread.h>
-#include <atomic>
-#include <chrono>
-#include <thread>
 #include <unistd.h>
 #include <android/log.h>
 #include <dlfcn.h>
+
+#include <atomic>
+#include <chrono>
+#include <thread>
+
+#include <glib.h>
+#include <glib-object.h>
 
 #include "Core/Runtime.h"
 #include "Core/DexLoader.h"
 #include "Bridge/YamBridge.h"
 #include "UI/Renderer.h"
 #include "JNI/NativeMethods.h"
-#include "yam.hpp"
 
 #define LOG_TAG "YAMGG"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 static JavaVM* g_vm = nullptr;
-static std::atomic<bool> g_pump_running{true};
 static jclass g_modViewClass = nullptr;
 static std::atomic<bool> g_initialized{false};
+static std::atomic<bool> g_pump_running{true};
 
 using namespace yamgg;
 
+// ===========================================================================
+// Activity.onResume hook + current-activity attach
+// ===========================================================================
+static const char* kActivityHookJs = R"JS(
+(function () {
+    "use strict";
+    if (typeof Java === "undefined") {
+        send({type:"hook_error", message:"Java undefined"});
+        return;
+    }
+
+    // ── STEP 1 — attach to CURRENT activity (no onResume needed) ──
+    try {
+        Java.performNow(function () {
+            try {
+                Java.scheduleOnMainThread(function () {
+                    try {
+                        var ActivityThread = Java.use("android.app.ActivityThread");
+                        var at = ActivityThread.currentActivityThread();
+                        if (!at) { send({type:"attach_now_info", message:"no ActivityThread"}); return; }
+
+                        var mActivities = at.mActivities.value;
+                        if (!mActivities) { send({type:"attach_now_info", message:"no mActivities"}); return; }
+
+                        var n = mActivities.size();
+                        for (var i = 0; i < n; i++) {
+                            try {
+                                var rec = mActivities.valueAt(i);
+                                if (!rec) continue;
+                                var act = null;
+                                try { act = rec.activity.value; } catch (e) { continue; }
+                                if (!act) continue;
+                                try { if (act.isFinishing()) continue; } catch (e) {}
+
+                                var ModView = Java.use("com.yamgg.modview.ModView");
+                                ModView.attach(act);
+                                send({type:"attach_now_ok",
+                                      className: "" + act.getClass().getName(),
+                                      index: i});
+                                return;
+                            } catch (e) {
+                                send({type:"attach_now_skip", index: i, message: "" + e});
+                            }
+                        }
+                        send({type:"attach_now_none"});
+                    } catch (e) {
+                        send({type:"attach_now_error", message: "" + e});
+                    }
+                });
+            } catch (e) {
+                send({type:"attach_now_outer", message: "" + e});
+            }
+        });
+    } catch (e) {
+        send({type:"attach_now_outer2", message: "" + e});
+    }
+
+    // ── STEP 2 — hook onResume for future activities ──
+    try {
+        Java.performNow(function () {
+            try {
+                var Activity     = Java.use("android.app.Activity");
+                var origOnResume = Activity.onResume;
+                Activity.onResume.implementation = function () {
+                    try { origOnResume.call(this); } catch (e) {}
+                    try {
+                        var ModView = Java.use("com.yamgg.modview.ModView");
+                        ModView.attach(this);
+                        send({type:"modview_attached",
+                              className: "" + this.getClass().getName()});
+                    } catch (e) {
+                        send({type:"attach_error", message: "" + e});
+                    }
+                };
+                send({type:"hook_installed"});
+            } catch (e) {
+                send({type:"hook_error", message: "install: " + e});
+            }
+        });
+    } catch (e) {
+        send({type:"hook_outer_error", message: "" + e});
+    }
+})();
+)JS";
+
+// ===========================================================================
+// AppsFlyer trackEvent hook
+// ===========================================================================
+static const char* kAppsFlyerHookJs = R"JS(
+(function () {
+    "use strict";
+    if (typeof Java === "undefined") {
+        send({type:"appsflyer_error", message:"Java undefined"});
+        return;
+    }
+
+    var LOG_PATH = "/storage/emulated/0/Download/appsflyer_calls.log";
+
+    function writeLog(line) {
+        try {
+            var FileWriter = Java.use("java.io.FileWriter");
+            var fw = FileWriter.$new(LOG_PATH, true);
+            try { fw.write(line + "\n"); fw.flush(); }
+            finally { fw.close(); }
+        } catch (e) {
+            send({type:"appsflyer_log_error", message:"" + e});
+        }
+    }
+
+    Java.performNow(function () {
+        try {
+            var C = Java.use("com.appsflyer.unity.AppsFlyerAndroidWrapper");
+            send({type:"appsflyer_class_ok"});
+
+            // Overload 1: (String, HashMap) -> void
+            try {
+                var m2 = C.trackEvent.overload("java.lang.String", "java.util.HashMap");
+                m2.implementation = function (name, params) {
+                    writeLog("" + new Date() + "  trackEvent/2  name=" + name + "  params=" + params);
+                    send({type:"appsflyer_hit", overload:"2", name:"" + name});
+                    return m2.call(this, name, params);
+                };
+                send({type:"appsflyer_hook_ok", overload:"2"});
+            } catch (e) {
+                send({type:"appsflyer_hook_err", overload:"2", message:"" + e});
+            }
+
+            // Overload 2: (String, HashMap, boolean, String) -> void
+            try {
+                var m4 = C.trackEvent.overload(
+                    "java.lang.String", "java.util.HashMap",
+                    "boolean", "java.lang.String");
+                m4.implementation = function (name, params, isRevenue, currency) {
+                    writeLog("" + new Date() + "  trackEvent/4  name=" + name
+                             + "  params=" + params + "  isRevenue=" + isRevenue
+                             + "  currency=" + currency);
+                    send({type:"appsflyer_hit", overload:"4", name:"" + name});
+                    return m4.call(this, name, params, isRevenue, currency);
+                };
+                send({type:"appsflyer_hook_ok", overload:"4"});
+            } catch (e) {
+                send({type:"appsflyer_hook_err", overload:"4", message:"" + e});
+            }
+
+            send({type:"appsflyer_ready"});
+        } catch (e) {
+            send({type:"appsflyer_class_error", message:"" + e});
+        }
+    });
+})();
+)JS";
+
+// ===========================================================================
+// init_thread
+// ===========================================================================
 static void* init_thread(void*) {
     LOGI("init_thread: begin");
 
@@ -74,256 +236,39 @@ static void* init_thread(void*) {
     } else {
         LOGI("init_thread: YamBridge ready");
 
-        // ─────────────────────────────────────────────────────────
-        //  تثبيت hook فعلي على Activity.onResume
-        //  (HookManager يحضّر method IDs فقط؛ لا يثبّت hook)
-        //  نستخدم YAM Java bridge + frida-java-bridge عبر JS
-        // ─────────────────────────────────────────────────────────
-        LOGI("init_thread: installing Activity.onResume hook via JS");
-
-        static const char* kActivityHookJs = R"JS(
-(function () {
-    "use strict";
-    if (typeof Java === "undefined") {
-        send({type:"hook_error", message:"Java undefined"});
-        return;
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // STEP 1 — Install onResume hook (NO recursion)
-    //          Captured original is called, not this.onResume()
-    // ═══════════════════════════════════════════════════════════════
-    try {
-        Java.performNow(function () {
-            try {
-                var Activity     = Java.use("android.app.Activity");
-                var origOnResume = Activity.onResume;
-
-                Activity.onResume.implementation = function () {
-                    try { origOnResume.call(this); } catch (e) {}
-
-                    try {
-                        var ModView = Java.use("com.yamgg.modview.ModView");
-                        ModView.attach(this);
-                        send({
-                            type: "modview_attached",
-                            className: "" + this.getClass().getName()
-                        });
-                    } catch (e) {
-                        send({ type: "attach_error", message: "" + e });
-                    }
-                };
-                send({ type: "hook_installed" });
-            } catch (e) {
-                send({ type: "hook_error", message: "install: " + e });
-            }
-        });
-    } catch (e) {
-        send({ type: "hook_outer_error", message: "" + e });
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // STEP 2 — Attach to CURRENT activity via main thread
-    //          Java.scheduleOnMainThread guarantees UI-thread execution;
-    //          ArrayMap access is safe there.
-    // ═══════════════════════════════════════════════════════════════
-    try {
-        Java.performNow(function () {
-            try {
-                Java.scheduleOnMainThread(function () {
-                    try {
-                        var ActivityThread = Java.use("android.app.ActivityThread");
-                        var at = ActivityThread.currentActivityThread();
-                        if (!at) {
-                            send({ type: "attach_now_info",
-                                   message: "no ActivityThread" });
-                            return;
-                        }
-
-                        var mActivities = at.mActivities.value;
-                        if (!mActivities) {
-                            send({ type: "attach_now_info",
-                                   message: "no mActivities" });
-                            return;
-                        }
-
-                        var n = mActivities.size();
-                        for (var i = 0; i < n; i++) {
-                            try {
-                                var rec = mActivities.valueAt(i);
-                                if (!rec) continue;
-
-                                var act = null;
-                                try { act = rec.activity.value; } catch (e) { continue; }
-                                if (!act) continue;
-
-                                try { if (act.isFinishing()) continue; } catch (e) {}
-
-                                var ModView = Java.use("com.yamgg.modview.ModView");
-                                ModView.attach(act);
-                                send({
-                                    type: "attach_now_ok",
-                                    className: "" + act.getClass().getName(),
-                                    index: i
-                                });
-                                return;
-                            } catch (e) {
-                                send({
-                                    type: "attach_now_skip",
-                                    index: i,
-                                    message: "" + e
-                                });
-                            }
-                        }
-                        send({ type: "attach_now_none" });
-                    } catch (e) {
-                        send({ type: "attach_now_error", message: "" + e });
-                    }
-                });
-            } catch (e) {
-                send({ type: "attach_now_outer", message: "" + e });
-            }
-        });
-    } catch (e) {
-        send({ type: "attach_outer_error", message: "" + e });
-    }
-})();
-)JS";
-
-static const char* kAppsFlyerHookJs = R"JS(
-(function () {
-    "use strict";
-    if (typeof Java === "undefined") {
-        send({type:"appsflyer_error", message:"Java undefined"});
-        return;
-    }
-
-    var LOG_PATH = "/storage/emulated/0/Download/appsflyer_calls.log";
-
-    function writeLog(line) {
-        try {
-            var FileWriter = Java.use("java.io.FileWriter");
-            var fw = FileWriter.$new(LOG_PATH, true);
-            try {
-                fw.write(line + "\n");
-                fw.flush();
-            } finally {
-                fw.close();
-            }
-        } catch (e) {
-            send({type:"appsflyer_log_error", message:"" + e});
-        }
-    }
-
-    Java.performNow(function () {
-        try {
-            var C = Java.use("com.appsflyer.unity.AppsFlyerAndroidWrapper");
-            send({type:"appsflyer_class_ok"});
-
-            // Overload 1: (String, HashMap) -> void
-            try {
-                var m2 = C.trackEvent.overload(
-                    "java.lang.String",
-                    "java.util.HashMap"
-                );
-                m2.implementation = function (name, params) {
-                    var ts = "" + new Date();
-                    var line = ts + "  trackEvent/2  name=" + name
-                             + "  params=" + params;
-                    writeLog(line);
-                    send({type:"appsflyer_hit", overload:"2", name:"" + name});
-                    return m2.call(this, name, params);
-                };
-                send({type:"appsflyer_hook_ok", overload:"2"});
-            } catch (e) {
-                send({type:"appsflyer_hook_err", overload:"2", message:"" + e});
-            }
-
-            // Overload 2: (String, HashMap, boolean, String) -> void
-            try {
-                var m4 = C.trackEvent.overload(
-                    "java.lang.String",
-                    "java.util.HashMap",
-                    "boolean",
-                    "java.lang.String"
-                );
-                m4.implementation = function (name, params, isRevenue, currency) {
-                    var ts = "" + new Date();
-                    var line = ts + "  trackEvent/4  name=" + name
-                             + "  params=" + params
-                             + "  isRevenue=" + isRevenue
-                             + "  currency=" + currency;
-                    writeLog(line);
-                    send({type:"appsflyer_hit", overload:"4", name:"" + name});
-                    return m4.call(this, name, params, isRevenue, currency);
-                };
-                send({type:"appsflyer_hook_ok", overload:"4"});
-            } catch (e) {
-                send({type:"appsflyer_hook_err", overload:"4", message:"" + e});
-            }
-
-            send({type:"appsflyer_ready"});
-        } catch (e) {
-            send({type:"appsflyer_class_error", message:"" + e});
-        }
-    });
-})();
-)JS";
-
-        auto r = YamBridge::instance().loadScript("__activity_hook__", kActivityHookJs);
-        if (r.ok) {
-            LOGI("Activity hook script loaded OK");
-        } else {
-            LOGE("Activity hook script failed: %s", r.error.c_str());
-        }
+        auto r1 = YamBridge::instance().loadScript("__activity_hook__", kActivityHookJs);
+        if (r1.ok) LOGI("init_thread: Activity hook script OK");
+        else        LOGE("init_thread: Activity hook script FAILED: %s", r1.error.c_str());
 
         auto r2 = YamBridge::instance().loadScript("__appsflyer_hook__", kAppsFlyerHookJs);
-        if (r2.ok) {
-            LOGI("AppsFlyer hook script loaded OK");
-        } else {
-            LOGE("AppsFlyer hook script failed: %s", r2.error.c_str());
-        }
-
-        // 3) مستمعي الأحداث للتشخيص
-        static bool router_installed = false;
-        if (!router_installed) {
-            router_installed = true;
-            yam::events::on("hook_error", [](const yam::Event& ev) {
-                LOGE("HOOK-ERROR: %s", ev.get_str("message").c_str());
-            });
-            yam::events::on("hook_info", [](const yam::Event& ev) {
-                LOGI("HOOK-INFO: %s", ev.get_str("message").c_str());
-            });
-            yam::events::on("activity_hook_installed", [](const yam::Event&) {
-                LOGI("Activity.onResume hook INSTALLED");
-            });
-            yam::events::on("modview_attached", [](const yam::Event& ev) {
-                LOGI("ModView attached to %s", ev.get_str("className").c_str());
-            });
-            yam::events::on("attach_error", [](const yam::Event& ev) {
-                LOGE("ModView attach error: %s", ev.get_str("message").c_str());
-            });
-        }
+        if (r2.ok) LOGI("init_thread: AppsFlyer hook script OK");
+        else        LOGE("init_thread: AppsFlyer hook script FAILED: %s", r2.error.c_str());
     }
 
     LOGI("init_thread: complete — entering GMainContext pump loop");
 
-    // Keep the JS scheduler alive by pumping GMainContext.
-    // Without this, yam_script_post() messages queue forever
-    // and recv("cmd", ...) handlers never fire.
+    // ── Pump loop — keeps JS scheduler alive ──
     {
-        GMainContext* ctx = g_main_context_default();
+        GMainContext* ctx = g_main_context_get_thread_default();
+        if (!ctx) ctx = g_main_context_default();
+        LOGI("init_thread: pump loop starting (ctx=%p)", (void*)ctx);
+
         while (g_pump_running.load(std::memory_order_acquire)) {
-            while (g_main_context_iteration(ctx, FALSE)) {}
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            int processed = 0;
+            while (g_main_context_iteration(ctx, FALSE)) { ++processed; }
+            (void)processed;
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
+        LOGI("init_thread: pump loop exited");
     }
-    LOGI("init_thread: pump loop exited");
 
     if (attached) Runtime::instance().detachCurrentThread();
     return nullptr;
 }
 
+// ===========================================================================
+// JNI_OnLoad
+// ===========================================================================
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     (void)reserved;
     LOGI("JNI_OnLoad called");
@@ -360,6 +305,9 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     return JNI_VERSION_1_6;
 }
 
+// ===========================================================================
+// JNI_OnUnload
+// ===========================================================================
 extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
     (void)vm;
     (void)reserved;
@@ -367,10 +315,6 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
 
     g_pump_running.store(false, std::memory_order_release);
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    // Stop the pump loop first, so it doesn't touch JS state during teardown.
-    g_pump_running.store(false, std::memory_order_release);
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     JNIEnv* env = nullptr;
     if (g_vm) g_vm->GetEnv((void**)&env, JNI_VERSION_1_6);
@@ -388,6 +332,9 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
     Runtime::instance().shutdown();
 }
 
+// ===========================================================================
+// JNI bridges for ModView native methods
+// ===========================================================================
 extern "C" JNIEXPORT void JNICALL
 Java_com_yamgg_modview_ModView_nativeOnSurfaceCreated(JNIEnv* env, jclass clazz) {
     jni::onSurfaceCreated(env, clazz);
@@ -412,7 +359,15 @@ Java_com_yamgg_modview_ModView_nativeOnTouch(JNIEnv* env, jclass clazz,
     jni::onTouch(env, clazz, action, x, y, pointerId);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_yamgg_modview_ModView_nativeOnKey(JNIEnv* env, jclass clazz,
+                                            jint keyCode, jint action) {
+    jni::onKey(env, clazz, keyCode, action);
+}
 
+// ===========================================================================
+// Constructor / Destructor
+// ===========================================================================
 __attribute__((constructor))
 static void lib_constructor() {
     LOGI("YAM-GG library loaded");
