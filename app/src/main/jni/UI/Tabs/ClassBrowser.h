@@ -2,6 +2,7 @@
 #define YAMGG_UI_TABS_CLASSBROWSER_H
 
 #include <string>
+#include "../../all_libs/YAM-G/wrapper/include/yam.hpp"
 #include <vector>
 #include <map>
 #include <mutex>

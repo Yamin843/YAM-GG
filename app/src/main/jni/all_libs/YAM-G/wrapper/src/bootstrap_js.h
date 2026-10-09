@@ -779,8 +779,11 @@ static const char kBootstrapSrc[] = R"YAMJS(
     // into 60 KB chunks. The C++ events layer reassembles them (see
     // yam_events.cpp::chunks::).
     var _nextChunkSession = 1;
-    var CHUNK_THRESHOLD = 200 * 1024;
-    var CHUNK_SIZE = 60 * 1024;
+    // Threshold at which we switch to chunked delivery. Below this, one
+    // event is sent; above, it splits. No cap on total — user requires
+    // ALL classes even at 500 000+ entries.
+    var CHUNK_THRESHOLD = 256 * 1024;    // 256 KB — single event limit
+    var CHUNK_SIZE      = 256 * 1024;    // 256 KB per chunk (fewer events)
 
     function sendMaybeChunked(obj) {
         var json;
@@ -1028,6 +1031,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
             var drained = 0;
             var lastRaw = null;
             var sameCount = 0;
+            var totalInCall = 0;
 
             for (;;) {
                 var raw;
@@ -1038,15 +1042,20 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 }
                 if (!raw) break;
 
-                if (raw === lastRaw) {
+                totalInCall++;
+                // Loop detection: same raw payload repeating MANY times
+                // in one poller call. Only count non-tick commands —
+                // identical ticks are normal and legitimate.
+                var isTick = raw.indexOf("yamgg_tick") !== -1;
+                if (!isTick && raw === lastRaw) {
                     sameCount++;
-                    if (sameCount > 100) {
+                    if (sameCount > 1000) {
                         send({type: "poller_loop_detected",
                               raw: raw.substring(0, 200)});
                         break;
                     }
                 } else {
-                    sameCount = 0;
+                    if (!isTick) sameCount = 0;
                     lastRaw = raw;
                 }
                 drained++;
@@ -1096,9 +1105,20 @@ static const char kBootstrapSrc[] = R"YAMJS(
     }
 
     // Called by C++ tick (queue-driven)
+    var lastTickWarnAt = 0;
     function onTick() {
+        if (lastTickWarnAt === 0) {
+            try { send({type: "tick_first_received"}); } catch (e) {}
+        }
+        lastTickWarnAt = Date.now();
+
         try { pollerOnce(); }
-        catch (e) { send({type:"tick_err", message:"" + e}); }
+        catch (e) { send({type: "tick_err", message: "" + e}); }
+
+        if (!attachDone) {
+            try { tryAttachOnce(); }
+            catch (e) { send({type: "attach_tick_err", message: "" + e}); }
+        }
     }
 
     // ═══════ HOOKS ═══════

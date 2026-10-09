@@ -24,6 +24,32 @@ void ClassBrowser::registerEvents() {
     if (eventsRegistered_) return;
     eventsRegistered_ = true;
 
+    // ─────────────────────────────────────────────────────────────
+    // Chunks: when JS sends a payload > 200 KB, bootstrap splits it
+    // into chunk_begin/data/end. The C++ layer reassembles and calls
+    // our handler with the full JSON. We must integrate BOTH paths.
+    // ─────────────────────────────────────────────────────────────
+    yam::chunks::set_full_handler([this](const std::string& kind,
+                                          const std::string& json) {
+        // Re-dispatch as if it were the original event.
+        auto parsed = yam::JsonValue::parse(json);
+        if (!parsed) return;
+        yam::Event ev;
+        ev.type = kind;
+        ev.data = std::move(parsed.value());
+        ev.timestamp = yam::time_util::now_ms();
+
+        if (kind == "classes_list") {
+            yam::events::dispatch(ev);
+        } else if (kind == "class_probe") {
+            yam::events::dispatch(ev);
+        } else if (kind == "list_own_result" ||
+                   kind == "list_overloads_result" ||
+                   kind == "list_static_fields_result") {
+            yam::events::dispatch(ev);
+        }
+    });
+
     yam::events::on("classes_list", [this](const yam::Event& ev) {
         std::lock_guard<std::mutex> lk(mu_);
         classes_.clear();

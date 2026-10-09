@@ -125,11 +125,12 @@ bool DexLoader::loadEmbeddedDex(JNIEnv* env) {
 jclass DexLoader::findClass(JNIEnv* env, const char* name) {
     if (!env || !name) return nullptr;
 
-    // JNI NewStringUTF has undefined behavior for strings > 64KB, and
-    // class names are typically < 256 chars. Anything above 4KB is
-    // certainly garbage — refuse early rather than crash.
+    // Refuse only truly absurd input. 50 000 chars is an upper bound that
+    // matches the user's explicit requirement (no artificial limits).
+    // JNI NewStringUTF officially handles up to 64 KB in the worst case,
+    // so we stay well under that.
     size_t nameLen = std::strlen(name);
-    if (nameLen == 0 || nameLen > 4096) {
+    if (nameLen == 0 || nameLen > 50000) {
         LOGE("DexLoader::findClass: invalid name length %zu", nameLen);
         return nullptr;
     }

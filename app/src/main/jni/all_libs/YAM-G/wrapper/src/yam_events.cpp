@@ -337,8 +337,20 @@ void handle_data(const Event& ev) {
     std::lock_guard<std::mutex> lk(g_mu);
     auto it = g_sessions.find(id);
     if (it == g_sessions.end()) return;
+
+    // No cap on buffer size — user asked for ALL classes regardless of count.
+    // Memory is bounded only by actual data received from JS, which is
+    // itself bounded by the JVM's loaded-class list.
     it->second.buffer += data;
     it->second.received++;
+
+    // Diagnostic for large transfers (only every 50 chunks to avoid spam).
+    if (it->second.received % 50 == 0) {
+        YAM_LOG_DEBUG() << "chunk session #" << id
+                        << " received " << it->second.received
+                        << "/" << it->second.total
+                        << " (" << it->second.buffer.size() << " bytes)";
+    }
 }
 
 void handle_end(const Event& ev) {
@@ -348,17 +360,22 @@ void handle_end(const Event& ev) {
         std::lock_guard<std::mutex> lk(g_mu);
         auto it = g_sessions.find(id);
         if (it == g_sessions.end()) return;
-        s = it->second;
+        s = std::move(it->second);
         g_sessions.erase(it);
     }
+
+    YAM_LOG_INFO() << "chunk complete #" << id
+                   << " kind=" << s.kind
+                   << " chunks=" << s.received << "/" << s.total
+                   << " bytes=" << s.buffer.size();
+
     std::function<void(const String&, const String&)> cb;
     { std::lock_guard<std::mutex> lk(g_mu); cb = g_full; }
     if (cb) {
         try { cb(s.kind, s.buffer); }
-        catch (const std::exception& e) { YAM_LOG_ERROR() << "chunk cb: " << e.what(); }
-    } else {
-        YAM_LOG_DEBUG() << "chunk complete #" << id << " kind=" << s.kind
-                        << " bytes=" << s.buffer.size();
+        catch (const std::exception& e) {
+            YAM_LOG_ERROR() << "chunk cb (" << s.kind << "): " << e.what();
+        }
     }
 }
 
