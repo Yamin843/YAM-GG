@@ -753,6 +753,10 @@ void Script::dispatch_message(const String& raw, const ByteVector& bytes) {
     if (!MessageParser::parse(raw, m)) {
         m.type = "raw";
         m.payload = raw;
+    } else if (m.payload.empty()) {
+        // The JS side sent a bare event {type:"x", ...} without a payload
+        // wrapper. Keep the full raw JSON so on_message can parse it.
+        m.payload = raw;
     }
     m.data = bytes;
     m.timestamp = time_util::now_ms();

@@ -62,10 +62,15 @@ bool YamBridge::initialize() {
     });
     DBG(">>> [10] eval cb");
 
-    DBG(">>> [11] calling bridge.initialize");
-    auto br = bridge.initialize();
-    DBG(">>> [12] bridge.init ok=%d", (int)br.has_value());
-    if (!br) { DBG(">>> [12b] %s", br.error_message().c_str()); yam::YAM::shutdown(); return false; }
+    DBG(">>> [11] checking bridge.is_ready() — YAM::init already tried");
+    if (!bridge.is_ready()) {
+        DBG(">>> [11b] bridge NOT ready after YAM::init; leaving it up, returning false");
+        // Do NOT call bridge.initialize() again — that reassigns script_ and
+        // triggers the previous Script destructor while callbacks are in flight.
+        #undef DBG
+        return false;
+    }
+    DBG(">>> [12] bridge is ready");
 
     DBG(">>> [13] installEventRouter");
     installEventRouter();

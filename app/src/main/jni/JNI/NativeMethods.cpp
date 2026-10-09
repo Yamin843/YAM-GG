@@ -43,7 +43,6 @@ static const JNINativeMethod g_methods[] = {
     {"nativeOnSurfaceChanged", "(II)V", (void*)impl_nativeOnSurfaceChanged},
     {"nativeOnDrawFrame", "(II)V", (void*)impl_nativeOnDrawFrame},
     {"nativeOnTouch", "(IFFI)V", (void*)impl_nativeOnTouch},
-    {"nativeOnKey", "(II)V", (void*)impl_nativeOnKey},
 };
 
 bool registerNativeMethods(JNIEnv* env, jclass modViewClass) {
