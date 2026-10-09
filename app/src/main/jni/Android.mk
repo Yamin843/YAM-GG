@@ -86,6 +86,8 @@ LOCAL_LDLIBS := \
     -ldl \
     -lz \
     -lm \
+    -lc++_static \
+    -lunwind
 
 LOCAL_STATIC_LIBRARIES := \
     asmjit \

@@ -87,104 +87,117 @@ static void* init_thread(void*) {
         return;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // STEP 1 — Install onResume hook (NO recursion)
-    //          Captured original is called, not this.onResume()
-    // ═══════════════════════════════════════════════════════════════
-    try {
-        Java.performNow(function () {
-            try {
-                var Activity     = Java.use("android.app.Activity");
-                var origOnResume = Activity.onResume;
-
-                Activity.onResume.implementation = function () {
-                    try { origOnResume.call(this); } catch (e) {}
-
-                    try {
-                        var ModView = Java.use("com.yamgg.modview.ModView");
-                        ModView.attach(this);
-                        send({
-                            type: "modview_attached",
-                            className: "" + this.getClass().getName()
-                        });
-                    } catch (e) {
-                        send({ type: "attach_error", message: "" + e });
-                    }
-                };
-                send({ type: "hook_installed" });
-            } catch (e) {
-                send({ type: "hook_error", message: "install: " + e });
+    // ═══════════════════════════════════════════════════════════
+    // STEP 1: Force classFactory.loader via performNow
+    //         (unblocks the bridge's queued perform calls)
+    // ═══════════════════════════════════════════════════════════
+    Java.performNow(function () {
+        try {
+            if (Java.classFactory.loader === null) {
+                var AT  = Java.use("android.app.ActivityThread");
+                var app = AT.currentApplication();
+                if (app !== null) {
+                    Java.classFactory.loader = app.getClassLoader();
+                    send({type:"loader_forced"});
+                } else {
+                    send({type:"loader_pending"});
+                }
+            } else {
+                send({type:"loader_already"});
             }
-        });
-    } catch (e) {
-        send({ type: "hook_outer_error", message: "" + e });
-    }
+        } catch (e) {
+            send({type:"loader_error", message: "" + e});
+        }
+    });
 
-    // ═══════════════════════════════════════════════════════════════
-    // STEP 2 — Attach to CURRENT activity via main thread
-    //          Java.scheduleOnMainThread guarantees UI-thread execution;
-    //          ArrayMap access is safe there.
-    // ═══════════════════════════════════════════════════════════════
-    try {
-        Java.performNow(function () {
-            try {
-                Java.scheduleOnMainThread(function () {
-                    try {
-                        var ActivityThread = Java.use("android.app.ActivityThread");
-                        var at = ActivityThread.currentActivityThread();
-                        if (!at) {
-                            send({ type: "attach_now_info",
-                                   message: "no ActivityThread" });
-                            return;
-                        }
+    // ═══════════════════════════════════════════════════════════
+    // STEP 2: Install onResume hook (fallback for future Activities)
+    //         Must NOT recurse: capture original first.
+    // ═══════════════════════════════════════════════════════════
+    Java.performNow(function () {
+        try {
+            var Activity     = Java.use("android.app.Activity");
+            var origOnResume = Activity.onResume;
+            Activity.onResume.implementation = function () {
+                origOnResume.call(this);
+                try {
+                    var ModView = Java.use("com.yamgg.modview.ModView");
+                    ModView.attach(this);
+                    send({type:"modview_attached",
+                          className: "" + this.getClass().getName()});
+                } catch (e) {
+                    send({type:"attach_error", message: "" + e});
+                }
+            };
+            send({type:"hook_installed"});
+        } catch (e) {
+            send({type:"hook_error", message: "install: " + e});
+        }
+    });
 
-                        var mActivities = at.mActivities.value;
-                        if (!mActivities) {
-                            send({ type: "attach_now_info",
-                                   message: "no mActivities" });
-                            return;
-                        }
+    // ═══════════════════════════════════════════════════════════
+    // STEP 3: Attach to CURRENT activity — via scheduleOnMainThread
+    //         (this runs on UI thread, safe for ArrayMap access)
+    // ═══════════════════════════════════════════════════════════
+    Java.performNow(function () {
+        try {
+            Java.scheduleOnMainThread(function () {
+                try {
+                    var AT = Java.use("android.app.ActivityThread");
+                    var at = AT.currentActivityThread();
+                    if (at === null) {
+                        send({type:"attach_now_info", message:"no ActivityThread"});
+                        return;
+                    }
 
-                        var n = mActivities.size();
-                        for (var i = 0; i < n; i++) {
+                    var recs = at.mActivities.value;
+                    if (recs === null) {
+                        send({type:"attach_now_info", message:"no mActivities"});
+                        return;
+                    }
+
+                    var n = recs.size();
+                    var attached = false;
+
+                    for (var i = 0; i < n; i++) {
+                        try {
+                            var rec = recs.valueAt(i);
+                            if (!rec) continue;
+
+                            var act = null;
+                            try { act = rec.activity.value; } catch (e) { continue; }
+                            if (act === null) continue;
+
                             try {
-                                var rec = mActivities.valueAt(i);
-                                if (!rec) continue;
+                                if (act.isFinishing()) continue;
+                            } catch (e) {}
 
-                                var act = null;
-                                try { act = rec.activity.value; } catch (e) { continue; }
-                                if (!act) continue;
-
-                                try { if (act.isFinishing()) continue; } catch (e) {}
-
-                                var ModView = Java.use("com.yamgg.modview.ModView");
-                                ModView.attach(act);
-                                send({
-                                    type: "attach_now_ok",
-                                    className: "" + act.getClass().getName(),
-                                    index: i
-                                });
-                                return;
-                            } catch (e) {
-                                send({
-                                    type: "attach_now_skip",
-                                    index: i,
-                                    message: "" + e
-                                });
-                            }
+                            var ModView = Java.use("com.yamgg.modview.ModView");
+                            ModView.attach(act);
+                            send({
+                                type: "attach_now_ok",
+                                className: "" + act.getClass().getName(),
+                                index: i
+                            });
+                            attached = true;
+                            break;
+                        } catch (e) {
+                            send({type:"attach_now_skip",
+                                  index: i, message: "" + e});
                         }
-                        send({ type: "attach_now_none" });
-                    } catch (e) {
-                        send({ type: "attach_now_error", message: "" + e });
                     }
-                });
-            } catch (e) {
-                send({ type: "attach_now_outer", message: "" + e });
-            }
-        });
-    } catch (e) {
-        send({ type: "attach_outer_error", message: "" + e });
-    }
+
+                    if (!attached) {
+                        send({type:"attach_now_none"});
+                    }
+                } catch (e) {
+                    send({type:"attach_now_error", message: "" + e});
+                }
+            });
+        } catch (e) {
+            send({type:"attach_now_outer", message: "" + e});
+        }
+    });
 })();
 )JS";
 
