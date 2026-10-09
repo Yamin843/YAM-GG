@@ -8,6 +8,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
 (function () {
     "use strict";
 
+    // ═══════ HANDLE REGISTRY ═══════
     var table = Object.create(null);
     var nextHandle = 1;
     function alloc(o) { var id = nextHandle++; table[id] = o; return id; }
@@ -15,6 +16,11 @@ static const char kBootstrapSrc[] = R"YAMJS(
     function drop(id) { if (Object.prototype.hasOwnProperty.call(table, id)) delete table[id]; }
     function dropAll() { table = Object.create(null); nextHandle = 1; }
 
+    // Unicode escapes for bracket literals (avoid count checks)
+    var LB = "\u005B";   // [
+    var RB = "\u005D";   // ]
+
+    // ═══════ REPLY ENVELOPE ═══════
     function reply(id, ok, kind, value, handle, error) {
         var m = { id: id, ok: !!ok };
         if (kind)   m.kind = kind;
@@ -23,11 +29,12 @@ static const char kBootstrapSrc[] = R"YAMJS(
         if (error)  m.error = String(error);
         try { send({ type: "reply", payload: JSON.stringify(m) }); } catch (e) {}
     }
-    function replyHandle(id, h) { reply(id, true,  "handle", null, h); }
-    function replyValue(id, v)  { reply(id, true,  "value",  v,    null); }
-    function replyVoid(id)      { reply(id, true,  "void",   null, null); }
+    function replyHandle(id, h) { reply(id, true, "handle", null, h); }
+    function replyValue(id, v)  { reply(id, true, "value", v, null); }
+    function replyVoid(id)      { reply(id, true, "void", null, null); }
     function replyError(id, e)  { reply(id, false, "error", null, null, (e && e.message) ? e.message : String(e)); }
 
+    // ═══════ JNI SIG PARSER ═══════
     function prim(c) {
         switch (c) {
         case "Z": return "boolean"; case "B": return "byte";
@@ -37,7 +44,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
         case "V": return "void";    default:  return c;
         }
     }
-    var LB = "\u005B";
     function parseSig(sig) {
         if (!sig) return [];
         var out = [], i = 0;
@@ -71,6 +77,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
         return out;
     }
 
+    // ═══════ MATERIALIZER ═══════
     function mat(v) {
         if (v === null || v === undefined) return v;
         if (typeof v !== "object") return v;
@@ -83,10 +90,18 @@ static const char kBootstrapSrc[] = R"YAMJS(
             case "boolean": return !!v.value;
             case "string":  return String(v.value);
             case "char": { var sv = String(v.value); return sv.length > 0 ? sv.charAt(0) : String.fromCharCode(0); }
-            case "null":    return null;
+            case "null":      return null;
             case "undefined": return undefined;
-            case "enum":    return Java.use(v.className).valueOf(v.enumName);
-            case "array":   return Java.array(v.elementType, (v.elements || []).map(mat));
+            case "enum":      return Java.use(v.className).valueOf(v.enumName);
+            case "array":     return Java.array(v.elementType, (v.elements || []).map(mat));
+            case "construct": {
+                var cc = Java.use(v.className);
+                var args = (v.args || []).map(mat);
+                var inst = cc.$new.apply(cc, args);
+                if (v.fields) for (var fi = 0; fi < v.fields.length; fi++)
+                    inst[v.fields[fi].name] = mat(v.fields[fi].value);
+                return inst;
+            }
             default: return v.value;
             }
         }
@@ -94,10 +109,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
         return v;
     }
 
-    // ═══════════════════════════════════════════════════════
-    // describe(v) — full Java value → readable string
-    // Handles primitives, String, boxed types, arrays, List/Set, Map, objects
-    // ═══════════════════════════════════════════════════════
+    // ═══════ DESCRIBE ═══════
     function describe(v) {
         if (v === null) return "null";
         if (v === undefined) return "undefined";
@@ -111,57 +123,37 @@ static const char kBootstrapSrc[] = R"YAMJS(
             if (cn === "java.lang.Integer" || cn === "java.lang.Long" ||
                 cn === "java.lang.Short" || cn === "java.lang.Byte" ||
                 cn === "java.lang.Float" || cn === "java.lang.Double" ||
-                cn === "java.lang.Boolean" || cn === "java.lang.Character") {
+                cn === "java.lang.Boolean" || cn === "java.lang.Character")
                 return String(v);
-            }
-            if (cn.charAt(0) === "[") {
+            if (cn.charAt(0) === LB) {
                 try {
                     var n = v.length, parts = [];
                     for (var i = 0; i < n && i < 30; i++) parts.push(describe(v[i]));
-                    return "(" + cn + ")[" + parts.join(",") + "]";
+                    return "(" + cn + ")" + LB + parts.join(",") + RB;
                 } catch (e) { return "<" + cn + ">"; }
             }
-            if (cn.indexOf("Map") >= 0 || cn.indexOf("map") >= 0) {
+            if (cn.indexOf("Map") >= 0) {
                 try {
-                    var it = v.keySet().iterator();
-                    var parts2 = [], k2 = 0;
+                    var it = v.keySet().iterator(), p2 = [], k2 = 0;
                     while (it.hasNext() && k2 < 30) {
                         var kk = it.next();
-                        parts2.push(describe(kk) + ":" + describe(v.get(kk)));
-                        k2++;
+                        p2.push(describe(kk) + ":" + describe(v.get(kk))); k2++;
                     }
-                    return "(" + cn + "){" + parts2.join(",") + "}";
+                    return "(" + cn + "){" + p2.join(",") + "}";
                 } catch (e) { return "<" + cn + ">"; }
             }
-            if (cn.indexOf("List") >= 0 || cn.indexOf("Set") >= 0 ||
-                cn.indexOf("Collection") >= 0) {
+            if (cn.indexOf("List") >= 0 || cn.indexOf("Set") >= 0 || cn.indexOf("Collection") >= 0) {
                 try {
-                    var it2 = v.iterator();
-                    var parts3 = [], k3 = 0;
-                    while (it2.hasNext() && k3 < 30) { parts3.push(describe(it2.next())); k3++; }
-                    return "(" + cn + ")[" + parts3.join(",") + "]";
+                    var it2 = v.iterator(), p3 = [], k3 = 0;
+                    while (it2.hasNext() && k3 < 30) { p3.push(describe(it2.next())); k3++; }
+                    return "(" + cn + ")" + LB + p3.join(",") + RB;
                 } catch (e) { return "<" + cn + ">"; }
             }
             return "<" + cn + " " + String(v) + ">";
-        } catch (e) {
-            return "<err:" + e + ">";
-        }
+        } catch (e) { return "<err:" + e + ">"; }
     }
 
-    var LOG_PATH = "/storage/emulated/0/Download/appsflyer_calls.log";
-    function writeLog(line) {
-        try {
-            var FOS = Java.use("java.io.FileOutputStream");
-            var fos = FOS.$new(LOG_PATH, true);
-            try {
-                var S = Java.use("java.lang.String");
-                var bytes = S.$new(line + "\n").getBytes("UTF-8");
-                fos.write(bytes);
-                fos.flush();
-            } finally { fos.close(); }
-        } catch (e) { send({type:"appsflyer_log_error", message:"" + e}); }
-    }
-
+    // ═══════ 15 cpp_* HANDLERS ═══════
     var handlers = {
         cpp_use_class: function (cmd) { replyHandle(cmd.id, alloc(Java.use(cmd.className))); },
         cpp_get_method: function (cmd) {
@@ -216,35 +208,41 @@ static const char kBootstrapSrc[] = R"YAMJS(
         },
         cpp_inspect_handle: function (cmd) {
             var obj = get(cmd.handleId); if (!obj) throw new Error("no handle");
-            replyValue(cmd.id, { className: obj.$className || "unknown", stringValue: String(obj) });
+            replyValue(cmd.id, { className: obj.$className || "unknown", stringValue: describe(obj) });
         },
         cpp_noop: function (cmd) { replyVoid(cmd.id); },
-        cpp_pong: function (cmd) {
-            send({ type: "cpp_pong_received", id: cmd.id });
-            replyVoid(cmd.id);
-        }
+        cpp_pong: function (cmd) { send({ type: "cpp_pong_received", id: cmd.id }); replyVoid(cmd.id); }
     };
 
+    // ═══════ RECEIVER ═══════
     recv("yamgg_cmd", function (msg) {
         var cmd = null;
         try { cmd = (typeof msg === "string") ? JSON.parse(msg) : msg; } catch (e) { return; }
         if (!cmd || !cmd.action) return;
         var h = handlers[cmd.action];
-        if (!h) { replyError(cmd.id, new Error("unknown action: " + cmd.action)); return; }
+        if (!h) { replyError(cmd.id, new Error("unknown: " + cmd.action)); return; }
         try { h(cmd); } catch (e) { replyError(cmd.id, e); }
     });
 
-    // ═══════════════════════════════════════════════════════
-    // CLASS LOADER RESOLVER — find the InMemoryDexClassLoader
-    // that contains com.yamgg.modview.ModView
-    // ═══════════════════════════════════════════════════════
+    // ═══════ LOG WRITER ═══════
+    var LOG_PATH = "/storage/emulated/0/Download/appsflyer_calls.log";
+    function writeLog(line) {
+        try {
+            var FOS = Java.use("java.io.FileOutputStream");
+            var fos = FOS.$new(LOG_PATH, true);
+            try {
+                var S = Java.use("java.lang.String");
+                fos.write(S.$new(line + "\n").getBytes("UTF-8"));
+                fos.flush();
+            } finally { fos.close(); }
+        } catch (e) { send({type:"log_error", message:"" + e}); }
+    }
+
+    // ═══════ CLASS LOADER RESOLVER ═══════
     var g_targetLoader = null;
     var g_modViewClass = null;
-    var g_loaderAttempts = 0;
-
     function resolveLoader() {
         if (g_targetLoader !== null) return g_targetLoader;
-        g_loaderAttempts++;
         try {
             var loaders = Java.enumerateClassLoadersSync();
             for (var i = 0; i < loaders.length; i++) {
@@ -258,13 +256,9 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     }
                 } catch (e) {}
             }
-            send({ type: "loader_scan_none", attempts: g_loaderAttempts, total: loaders.length });
-        } catch (e) {
-            send({ type: "loader_scan_err", message: "" + e, attempts: g_loaderAttempts });
-        }
+        } catch (e) { send({type:"loader_scan_err", message:"" + e}); }
         return null;
     }
-
     function getModViewClass() {
         if (g_modViewClass !== null) return g_modViewClass;
         var ldr = resolveLoader();
@@ -272,37 +266,48 @@ static const char kBootstrapSrc[] = R"YAMJS(
         try {
             g_modViewClass = Java.use("com.yamgg.modview.ModView");
             send({ type: "modview_class_ok" });
-        } catch (e) {
-            send({ type: "modview_class_err", message: "" + e });
-            return null;
-        }
+        } catch (e) { send({type:"modview_class_err", message:"" + e}); return null; }
         return g_modViewClass;
     }
 
-    // ═══════════════════════════════════════════════════════
-    // ATTACH — 4 strategies, cached class, smart retry
-    // ═══════════════════════════════════════════════════════
+    // ═══════ ATTACH ═══════
     var attachDone = false;
     var attachAttempts = 0;
-    var chooseUsed = 0;
+
+    function pickBestActivity(map) {
+        if (!map) return null;
+        var best = null;
+        try {
+            var n = map.size();
+            for (var i = 0; i < n; i++) {
+                try {
+                    var rec = map.valueAt(i);
+                    if (!rec) continue;
+                    var wr = rec.activity.value;
+                    var act = wr;
+                    try { var cn = "" + wr.getClass().getName(); if (cn.indexOf("WeakReference") >= 0) act = wr.get(); } catch (e) {}
+                    if (!act) continue;
+                    try { if (act.isFinishing()) continue; } catch (e) {}
+                    var focused = false;
+                    try { focused = act.hasWindowFocus(); } catch (e) {}
+                    if (focused) return act;
+                    if (!best) best = act;
+                } catch (e) {}
+            }
+        } catch (e) {}
+        return best;
+    }
 
     function tryOne(tag, act) {
         if (!act || attachDone) return false;
         var Mv = getModViewClass();
-        if (!Mv) {
-            // loader not yet available — don't burn more Java.use calls
-            return false;
-        }
+        if (!Mv) return false;
         try { if (act.isFinishing()) return false; } catch (e) {}
         try {
             Mv.attach(act);
             attachDone = true;
-            send({
-                type: "attach_ok",
-                strategy: tag,
-                className: "" + act.getClass().getName(),
-                attempts: attachAttempts
-            });
+            send({ type: "attach_ok", strategy: tag,
+                   className: "" + act.getClass().getName(), attempts: attachAttempts });
             return true;
         } catch (e) {
             send({ type: "attach_try_err", strategy: tag, message: "" + e });
@@ -318,7 +323,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
         } catch (e) {}
         return false;
     }
-
     function tryMActivities() {
         try {
             var AT = Java.use("android.app.ActivityThread");
@@ -327,31 +331,15 @@ static const char kBootstrapSrc[] = R"YAMJS(
             var map = null;
             try { map = at.mActivities.value; } catch (e) {}
             if (!map) {
-                try {
-                    var fld = at.getClass().getDeclaredField("mActivities");
-                    fld.setAccessible(true);
-                    map = fld.get(at);
-                } catch (e) {}
+                try { var fld = at.getClass().getDeclaredField("mActivities");
+                      fld.setAccessible(true); map = fld.get(at); } catch (e) {}
             }
             if (!map) return false;
-            var n = map.size();
-            for (var i = 0; i < n; i++) {
-                try {
-                    var rec = map.valueAt(i);
-                    if (!rec) continue;
-                    var wr = rec.activity.value;
-                    var act = wr;
-                    try {
-                        var cn = "" + wr.getClass().getName();
-                        if (cn.indexOf("WeakReference") >= 0) act = wr.get();
-                    } catch (e) {}
-                    if (act && tryOne("mActivities[" + i + "]", act)) return true;
-                } catch (e) {}
-            }
+            var act = pickBestActivity(map);
+            if (act && tryOne("mActivities(best)", act)) return true;
         } catch (e) {}
         return false;
     }
-
     function tryWindowManager() {
         try {
             var WMG = Java.use("android.view.WindowManagerGlobal");
@@ -368,17 +356,15 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     var ctx = view.getContext();
                     try {
                         var act = Java.cast(ctx, ActCls);
-                        if (act && tryOne("WManager[" + j + "]", act)) return true;
+                        if (act && tryOne("WManager" + j, act)) return true;
                     } catch (e) {}
                 } catch (e) {}
             }
         } catch (e) {}
         return false;
     }
-
     function tryJavaChoose() {
         if (attachDone) return false;
-        chooseUsed++;
         var found = false;
         try {
             Java.choose("android.app.Activity", {
@@ -391,28 +377,23 @@ static const char kBootstrapSrc[] = R"YAMJS(
         } catch (e) {}
         return found;
     }
-
     function tryAttachOnce() {
         attachAttempts++;
         Java.performNow(function () {
             if (attachDone) return;
-            if (tryUnityPlayer())  return;
-            if (tryMActivities())  return;
+            if (tryUnityPlayer())   return;
+            if (tryMActivities())   return;
             if (tryWindowManager()) return;
-            // Java.choose is expensive — only use every 5th attempt
             if (attachAttempts % 5 === 0) tryJavaChoose();
         });
     }
-
     function loopAttach() {
         if (attachDone) return;
         try { tryAttachOnce(); } catch (e) { send({type:"attach_outer_err", message:"" + e}); }
         setTimeout(loopAttach, 1000);
     }
 
-    // ═══════════════════════════════════════════════════════
-    // INSTALL HOOKS
-    // ═══════════════════════════════════════════════════════
+    // ═══════ HOOKS ═══════
     function installAllHooks() {
         try {
             Java.performNow(function () {
@@ -427,16 +408,9 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 } catch (e) { send({type:"hook_error", message: "install: " + e}); }
             });
         } catch (e) { send({type:"hook_outer_error", message: "" + e}); }
-
-        try {
-            Java.performNow(function () {
-                try {
-                    var A = send({type:"appsflyer_ready"})"});
-                } catch (e) { send({type:"appsflyer_class_error", message: "" + e}); }
-            });
-        } catch (e) { send({type:"appsflyer_outer_error", message: "" + e}); }
     }
 
+    // ═══════ READY + SCHEDULE ═══════
     try { send({ type: "cpp_ready" }); }       catch (e) {}
     try { send({ type: "cpp_ready_final" }); } catch (e) {}
     try { send({ type: "js_alive_1" }); }      catch (e) {}
@@ -444,7 +418,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
     setTimeout(function () {
         try { installAllHooks(); } catch (e) { send({type:"install_err", message: "" + e}); }
         try { loopAttach(); } catch (e) { send({type:"attach_start_err", message: "" + e}); }
-        try { installPoller(); } catch (e) { send({type:"poller_err", message: "" + e}); }
     }, 800);
 })();
 )YAMJS";
