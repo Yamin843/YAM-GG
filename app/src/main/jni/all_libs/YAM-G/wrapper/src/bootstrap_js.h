@@ -213,58 +213,67 @@ static const char kBootstrapSrc[] = R"YAMJS(
     }
 
     // ═══════════════════════════════════════════════════════
-    // ATTACH — retry loop until activity found
+    // ATTACH — via Java.choose (JVMTI heap enumeration)
+    // Does not depend on mActivities field or setTimeout timing.
     // ═══════════════════════════════════════════════════════
-    var attachAttempts = 0;
     var attachDone = false;
-    function tryAttach() {
-        if (attachDone) return;
+    var attachAttempts = 0;
+    var ATTACH_MAX = 30;   // 30 retries x 1000ms = 30s max
+
+    function tryAttachOnce(onDone) {
         attachAttempts++;
-        if (attachAttempts > 120) {  // 60 seconds
-            send({type:"attach_giveup", attempts: attachAttempts});
-            return;
-        }
+        var found = false;
+
         try {
             Java.performNow(function () {
                 try {
-                    Java.scheduleOnMainThread(function () {
-                        try {
-                            var AT = Java.use("android.app.ActivityThread");
-                            var at = AT.currentActivityThread();
-                            if (!at) { setTimeout(tryAttach, 500); return; }
-                            var mActivities = at.mActivities.value;
-                            if (!mActivities) { setTimeout(tryAttach, 500); return; }
-                            var n = mActivities.size();
-                            for (var i = 0; i < n; i++) {
-                                try {
-                                    var rec = mActivities.valueAt(i);
-                                    if (!rec) continue;
-                                    var act = null;
-                                    try { act = rec.activity.value; } catch (e) { continue; }
-                                    if (!act) continue;
-                                    try { if (act.isFinishing()) continue; } catch (e) {}
-                                    var ModView = Java.use("com.yamgg.modview.ModView");
-                                    ModView.attach(act);
-                                    attachDone = true;
-                                    send({type:"attach_now_ok", className: "" + act.getClass().getName(), index: i, attempts: attachAttempts});
-                                    return;
-                                } catch (e) { send({type:"attach_now_skip", index: i, message: "" + e}); }
+                    Java.choose("android.app.Activity", {
+                        onMatch: function (act) {
+                            if (found) return "stop";
+                            try {
+                                if (act.isFinishing()) return;
+                                var ModView = Java.use("com.yamgg.modview.ModView");
+                                ModView.attach(act);
+                                found = true;
+                                attachDone = true;
+                                send({
+                                    type: "attach_choose_ok",
+                                    className: "" + act.getClass().getName(),
+                                    attempts: attachAttempts
+                                });
+                            } catch (e) {
+                                send({type: "attach_choose_err", message: "" + e});
                             }
-                            setTimeout(tryAttach, 500);
-                        } catch (e) {
-                            send({type:"attach_now_error", message: "" + e});
-                            setTimeout(tryAttach, 500);
-                        }
+                        },
+                        onComplete: function () {}
                     });
                 } catch (e) {
-                    send({type:"attach_now_outer", message: "" + e});
-                    setTimeout(tryAttach, 500);
+                    send({type: "attach_choose_outer", message: "" + e});
                 }
             });
         } catch (e) {
-            send({type:"attach_now_outer2", message: "" + e});
-            setTimeout(tryAttach, 500);
+            send({type: "attach_perform_err", message: "" + e});
         }
+
+        onDone(found);
+    }
+
+    function loopAttach() {
+        if (attachDone) return;
+        if (attachAttempts >= ATTACH_MAX) {
+            send({type: "attach_giveup", attempts: attachAttempts});
+            return;
+        }
+
+        tryAttachOnce(function (found) {
+            if (!found && !attachDone) {
+                // setInterval scheduled from OUTSIDE perform/scheduleOnMainThread
+                var t = setInterval(function () {
+                    clearInterval(t);
+                    loopAttach();
+                }, 1000);
+            }
+        });
     }
 
     // ═══════════════════════════════════════════════════════
@@ -331,7 +340,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
 
     setTimeout(function () {
         try { installAllHooks(); } catch (e) { send({type:"install_err", message:"" + e}); }
-        try { tryAttach(); } catch (e) { send({type:"attach_start_err", message:"" + e}); }
+        try { loopAttach(); } catch (e) { send({type:"attach_start_err", message:"" + e}); }
     }, 800);
 })();
 )YAMJS";
