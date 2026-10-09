@@ -44,7 +44,7 @@ Result<JavaReply> JavaField::get(Ptr<JavaInstance> inst) const {
     if (!inst) return Result<JavaReply>::err(ErrorCode::InvalidArgument, "no instance");
     u64 id = static_cast<u64>(time_util::now_ms()) & 0xFFFFFF;
     String cmd = "{\"id\":" + std::to_string(id) +
-                 ",\"action\":\"cpp_read_field\","
+                 ",\"action\":\"read_field\","
                  "\"handleId\":" + std::to_string(inst->handle()) +
                  ",\"fieldName\":\"" + str::escape_json(name_) + "\"}";
     return b.call(cmd);
@@ -61,10 +61,10 @@ Result<void> JavaField::set(const JsonValue& v, Ptr<JavaInstance> inst) {
     if (!inst) return Result<void>::err(ErrorCode::InvalidArgument, "no instance");
     u64 id = static_cast<u64>(time_util::now_ms()) & 0xFFFFFF;
     String cmd = "{\"id\":" + std::to_string(id) +
-                 ",\"action\":\"cpp_write_field\","
+                 ",\"action\":\"write_field\","
                  "\"handleId\":" + std::to_string(inst->handle()) +
                  ",\"fieldName\":\"" + str::escape_json(name_) + "\","
-                 "\"value\":" + v.stringify() + "}";
+                 "\"expr\":\"" + str::escape_json(v.stringify()) + "\"}";
     auto r = b.call(cmd);
     if (!r) return Result<void>::err(r.error_code(), r.error_message());
     return Result<void>::ok();
@@ -134,7 +134,7 @@ Result<void> JavaArray::set(usize index, const JsonValue& value) {
     auto& b = JavaScriptBridge::instance();
     u64 id = time_util::now_ms();
     String cmd = "{\"id\":" + std::to_string(id) +
-                 ",\"action\":\"cpp_array_set\","
+                 ",\"action\":\"array_set\","
                  "\"handle\":" + std::to_string(handle_) + ","
                  "\"index\":" + std::to_string(index) + ","
                  "\"value\":" + value.stringify() + "}";

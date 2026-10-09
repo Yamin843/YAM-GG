@@ -168,13 +168,6 @@ void Renderer::onChar(unsigned int codepoint) {
     charQueue_.push_back(codepoint);
 }
 
-void Renderer::onScroll(float dx, float dy) {
-    std::lock_guard<std::mutex> lk(mu_);
-    if (!initialized_.load()) return;
-    ImGuiIO& io = ImGui::GetIO();
-    io.AddMouseWheelEvent(dx, dy);
-}
-
 void Renderer::shutdown() {
     std::lock_guard<std::mutex> lk(mu_);
     if (!initialized_.load()) return;

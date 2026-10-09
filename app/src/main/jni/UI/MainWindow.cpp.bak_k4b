@@ -163,34 +163,36 @@ void MainWindow::drawMainWindow() {
     }
 
     // ───────────────────────────────────────────────────────────────
-    // زر التصغير YG — دائرة ذهبية صغيرة في الزاوية العلوية اليمنى
-    // نستخدم SetCursorScreenPos + Button مباشرة.
+    // زر التصغير YG — دائرة ذهبية في الزاوية العلوية اليمنى
     // ───────────────────────────────────────────────────────────────
     {
-        ImVec2 wpos  = ImGui::GetWindowPos();
+        ImVec2 wpos = ImGui::GetWindowPos();
         ImVec2 wsize = ImGui::GetWindowSize();
-        const float sz = 36.0f;
-        const float mg = 8.0f;
-        ImVec2 btnPos(wpos.x + wsize.x - sz - mg, wpos.y + mg);
+        const float btnSize = 38.0f;
+        const float margin = 8.0f;
+        ImVec2 btnPos(wpos.x + wsize.x - btnSize - margin,
+                      wpos.y + margin);
 
-        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.85f, 0.65f, 0.00f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.00f, 0.80f, 0.15f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1.00f, 0.90f, 0.30f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.02f, 0.02f, 0.02f, 1.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, sz * 0.5f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Button,
+            ImVec4(0.85f, 0.65f, 0.00f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+            ImVec4(1.00f, 0.80f, 0.15f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+            ImVec4(1.00f, 0.90f, 0.30f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text,
+            ImVec4(0.02f, 0.02f, 0.02f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, btnSize * 0.5f);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
 
         ImGui::SetCursorScreenPos(btnPos);
-        ImGui::PushID("YG_minimize_btn_v2");
-        if (ImGui::Button("YG", ImVec2(sz, sz))) {
+        ImGui::PushID("YG_minimize_btn");
+        if (ImGui::Button("YG", ImVec2(btnSize, btnSize))) {
             impl_->lastFullPos  = wpos;
             impl_->lastFullSize = wsize;
             impl_->minimized = true;
         }
         ImGui::PopID();
-
-        ImGui::PopStyleVar(3);
+        ImGui::PopStyleVar(2);
         ImGui::PopStyleColor(4);
     }
 
@@ -241,9 +243,44 @@ void MainWindow::drawMainWindow() {
         ImVec2 wSize = ImGui::GetWindowSize();
         const float edge = 28.0f;   // border zone width
 
+        // ─── السحب من الشريط الجانبي بالكامل ───
+        // Sidebar occupies [wPos.x, wPos.x + 110] × [wPos.y+edge, wPos.y+wSize.y-edge]
+        // (احترس من منطقة العنوان العلوية 40px وزر YG)
+        {
+            const float sidebarW = 110.0f;
+            const float titleH   = 40.0f;
+            ImVec2 dragOrigin(wPos.x, wPos.y + edge);
+            ImVec2 dragSize(sidebarW, wSize.y - 2*edge - titleH);
 
+            if (dragSize.x > 10.0f && dragSize.y > 10.0f) {
+                ImGui::SetCursorScreenPos(dragOrigin);
+                ImGui::InvisibleButton("##zsidebar_drag",
+                    dragSize, ImGuiButtonFlags_MouseButtonLeft);
+                if (ImGui::IsItemActive()) {
+                    ImVec2 d = ImGui::GetIO().MouseDelta;
+                    ImGui::SetWindowPos(ImVec2(wPos.x + d.x, wPos.y + d.y));
+                }
+            }
+        }
 
+        // ─── السحب من شريط العنوان (بين الشريط الجانبي وزر YG) ───
+        {
+            const float sidebarW = 110.0f;
+            const float btnAreaW = 60.0f;
+            const float titleH   = 32.0f;
+            ImVec2 barOrigin(wPos.x + sidebarW + edge,
+                             wPos.y + 4);
+            ImVec2 barSize(wSize.x - sidebarW - btnAreaW - 2*edge, titleH);
 
+            if (barSize.x > 10.0f && barSize.y > 4.0f) {
+                ImGui::SetCursorScreenPos(barOrigin);
+                ImGui::InvisibleButton("##ztitle_drag",
+                    barSize, ImGuiButtonFlags_MouseButtonLeft);
+                if (ImGui::IsItemActive()) {
+                    ImVec2 d = ImGui::GetIO().MouseDelta;
+                    ImGui::SetWindowPos(ImVec2(wPos.x + d.x, wPos.y + d.y));
+                }
+            }
         }
 
         // Top edge → move window (يبقى كما هو)
@@ -306,34 +343,6 @@ void MainWindow::drawMainWindow() {
             ImGui::SetWindowSize(ImVec2(nw, nh));
         }
     }
-
-    // ───────────────────────────────────────────────────────────────
-    // السحب الموحّد — من أي مكان فارغ داخل النافذة
-    // (شريط جانبي، منطقة محتوى، إلخ) باستخدام IsAnyItemActive.
-    // ───────────────────────────────────────────────────────────────
-    if (!impl_->fullscreen) {
-        bool hovered = ImGui::IsWindowHovered(
-            ImGuiHoveredFlags_ChildWindows
-            | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
-            && hovered
-            && !ImGui::IsAnyItemActive()) {
-            impl_->windowDragging = true;
-            impl_->dragStartMouse = ImGui::GetIO().MousePos;
-            impl_->dragStartWindow = ImGui::GetWindowPos();
-        }
-        if (impl_->windowDragging) {
-            if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                ImVec2 d(ImGui::GetIO().MousePos.x - impl_->dragStartMouse.x,
-                         ImGui::GetIO().MousePos.y - impl_->dragStartMouse.y);
-                ImGui::SetWindowPos(ImVec2(impl_->dragStartWindow.x + d.x,
-                                           impl_->dragStartWindow.y + d.y));
-            } else {
-                impl_->windowDragging = false;
-            }
-        }
-    }
-
     ImGui::End();
 }
 

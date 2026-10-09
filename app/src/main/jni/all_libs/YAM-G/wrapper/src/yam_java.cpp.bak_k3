@@ -241,7 +241,7 @@ void JavaScriptBridge::on_event_json(const JsonValue& ev) {
 
     // ─── C→JS round-trip test (verifies Script::post channel works) ───
     if (type == "js_alive_1") {
-        YAM_LOG_DEBUG() << "js_alive_1 received";
+        YAM_LOG_INFO() << "js_alive_1 received from JS — sending cpp_pong back";
         if (script_) {
             String reply = "{\"type\":\"yamgg_cmd\",\"payload\":"
                            "{\"action\":\"cpp_pong\",\"id\":777}}";
@@ -251,7 +251,7 @@ void JavaScriptBridge::on_event_json(const JsonValue& ev) {
     }
 
     if (type == "cpp_pong_received") {
-        YAM_LOG_DEBUG() << "cpp_pong_received";
+        YAM_LOG_INFO() << ">>> C→JS ROUND-TRIP OK (cpp_pong_received from JS)";
         return;
     }
     if (type == "cpp_error") {
@@ -663,11 +663,11 @@ Result<void> JavaScriptBridge::deopt_method(u64) {
 }
 Result<JavaReply> JavaScriptBridge::list_own(const String& c) {
     u64 id = next_id_.fetch_add(1);
-    return call(cmd_head(id, "cpp_list_own") + js("className", c) + "}");
+    return call(cmd_head(id, "list_own") + js("className", c) + "}");
 }
 Result<JavaReply> JavaScriptBridge::list_overloads(const String& c, const String& m) {
     u64 id = next_id_.fetch_add(1);
-    String cmd = cmd_head(id, "cpp_list_overloads");
+    String cmd = cmd_head(id, "list_overloads");
     cmd += js("className", c); cmd += js("methodName", m);
     cmd += "}";
     return call(cmd);
@@ -685,7 +685,7 @@ Result<void> JavaScriptBridge::build_template(const String& c, const String& m, 
 }
 Result<JavaReply> JavaScriptBridge::probe_class(const String& c) {
     u64 id = next_id_.fetch_add(1);
-    return call(cmd_head(id, "cpp_probe_class") + js("className", c) + "}");
+    return call(cmd_head(id, "probe_class") + js("className", c) + "}");
 }
 Result<void> JavaScriptBridge::inspect_class(u64) {
     u64 id = next_id_.fetch_add(1);
@@ -693,43 +693,36 @@ Result<void> JavaScriptBridge::inspect_class(u64) {
 }
 Result<void> JavaScriptBridge::read_field(u64 h, const String& f) {
     u64 id = next_id_.fetch_add(1);
-    String cmd = cmd_head(id, "cpp_read_field");
+    String cmd = cmd_head(id, "read_field");
     cmd += jn("handleId", static_cast<i64>(h)); cmd += js("fieldName", f);
     cmd += "}";
-    auto r = call(cmd);
-    if (!r) return Result<void>::err(r.error_code(), r.error_message());
-    return Result<void>::ok();
+    return send(cmd);
 }
 Result<void> JavaScriptBridge::write_field(u64 h, const String& f, const String& e) {
     u64 id = next_id_.fetch_add(1);
-    String cmd = cmd_head(id, "cpp_write_field");
+    String cmd = cmd_head(id, "write_field");
     cmd += jn("handleId", static_cast<i64>(h)); cmd += js("fieldName", f);
-    cmd += jr("value", e.empty() ? "null" : e);
+    cmd += js("expr", e);
     cmd += "}";
-    auto r = call(cmd);
-    if (!r) return Result<void>::err(r.error_code(), r.error_message());
-    return Result<void>::ok();
+    return send(cmd);
 }
 Result<JavaReply> JavaScriptBridge::read_static(const String& c, const String& f) {
     u64 id = next_id_.fetch_add(1);
-    String cmd = cmd_head(id, "cpp_read_static");
+    String cmd = cmd_head(id, "read_static");
     cmd += js("className", c); cmd += js("fieldName", f);
     cmd += "}";
     return call(cmd);
 }
 Result<void> JavaScriptBridge::write_static(const String& c, const String& f, const String& e) {
     u64 id = next_id_.fetch_add(1);
-    String cmd = cmd_head(id, "cpp_write_static");
-    cmd += js("className", c); cmd += js("fieldName", f);
-    cmd += jr("value", e.empty() ? "null" : e);
+    String cmd = cmd_head(id, "write_static");
+    cmd += js("className", c); cmd += js("fieldName", f); cmd += js("expr", e);
     cmd += "}";
-    auto r = call(cmd);
-    if (!r) return Result<void>::err(r.error_code(), r.error_message());
-    return Result<void>::ok();
+    return send(cmd);
 }
 Result<JavaReply> JavaScriptBridge::list_static_fields(const String& c) {
     u64 id = next_id_.fetch_add(1);
-    return call(cmd_head(id, "cpp_list_static_fields") + js("className", c) + "}");
+    return call(cmd_head(id, "list_static_fields") + js("className", c) + "}");
 }
 Result<void> JavaScriptBridge::call(u64 call_id, const String& cls, const String& m,
                                     const String& sig, bool is_static, u64 inst,

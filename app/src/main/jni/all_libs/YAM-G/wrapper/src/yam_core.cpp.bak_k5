@@ -661,10 +661,22 @@ namespace {
 // Trampoline: the Yam engine calls a C function with (msg, data, user).
 // We forward into the Script instance.
 void script_msg_trampoline(const gchar* msg, GBytes* data, gpointer user) {
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        ">>> TRAMPOLINE CALLED msg=%s",
+        msg ? msg : "(null)");
+
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "TRAMPOLINE CALLED: msg=%s", msg ? msg : "(null)");
     auto* self = static_cast<Script*>(user);
-    if (!self) return;
-    (void)data;
+    if (!self) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "TRAMPOLINE: self is null");
+        return;
+    }
     ByteVector bytes;
+    if (data) {
+        // no g_bytes_get_data binding
+    }
     self->dispatch_message(msg ? String(msg) : String(), bytes);
 }
 } // namespace
@@ -690,6 +702,9 @@ Ptr<Script> Script::create(const String& n, const String& s, const ByteVector& b
 Result<void> Script::load() { Cancellable c; return load(c); }
 
 Result<void> Script::load(Cancellable& c) {
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        ">>> Script::load ENTER name=%s", name_.c_str());
+
     if (loaded_) return Result<void>::err(ErrorCode::InvalidArgument, "already loaded");
     auto& rt = Runtime::instance();
     if (!rt.is_initialized()) {
@@ -708,28 +723,44 @@ Result<void> Script::load(Cancellable& c) {
     }
     yam_script_set_message_handler(static_cast<YamScript*>(handle_),
         script_msg_trampoline, this, nullptr);
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "before yam_script_load_sync");
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        ">>> BEFORE yam_script_load_sync");
     yam_script_load_sync(static_cast<YamScript*>(handle_),
         reinterpret_cast<GCancellable*>(c.native_handle()));
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        ">>> AFTER yam_script_load_sync");
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "after yam_script_load_sync");
 
     // Pump until no more messages for 100ms, max 3s.
     // Uses thread_default first (matches the script backend scheduler).
     GMainContext* ctx = g_main_context_get_thread_default();
     if (!ctx) ctx = g_main_context_default();
     if (ctx) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "pumping GMainContext (ctx=%p)", (void*)ctx);
+
         auto start = std::chrono::steady_clock::now();
         auto last_msg = start;
+        bool any = false;
         for (;;) {
             int n = 0;
             while (g_main_context_iteration(ctx, FALSE)) { n++; }
-            if (n > 0) { last_msg = std::chrono::steady_clock::now(); }
+            if (n > 0) { any = true; last_msg = std::chrono::steady_clock::now(); }
             auto now = std::chrono::steady_clock::now();
             auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_msg).count();
             auto total = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
-            if (idle >= 100) break;
+            if (any && idle >= 100) break;
             if (total >= 3000) break;
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "pump finished (any=%d)", any ? 1 : 0);
     } else {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "NO GMainContext available");
     }
 
     loaded_ = true;
@@ -771,12 +802,17 @@ void Script::post(const String& msg, const ByteVector& /* data */) {
 }
 
 void Script::dispatch_message(const String& raw, const ByteVector& bytes) {
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "dispatch_message: raw=%s", raw.substr(0, 200).c_str());
+
     MessageCallback cb;
     {
         std::lock_guard<std::mutex> lk(cb_mu_);
         cb = cb_;
     }
     if (!cb) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "dispatch_message: cb_ is null");
         return;
     }
 
@@ -789,6 +825,10 @@ void Script::dispatch_message(const String& raw, const ByteVector& bytes) {
     }
     m.data = bytes;
     m.timestamp = time_util::now_ms();
+
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "dispatch_message: type=%s payload=%s",
+        m.type.c_str(), m.payload.substr(0, 200).c_str());
 
     try { cb(m); }
     catch (const std::exception& e) { YAM_LOG_ERROR() << "msg cb: " << e.what(); }
@@ -1133,19 +1173,24 @@ usize Gc::live_bytes() { return registry().total_bytes(); }
 extern "C" void yamgg_pump_once() {
     static std::atomic<int> call_count{0};
     int n = call_count.fetch_add(1);
+    bool verbose = (n < 5) || (n % 10000 == 0);
 
     GMainContext* td = g_main_context_get_thread_default();
     GMainContext* def = g_main_context_default();
     GMainContext* ctx = td ? td : def;
     if (!ctx) return;
 
+    if (verbose) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "pump_once[%d]: ctx=%p thread_default=%p default=%p",
+            n, (void*)ctx, (void*)td, (void*)def);
+    }
+
     int processed = 0;
     while (g_main_context_iteration(ctx, FALSE)) { processed++; }
-
-    // اطبع فقط عند أول 3 مرات أو عند كل 100000 iteration
-    if (n < 3 || (n % 100000 == 0)) {
+    if (processed > 0) {
         __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-            "pump_once[%d]: ctx=%p processed=%d", n, (void*)ctx, processed);
+            "pump_once[%d]: processed=%d", n, processed);
     }
 }
 } // namespace yam

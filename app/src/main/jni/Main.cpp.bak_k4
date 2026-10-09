@@ -233,12 +233,6 @@ Java_com_yamgg_modview_ModView_nativeOnKey(JNIEnv* env, jclass clazz,
     jni::onKey(env, clazz, keyCode, action);
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_com_yamgg_modview_ModView_nativeOnScroll(JNIEnv* env, jclass clazz,
-                                                jfloat dx, jfloat dy) {
-    jni::onScroll(env, clazz, dx, dy);
-}
-
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_yamgg_modview_ModView_nativeGetPendingCmd(JNIEnv*, jclass);
 

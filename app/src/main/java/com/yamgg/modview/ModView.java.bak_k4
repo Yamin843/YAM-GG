@@ -33,7 +33,6 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
     private static native void nativeOnChar(int codepoint);
     private static native boolean nativeWantTextInput();
     private static native void nativeOnKey(int keyCode, int action);
-    private static native void nativeOnScroll(float dx, float dy);
 
     private static volatile ModView sInstance = null;
     private static volatile Activity sActivity = null;
@@ -120,64 +119,12 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
         } catch (Throwable t) {}
     }
 
-    // ─── Two-finger scroll tracking ───
-    private boolean twoFingerScrollActive = false;
-    private float   twoFingerLastY = 0f;
-    private int     lastScrollSentMs = 0;
-
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
-        int action = event.getActionMasked();
-        int pointerCount = event.getPointerCount();
-
-        // ─────── Two-finger → scroll ───────
-        if (pointerCount >= 2) {
-            if (action == MotionEvent.ACTION_POINTER_DOWN) {
-                // أول إصبعين: ألغِ حالة السحب الأولى (الأصبع الأول قد
-                // يكون قد سحب شيئاً)، ثم فعّل نمط الـ scroll.
-                try { nativeOnTouch(MotionEvent.ACTION_CANCEL, 0f, 0f, 0); }
-                catch (Throwable t) {}
-                twoFingerScrollActive = true;
-                twoFingerLastY = (event.getY(0) + event.getY(1)) * 0.5f;
-                lastScrollSentMs = 0;
-                return nativeWantCaptureMouse();
-            }
-            if (action == MotionEvent.ACTION_MOVE && twoFingerScrollActive) {
-                float curY = (event.getY(0) + event.getY(1)) * 0.5f;
-                float dy = curY - twoFingerLastY;
-                twoFingerLastY = curY;
-
-                // أرسل كل ~12ms على الأكثر لتقليل JNI overhead
-                int now = (int)(System.currentTimeMillis() & 0x7FFFFFFF);
-                if (now - lastScrollSentMs >= 12) {
-                    lastScrollSentMs = now;
-                    try { nativeOnScroll(0f, -dy * 0.035f); }
-                    catch (Throwable t) {}
-                }
-                return nativeWantCaptureMouse();
-            }
-            if (action == MotionEvent.ACTION_POINTER_UP) {
-                twoFingerScrollActive = false;
-                try { nativeOnTouch(MotionEvent.ACTION_CANCEL, 0f, 0f, 0); }
-                catch (Throwable t) {}
-                return nativeWantCaptureMouse();
-            }
-            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                twoFingerScrollActive = false;
-                try { nativeOnTouch(action, 0f, 0f, 0); }
-                catch (Throwable t) {}
-                return nativeWantCaptureMouse();
-            }
-            // احتفظ بالأحداث الأخرى فقط إذا كنا داخل الـ scroll
-            if (twoFingerScrollActive) return nativeWantCaptureMouse();
-        }
-
-        // ─────── Single finger → normal mouse ───────
-        if (pointerCount == 1) {
-            twoFingerScrollActive = false;
-        }
-
+        // Always feed ImGui with the event, so it can update its internal
+        // mouse position and WantCaptureMouse state.
         try {
+            int action = event.getActionMasked();
             int pointerIndex = event.getActionIndex();
             int pointerId = event.getPointerId(pointerIndex);
             float x = event.getX(pointerIndex);
@@ -187,24 +134,14 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
             Log.e(TAG, "dispatchTouchEvent failed", t);
         }
 
+        // If ImGui wants the mouse (cursor over a window), we capture.
+        // Otherwise, return false to let the event pass through to the
+        // underlying views (e.g. Unity's GLSurfaceView).
         try {
             return nativeWantCaptureMouse();
         } catch (Throwable t) {
             return true;
         }
-    }
-
-    @Override
-    public boolean onGenericMotionEvent(MotionEvent event) {
-        // للأجهزة التي فيها فأرة/لوحة لمس خارجية
-        if (event.getAction() == MotionEvent.ACTION_SCROLL
-            && (event.getSource() & android.view.InputDevice.SOURCE_CLASS_POINTER) != 0) {
-            float v = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
-            float h = event.getAxisValue(MotionEvent.AXIS_HSCROLL);
-            try { nativeOnScroll(h, v); } catch (Throwable t) {}
-            return nativeWantCaptureMouse();
-        }
-        return super.onGenericMotionEvent(event);
     }
 
     @Override
@@ -225,7 +162,10 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
         return true;
     }
 
-
+    @Override
+    public boolean onGenericMotionEvent(MotionEvent event) {
+        return true;
+    }
 
     public static ModView getInstance() {
         return sInstance;

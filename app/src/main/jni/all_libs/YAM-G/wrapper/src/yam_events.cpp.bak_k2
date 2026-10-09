@@ -557,13 +557,13 @@ Result<void> run(u64 rid, const String& cls, const String& m, const String& sig,
 
 
 // ===========================================================================
-// install_event_router — registers all common event handlers (idempotent)
+// install_event_router — registers all common event handlers
 // ===========================================================================
 
 void install_event_router() {
     static std::once_flag once;
     std::call_once(once, []() {
-        // ─── Logs & errors ───
+        // Log level events
         events::on("log", [](const Event& ev) {
             String lvl = ev.get_str("level", "info");
             String msg = ev.get_str("message");
@@ -575,7 +575,7 @@ void install_event_router() {
             YAM_LOG_ERROR() << "[js] " << ev.get_str("message");
         });
 
-        // ─── Trace lifecycle ───
+        // Trace lifecycle
         events::on("trace_enter", [](const Event& ev) {
             YAM_LOG_DEBUG() << "trace_enter #" << ev.get_u64("traceId", 0)
                             << " " << ev.get_str("className") << "::"
@@ -594,15 +594,17 @@ void install_event_router() {
                            << " count=" << ev.get_i64("count", 0);
         });
 
-        // ─── Call / construct ───
+        // Call / construct results
         events::on("call_result", [](const Event& ev) {
-            YAM_LOG_DEBUG() << "call_result ok=" << ev.get_bool("ok", false);
+            YAM_LOG_DEBUG() << "call_result ok="
+                            << ev.get_bool("ok", false);
         });
         events::on("construct_result", [](const Event& ev) {
-            YAM_LOG_DEBUG() << "construct_result ok=" << ev.get_bool("ok", false);
+            YAM_LOG_DEBUG() << "construct_result ok="
+                            << ev.get_bool("ok", false);
         });
 
-        // ─── Enumeration ───
+        // Class enumeration
         events::on("classes_list", [](const Event& ev) {
             YAM_LOG_INFO() << "classes_list count=" << ev.get_i64("count", 0);
         });
@@ -613,15 +615,16 @@ void install_event_router() {
             YAM_LOG_INFO() << "class_probe " << ev.get_str("className");
         });
 
-        // ─── Handles ───
+        // Handle inspection
         events::on("handle_inspect", [](const Event& ev) {
             YAM_LOG_DEBUG() << "handle_inspect id=" << ev.get_u64("handleId", 0);
         });
-        events::on("handle_list", [](const Event&) {
+        events::on("handle_list", [](const Event& ev) {
             YAM_LOG_DEBUG() << "handle_list";
+            (void)ev;
         });
 
-        // ─── Fields / paths ───
+        // Field access
         events::on("field_read", [](const Event& ev) {
             YAM_LOG_DEBUG() << "field_read " << ev.get_str("fieldName");
         });
@@ -636,6 +639,8 @@ void install_event_router() {
             YAM_LOG_DEBUG() << "static_write " << ev.get_str("className")
                             << "." << ev.get_str("fieldName");
         });
+
+        // Paths
         events::on("path_read", [](const Event& ev) {
             YAM_LOG_DEBUG() << "path_read " << ev.get_str("path");
         });
@@ -646,39 +651,40 @@ void install_event_router() {
             YAM_LOG_DEBUG() << "path_invoke " << ev.get_str("methodName");
         });
 
-        // ─── Templates ───
+        // Template
         events::on("template", [](const Event& ev) {
             YAM_LOG_DEBUG() << "template " << ev.get_str("className") << "::"
                             << ev.get_str("methodName");
         });
 
-        // ─── Param / BP acks ───
+        // Param ack
         events::on("param_ack", [](const Event& ev) {
             YAM_LOG_DEBUG() << "param_ack #" << ev.get_u64("traceId", 0)
                             << "[" << ev.get_i64("index", 0) << "]";
         });
+
+        // BP
         events::on("bp_ack", [](const Event& ev) {
             YAM_LOG_INFO() << "bp_ack #" << ev.get_u64("traceId", 0)
                            << " enabled=" << ev.get_bool("enabled", false);
         });
 
-        // ─── Env / backtrace ───
+        // Env
         events::on("env_info_result", [](const Event&) {
             YAM_LOG_DEBUG() << "env_info_result";
         });
+
+        // Backtrace
         events::on("backtrace_result", [](const Event&) {
             YAM_LOG_DEBUG() << "backtrace_result";
         });
 
-        // ─── Agent / bridge lifecycle ───
+        // Embed
         events::on("agent_ready", [](const Event&) {
             YAM_LOG_INFO() << "agent_ready from embedded bridge";
         });
-        events::on("cpp_ready", [](const Event&) {
-            YAM_LOG_INFO() << "cpp bootstrap: ready";
-        });
 
-        // ─── User scripts ───
+        // User scripts
         events::on("user_script_loaded", [](const Event& ev) {
             YAM_LOG_INFO() << "user_script_loaded " << ev.get_str("name")
                            << " ok=" << ev.get_bool("ok", false);
@@ -692,39 +698,59 @@ void install_event_router() {
                             << ": " << ev.get_str("error");
         });
 
-        // ─── Eval ───
-        events::on("eval_result", [](const Event& ev) {
-            bool ok = ev.get_bool("ok", false);
-            YAM_LOG_DEBUG() << "eval_result ok=" << ok
-                            << " err=" << ev.get_str("error");
+        // Eval
+        events::on("eval_result", [](const Event&) {
+            YAM_LOG_DEBUG() << "eval_result";
+        // --- Bridge internal events (routed to events:: by on_message) ---
+        events::on("batch", [](const Event& ev) {
+            YAM_LOG_DEBUG() << "batch received";
+            (void)ev;
+        });
+        events::on("callback", [](const Event& ev) {
+            YAM_LOG_DEBUG() << "callback";
+            (void)ev;
+        });
+        events::on("console", [](const Event& ev) {
+            // Handled separately by the JS console callback, but log here too.
+            (void)ev;
+        });
+        events::on("reply", [](const Event& ev) {
+            // Handled separately by JavaScriptBridge::on_reply.
+            (void)ev;
         });
 
-        // ─── Bridge plumbing events ───
-        events::on("batch", [](const Event&) {
-            YAM_LOG_TRACE() << "batch received";
+        // --- Additional bridge events ---
+        events::on("user_scripts_list", [](const Event& ev) {
+            YAM_LOG_INFO() << "user_scripts_list received";
+            (void)ev;
         });
-        events::on("callback", [](const Event&) {
-            YAM_LOG_TRACE() << "callback";
-        });
-        events::on("console", [](const Event&) {
-            // Handled by JavaScriptBridge console callback.
-        });
-        events::on("reply", [](const Event&) {
-            // Handled by JavaScriptBridge on_reply.
-        });
-        events::on("user_scripts_list", [](const Event&) {
-            YAM_LOG_DEBUG() << "user_scripts_list received";
-        });
-        events::on("trace_handles", [](const Event&) {
+        events::on("trace_handles", [](const Event& ev) {
             YAM_LOG_DEBUG() << "trace_handles received";
+            (void)ev;
         });
-        events::on("snapshot", [](const Event&) {
-            YAM_LOG_TRACE() << "snapshot";
+        events::on("class_probe", [](const Event& ev) {
+            YAM_LOG_INFO() << "class_probe " << ev.get_str("className");
+        });
+        events::on("handle_inspect", [](const Event& ev) {
+            YAM_LOG_DEBUG() << "handle_inspect";
+            (void)ev;
+        });
+        events::on("snapshot", [](const Event& ev) {
+            YAM_LOG_DEBUG() << "snapshot";
+            (void)ev;
+        });
+        events::on("field_read", [](const Event& ev) {
+            (void)ev;
+        });
+        events::on("field_write", [](const Event& ev) {
+            (void)ev;
         });
 
-        YAM_LOG_INFO() << "event router installed ("
-                       << events::registered_types().size() << " event types)";
+        });
     });
+
+    YAM_LOG_INFO() << "event router installed ("
+                   << events::registered_types().size() << " event types)";
 }
 
 } // namespace yam

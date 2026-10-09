@@ -236,15 +236,10 @@ Result<void> Memory::write_bytes(void* addr, const ByteVector& d) {
 #define YAM_MEM_R(T, sfx)                                                    \
 Result<T> Memory::read_##sfx(void* a) {                                      \
     if (!a) return Result<T>::err(ErrorCode::InvalidArgument, "null");       \
-    gsize got = 0;                                                           \
-    guint8* p = yam_memory_read(a, sizeof(T), &got);                         \
-    if (!p || got != sizeof(T)) {                                            \
-        if (p) yam_free(p);                                                  \
-        return Result<T>::err(ErrorCode::MemoryReadFailed, "read");          \
-    }                                                                        \
     T v;                                                                     \
-    std::memcpy(&v, p, sizeof(T));                                           \
-    yam_free(p);                                                             \
+    if (!yam_memory_read(a, sizeof(v), nullptr))                             \
+        return Result<T>::err(ErrorCode::MemoryReadFailed, "read");          \
+    std::memcpy(&v, a, sizeof(v));                                           \
     return Result<T>::ok(v);                                                 \
 }
 
@@ -254,15 +249,10 @@ YAM_MEM_R(f32,f32) YAM_MEM_R(f64,f64)
 
 Result<void*> Memory::read_ptr(void* a) {
     if (!a) return Result<void*>::err(ErrorCode::InvalidArgument, "null");
-    gsize got = 0;
-    guint8* p = yam_memory_read(a, sizeof(void*), &got);
-    if (!p || got != sizeof(void*)) {
-        if (p) yam_free(p);
-        return Result<void*>::err(ErrorCode::MemoryReadFailed, "read_ptr");
-    }
     void* v = nullptr;
-    std::memcpy(&v, p, sizeof(void*));
-    yam_free(p);
+    if (!yam_memory_read(a, sizeof(v), nullptr))
+        return Result<void*>::err(ErrorCode::MemoryReadFailed, "read_ptr");
+    std::memcpy(&v, a, sizeof(v));
     return Result<void*>::ok(v);
 }
 

@@ -71,7 +71,6 @@ private:
     String sig_;
     bool   is_static_{false};
     i64    hook_cb_id_{0};
-    u64    hook_handle_id_{0};
 };
 
 // ---------------------------------------------------------------------------

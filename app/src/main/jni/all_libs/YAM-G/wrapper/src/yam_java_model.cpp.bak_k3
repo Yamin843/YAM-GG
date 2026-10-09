@@ -44,7 +44,7 @@ Result<JavaReply> JavaField::get(Ptr<JavaInstance> inst) const {
     if (!inst) return Result<JavaReply>::err(ErrorCode::InvalidArgument, "no instance");
     u64 id = static_cast<u64>(time_util::now_ms()) & 0xFFFFFF;
     String cmd = "{\"id\":" + std::to_string(id) +
-                 ",\"action\":\"cpp_read_field\","
+                 ",\"action\":\"read_field\","
                  "\"handleId\":" + std::to_string(inst->handle()) +
                  ",\"fieldName\":\"" + str::escape_json(name_) + "\"}";
     return b.call(cmd);
@@ -61,10 +61,10 @@ Result<void> JavaField::set(const JsonValue& v, Ptr<JavaInstance> inst) {
     if (!inst) return Result<void>::err(ErrorCode::InvalidArgument, "no instance");
     u64 id = static_cast<u64>(time_util::now_ms()) & 0xFFFFFF;
     String cmd = "{\"id\":" + std::to_string(id) +
-                 ",\"action\":\"cpp_write_field\","
+                 ",\"action\":\"write_field\","
                  "\"handleId\":" + std::to_string(inst->handle()) +
                  ",\"fieldName\":\"" + str::escape_json(name_) + "\","
-                 "\"value\":" + v.stringify() + "}";
+                 "\"expr\":\"" + str::escape_json(v.stringify()) + "\"}";
     auto r = b.call(cmd);
     if (!r) return Result<void>::err(r.error_code(), r.error_message());
     return Result<void>::ok();
@@ -88,23 +88,46 @@ Result<JavaReply> JavaMethod::call_static(const std::vector<JsonValue>& args) {
 }
 
 Result<void> JavaMethod::hook(std::function<void(const std::vector<u64>&, u64)> cb) {
-    // كل الـ hooks تمر عبر JavaHookManager — لا سجل ثانٍ محلي.
-    if (!cls_) {
-        return Result<void>::err(ErrorCode::InvalidArgument, "no class for hook");
+    auto& b = JavaScriptBridge::instance();
+    static std::atomic<i64> next_cb{1};
+    hook_cb_id_ = next_cb.fetch_add(1);
+
+    // Store the callback in a static registry keyed by cb_id.
+    static std::mutex reg_mu;
+    static std::unordered_map<i64, std::function<void(const std::vector<u64>&, u64)>> reg;
+    {
+        std::lock_guard<std::mutex> lk(reg_mu);
+        reg[hook_cb_id_] = std::move(cb);
     }
-    auto r = JavaHookManager::instance().hook(
-        cls_->name(), name_, sig_, std::move(cb));
-    if (!r) return Result<void>::err(r.error_code(), r.error_message());
-    hook_handle_id_ = r.value();
+
+    // Register a dispatcher with the bridge that routes by cb_id.
+    b.set_hook_callback([](i64 id, const std::vector<u64>& args, u64 this_h) {
+        std::function<void(const std::vector<u64>&, u64)> f;
+        {
+            std::lock_guard<std::mutex> lk(reg_mu);
+            auto it = reg.find(id);
+            if (it != reg.end()) f = it->second;
+        }
+        if (f) {
+            try { f(args, this_h); }
+            catch (const std::exception& e) {
+                YAM_LOG_ERROR() << "method hook cb: " << e.what();
+            }
+        }
+    });
+
+    auto r = b.hook_method(handle_, hook_cb_id_);
+    if (!r) {
+        std::lock_guard<std::mutex> lk(reg_mu);
+        reg.erase(hook_cb_id_);
+        return Result<void>::err(r.error_code(), r.error_message());
+    }
     return Result<void>::ok();
 }
 
 Result<void> JavaMethod::unhook() {
-    if (hook_handle_id_ != 0) {
-        auto r = JavaHookManager::instance().unhook(hook_handle_id_);
-        hook_handle_id_ = 0;
-        if (!r) return Result<void>::err(r.error_code(), r.error_message());
-    }
+    auto r = JavaScriptBridge::instance().unhook_method(handle_);
+    if (!r) return Result<void>::err(r.error_code(), r.error_message());
     return Result<void>::ok();
 }
 
@@ -134,7 +157,7 @@ Result<void> JavaArray::set(usize index, const JsonValue& value) {
     auto& b = JavaScriptBridge::instance();
     u64 id = time_util::now_ms();
     String cmd = "{\"id\":" + std::to_string(id) +
-                 ",\"action\":\"cpp_array_set\","
+                 ",\"action\":\"array_set\","
                  "\"handle\":" + std::to_string(handle_) + ","
                  "\"index\":" + std::to_string(index) + ","
                  "\"value\":" + value.stringify() + "}";

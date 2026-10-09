@@ -11,7 +11,6 @@
 
 #include <android/log.h>
 #include <cstring>
-#include <cmath>
 
 // ─── Vertical text helper (each char on own line) ───
 static std::string verticalText(const char* s) {
@@ -42,17 +41,6 @@ struct MainWindow::Impl {
     char titleBuf[128];
     float opacity{1.0f};
     bool showAboutDialog{false};
-
-    // ─── minimize state ───
-    bool  minimized{false};
-    ImVec2 minimizedPos{40.0f, 120.0f};
-    ImVec2 lastFullPos{0, 0};
-    ImVec2 lastFullSize{0, 0};
-
-    // ─── global window drag (from any empty spot) ───
-    bool  windowDragging{false};
-    ImVec2 dragStartMouse{0, 0};
-    ImVec2 dragStartWindow{0, 0};
 };
 
 MainWindow::MainWindow() : impl_(new Impl()) {
@@ -70,12 +58,6 @@ MainWindow& MainWindow::instance() {
 
 void MainWindow::draw() {
     if (!visible_) {
-        Notification::instance().draw();
-        return;
-    }
-
-    if (impl_->minimized) {
-        drawMinimized();
         Notification::instance().draw();
         return;
     }
@@ -119,17 +101,13 @@ void MainWindow::drawMainWindow() {
         impl_->initializedSize = true;
     }
 
-    // ملاحظة: نُبقي NoMove، ونعتمد على الحركة اليدوية أدناه (5-zone)
-    // لتفعيل السحب من أي مكان فارغ (بما في ذلك الشريط الجانبي).
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove;
     if (impl_->fullscreen) {
         flags |= ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
     }
 
-    const float kMinW = 420.0f;
-    const float kMinH = 320.0f;
     ImGui::SetNextWindowSizeConstraints(
-            ImVec2(kMinW, kMinH),
+            ImVec2(650.0f, 450.0f),
             ImVec2(io.DisplaySize.x, io.DisplaySize.y));
 
     if (impl_->firstDraw) {
@@ -160,38 +138,6 @@ void MainWindow::drawMainWindow() {
     if (!opened) {
         ImGui::End();
         return;
-    }
-
-    // ───────────────────────────────────────────────────────────────
-    // زر التصغير YG — دائرة ذهبية صغيرة في الزاوية العلوية اليمنى
-    // نستخدم SetCursorScreenPos + Button مباشرة.
-    // ───────────────────────────────────────────────────────────────
-    {
-        ImVec2 wpos  = ImGui::GetWindowPos();
-        ImVec2 wsize = ImGui::GetWindowSize();
-        const float sz = 36.0f;
-        const float mg = 8.0f;
-        ImVec2 btnPos(wpos.x + wsize.x - sz - mg, wpos.y + mg);
-
-        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.85f, 0.65f, 0.00f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.00f, 0.80f, 0.15f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(1.00f, 0.90f, 0.30f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.02f, 0.02f, 0.02f, 1.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, sz * 0.5f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-
-        ImGui::SetCursorScreenPos(btnPos);
-        ImGui::PushID("YG_minimize_btn_v2");
-        if (ImGui::Button("YG", ImVec2(sz, sz))) {
-            impl_->lastFullPos  = wpos;
-            impl_->lastFullSize = wsize;
-            impl_->minimized = true;
-        }
-        ImGui::PopID();
-
-        ImGui::PopStyleVar(3);
-        ImGui::PopStyleColor(4);
     }
 
     // MenuBar removed per user request
@@ -235,18 +181,14 @@ void MainWindow::drawMainWindow() {
     ImGui::EndChild();
 
     // ─── 5-zone custom drag/resize ───
-    // Top edge + sidebar = global drag handle (سحب من أي مكان فارغ)
+    // Outer 4 zones (T/B/L/R): move or resize window
+    // Inner zone: scroll content naturally (ImGui handles via BeginChild)
     if (!impl_->fullscreen) {
         ImVec2 wPos  = ImGui::GetWindowPos();
         ImVec2 wSize = ImGui::GetWindowSize();
-        const float edge = 28.0f;   // border zone width
+        const float edge = 24.0f;   // border zone width
 
-
-
-
-        }
-
-        // Top edge → move window (يبقى كما هو)
+        // Top edge → move window
         ImGui::SetCursorScreenPos(ImVec2(wPos.x + edge, wPos.y + 2));
         ImGui::InvisibleButton("##ztop", ImVec2(wSize.x - 2*edge, edge),
             ImGuiButtonFlags_MouseButtonLeft);
@@ -262,7 +204,7 @@ void MainWindow::drawMainWindow() {
         if (ImGui::IsItemActive()) {
             ImVec2 d = ImGui::GetIO().MouseDelta;
             float nh = wSize.y + d.y;
-            if (nh < 320.0f) nh = 320.0f;
+            if (nh < 450.0f) nh = 450.0f;
             if (nh > io.DisplaySize.y) nh = io.DisplaySize.y;
             ImGui::SetWindowSize(ImVec2(wSize.x, nh));
         }
@@ -274,7 +216,7 @@ void MainWindow::drawMainWindow() {
         if (ImGui::IsItemActive()) {
             ImVec2 d = ImGui::GetIO().MouseDelta;
             float nw = wSize.x - d.x;
-            if (nw < 420.0f) nw = 420.0f;
+            if (nw < 650.0f) nw = 650.0f;
             if (nw > io.DisplaySize.x) nw = io.DisplaySize.x;
             ImGui::SetWindowSize(ImVec2(nw, wSize.y));
         }
@@ -286,7 +228,7 @@ void MainWindow::drawMainWindow() {
         if (ImGui::IsItemActive()) {
             ImVec2 d = ImGui::GetIO().MouseDelta;
             float nw = wSize.x + d.x;
-            if (nw < 420.0f) nw = 420.0f;
+            if (nw < 650.0f) nw = 650.0f;
             if (nw > io.DisplaySize.x) nw = io.DisplaySize.x;
             ImGui::SetWindowSize(ImVec2(nw, wSize.y));
         }
@@ -299,117 +241,18 @@ void MainWindow::drawMainWindow() {
             ImVec2 d = ImGui::GetIO().MouseDelta;
             float nw = wSize.x + d.x;
             float nh = wSize.y + d.y;
-            if (nw < 420.0f) nw = 420.0f;
-            if (nh < 320.0f) nh = 320.0f;
+            if (nw < 650.0f) nw = 650.0f;
+            if (nh < 450.0f) nh = 450.0f;
             if (nw > io.DisplaySize.x) nw = io.DisplaySize.x;
             if (nh > io.DisplaySize.y) nh = io.DisplaySize.y;
             ImGui::SetWindowSize(ImVec2(nw, nh));
         }
     }
-
-    // ───────────────────────────────────────────────────────────────
-    // السحب الموحّد — من أي مكان فارغ داخل النافذة
-    // (شريط جانبي، منطقة محتوى، إلخ) باستخدام IsAnyItemActive.
-    // ───────────────────────────────────────────────────────────────
-    if (!impl_->fullscreen) {
-        bool hovered = ImGui::IsWindowHovered(
-            ImGuiHoveredFlags_ChildWindows
-            | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
-            && hovered
-            && !ImGui::IsAnyItemActive()) {
-            impl_->windowDragging = true;
-            impl_->dragStartMouse = ImGui::GetIO().MousePos;
-            impl_->dragStartWindow = ImGui::GetWindowPos();
-        }
-        if (impl_->windowDragging) {
-            if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                ImVec2 d(ImGui::GetIO().MousePos.x - impl_->dragStartMouse.x,
-                         ImGui::GetIO().MousePos.y - impl_->dragStartMouse.y);
-                ImGui::SetWindowPos(ImVec2(impl_->dragStartWindow.x + d.x,
-                                           impl_->dragStartWindow.y + d.y));
-            } else {
-                impl_->windowDragging = false;
-            }
-        }
-    }
-
     ImGui::End();
 }
 
 void MainWindow::drawMenuBar() {
     // disabled per user request
-}
-
-void MainWindow::drawMinimized() {
-    ImGuiIO& io = ImGui::GetIO();
-    const float size = 72.0f;
-
-    // إذا خرجت خارج الشاشة — أعدها
-    if (impl_->minimizedPos.x + size > io.DisplaySize.x)
-        impl_->minimizedPos.x = io.DisplaySize.x - size - 8;
-    if (impl_->minimizedPos.y + size > io.DisplaySize.y)
-        impl_->minimizedPos.y = io.DisplaySize.y - size - 8;
-    if (impl_->minimizedPos.x < 0) impl_->minimizedPos.x = 0;
-    if (impl_->minimizedPos.y < 0) impl_->minimizedPos.y = 0;
-
-    ImGuiWindowFlags f = ImGuiWindowFlags_NoTitleBar
-        | ImGuiWindowFlags_NoResize
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoScrollbar
-        | ImGuiWindowFlags_NoScrollWithMouse
-        | ImGuiWindowFlags_NoSavedSettings
-        | ImGuiWindowFlags_NoCollapse
-        | ImGuiWindowFlags_NoBringToFrontOnFocus;
-
-    ImGui::SetNextWindowPos(impl_->minimizedPos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(size, size), ImGuiCond_Always);
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 3.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, size * 0.5f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg,
-        ImVec4(0.02f, 0.02f, 0.02f, 0.95f));
-    ImGui::PushStyleColor(ImGuiCol_Border,
-        ImVec4(0.85f, 0.65f, 0.00f, 1.0f));
-
-    ImGui::Begin("##YAMGG_Minimized", nullptr, f);
-
-    ImVec2 curPos = ImGui::GetCursorScreenPos();
-    ImGui::InvisibleButton("##yg_icon", ImVec2(size, size));
-    bool active = ImGui::IsItemActive();
-
-    // نص YG في الوسط
-    ImVec2 center(curPos.x + size * 0.5f, curPos.y + size * 0.5f);
-    ImVec2 textSz = ImGui::CalcTextSize("YG");
-    ImGui::GetWindowDrawList()->AddText(
-        ImVec2(center.x - textSz.x * 0.5f, center.y - textSz.y * 0.5f),
-        IM_COL32(255, 215, 0, 255), "YG");
-
-    // سحب / نقر
-    ImVec2 d(0, 0);
-    if (active) {
-        d = ImGui::GetIO().MouseDelta;
-        impl_->minimizedPos.x += d.x;
-        impl_->minimizedPos.y += d.y;
-
-        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-            if (std::fabs(d.x) < 3.0f && std::fabs(d.y) < 3.0f) {
-                // نقرة قصيرة — استعادة
-                impl_->minimized = false;
-                if (impl_->lastFullSize.x > 100.0f) {
-                    ImGui::SetNextWindowPos(impl_->lastFullPos,
-                        ImGuiCond_Appearing);
-                    ImGui::SetNextWindowSize(impl_->lastFullSize,
-                        ImGuiCond_Appearing);
-                }
-            }
-        }
-    }
-
-    ImGui::End();
-    ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(3);
 }
 
 void MainWindow::drawStatusBar() {

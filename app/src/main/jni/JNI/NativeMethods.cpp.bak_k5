@@ -3,7 +3,6 @@
 #include "../UI/Renderer.h"
 
 #include <android/log.h>
-#include <vector>
 
 #define LOG_TAG "YAMGG"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -49,11 +48,6 @@ static void JNICALL impl_nativeOnChar(JNIEnv* env, jclass clazz, jint codepoint)
     Renderer::instance().onChar((unsigned int)codepoint);
 }
 
-static void JNICALL impl_nativeOnScroll(JNIEnv* env, jclass clazz, jfloat dx, jfloat dy) {
-    (void)env; (void)clazz;
-    Renderer::instance().onScroll((float)dx, (float)dy);
-}
-
 static jboolean JNICALL impl_nativeWantTextInput(JNIEnv* env, jclass clazz) {
     (void)env; (void)clazz;
     return Renderer::instance().wantTextInput() ? JNI_TRUE : JNI_FALSE;
@@ -61,24 +55,12 @@ static jboolean JNICALL impl_nativeWantTextInput(JNIEnv* env, jclass clazz) {
 
 extern "C" int yamgg_popPendingCmd(char* out, int maxLen);
 
-extern "C" int yamgg_popPendingCmd(char* out, int maxLen);
-extern "C" int yamgg_peekPendingCmdSize(void);
-
 static jstring JNICALL impl_nativeGetPendingCmd(JNIEnv* env, jclass clazz) {
     (void)clazz;
-    // حجم ديناميكي — اقرأ حجم الأمر القادم أولاً (يُوفّر تخصيص 512KB
-    // لكل استدعاء، ويتعامل مع أوامر أكبر من 8KB مثل run_user_script
-    // مع كود طويل).
-    int needed = yamgg_peekPendingCmdSize();
-    if (needed <= 0) return nullptr;
-
-    int cap = needed + 16;
-    if (cap > (1 << 20)) cap = (1 << 20); // 1 MB سقف
-
-    std::vector<char> buf(cap);
-    int n = yamgg_popPendingCmd(buf.data(), cap);
+    char buf[8192];
+    int n = yamgg_popPendingCmd(buf, sizeof(buf));
     if (n <= 0) return nullptr;
-    return env->NewStringUTF(buf.data());
+    return env->NewStringUTF(buf);
 }
 
 static const JNINativeMethod g_methods[] = {
@@ -91,7 +73,6 @@ static const JNINativeMethod g_methods[] = {
     {"nativeWantCaptureMouse", "()Z", (void*)impl_nativeWantCaptureMouse},
     {"nativeOnChar", "(I)V", (void*)impl_nativeOnChar},
     {"nativeWantTextInput", "()Z", (void*)impl_nativeWantTextInput},
-    {"nativeOnScroll", "(FF)V", (void*)impl_nativeOnScroll},
 };
 
 bool registerNativeMethods(JNIEnv* env, jclass modViewClass) {
@@ -114,7 +95,6 @@ void onKey(JNIEnv* env, jclass clazz, jint k, jint a) { (void)env; (void)clazz; 
 jboolean wantCaptureMouse(JNIEnv* env, jclass clazz) { return impl_nativeWantCaptureMouse(env, clazz); }
 void onChar(JNIEnv* env, jclass clazz, jint c) { impl_nativeOnChar(env, clazz, c); }
 jboolean wantTextInput(JNIEnv* env, jclass clazz) { return impl_nativeWantTextInput(env, clazz); }
-void onScroll(JNIEnv* env, jclass clazz, jfloat dx, jfloat dy) { impl_nativeOnScroll(env, clazz, dx, dy); }
 
 } // namespace jni
 } // namespace yamgg

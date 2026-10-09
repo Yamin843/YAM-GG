@@ -15,7 +15,6 @@ void onKey(JNIEnv* env, jclass clazz, jint keyCode, jint action);
 jboolean wantCaptureMouse(JNIEnv* env, jclass clazz);
 void onChar(JNIEnv* env, jclass clazz, jint codepoint);
 jboolean wantTextInput(JNIEnv* env, jclass clazz);
-void onScroll(JNIEnv* env, jclass clazz, jfloat dx, jfloat dy);
 
 } // namespace jni
 } // namespace yamgg

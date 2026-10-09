@@ -49,11 +49,6 @@ static void JNICALL impl_nativeOnChar(JNIEnv* env, jclass clazz, jint codepoint)
     Renderer::instance().onChar((unsigned int)codepoint);
 }
 
-static void JNICALL impl_nativeOnScroll(JNIEnv* env, jclass clazz, jfloat dx, jfloat dy) {
-    (void)env; (void)clazz;
-    Renderer::instance().onScroll((float)dx, (float)dy);
-}
-
 static jboolean JNICALL impl_nativeWantTextInput(JNIEnv* env, jclass clazz) {
     (void)env; (void)clazz;
     return Renderer::instance().wantTextInput() ? JNI_TRUE : JNI_FALSE;
@@ -91,7 +86,6 @@ static const JNINativeMethod g_methods[] = {
     {"nativeWantCaptureMouse", "()Z", (void*)impl_nativeWantCaptureMouse},
     {"nativeOnChar", "(I)V", (void*)impl_nativeOnChar},
     {"nativeWantTextInput", "()Z", (void*)impl_nativeWantTextInput},
-    {"nativeOnScroll", "(FF)V", (void*)impl_nativeOnScroll},
 };
 
 bool registerNativeMethods(JNIEnv* env, jclass modViewClass) {
@@ -114,7 +108,6 @@ void onKey(JNIEnv* env, jclass clazz, jint k, jint a) { (void)env; (void)clazz; 
 jboolean wantCaptureMouse(JNIEnv* env, jclass clazz) { return impl_nativeWantCaptureMouse(env, clazz); }
 void onChar(JNIEnv* env, jclass clazz, jint c) { impl_nativeOnChar(env, clazz, c); }
 jboolean wantTextInput(JNIEnv* env, jclass clazz) { return impl_nativeWantTextInput(env, clazz); }
-void onScroll(JNIEnv* env, jclass clazz, jfloat dx, jfloat dy) { impl_nativeOnScroll(env, clazz, dx, dy); }
 
 } // namespace jni
 } // namespace yamgg
