@@ -46,57 +46,146 @@ const char* const kBootstrapSrc = R"YAMJS(
 (function () {
     "use strict";
 
-    // ── اختبار 1: هل console موجود؟ ────────────────────────
-    if (typeof console !== "undefined" && console.log) {
-        try { console.log("[YAMGG-JS] 1: console.log works"); } catch (e) {}
+    // ── 1) إرسال cpp_ready فوراً ─────────────────────────────
+    try { send({ type: "cpp_ready" }); } catch (e) {}
+
+    // ── 2) إرسال تشخيصي ─────────────────────────────────────
+    try {
+        send({
+            type: "bootstrap_debug",
+            hasAgent: typeof globalThis.Agent !== "undefined",
+            hasSend:  typeof send === "function",
+            hasJava:  typeof Java !== "undefined",
+            hasRecv:  typeof recv === "function"
+        });
+    } catch (e) {}
+
+    // ── 3) جدول handles ─────────────────────────────────────
+    var table = Object.create(null);
+    var nextHandle = 1;
+    function alloc(o) { var id = nextHandle++; table[id] = o; return id; }
+    function get(id)   { return table[id] || null; }
+    function drop(id)  { delete table[id]; }
+    function dropAll() { table = Object.create(null); nextHandle = 1; }
+
+    // ── 4) helper للـ reply envelopes ───────────────────────
+    function reply(id, ok, kind, value, handle, error) {
+        var m = { id: id, ok: !!ok };
+        if (kind)  m.kind = kind;
+        if (value !== undefined && value !== null) m.result = value;
+        if (handle !== undefined && handle !== null) m.handle = handle;
+        if (error) m.error = String(error);
+        send({ type: "reply", payload: JSON.stringify(m) });
+    }
+    function replyHandle(id, h) { reply(id, true, "handle", null, h); }
+    function replyValue(id, v)  { reply(id, true, "value", v); }
+    function replyNull(id)      { reply(id, true, "null"); }
+    function replyVoid(id)      { reply(id, true, "void"); }
+    function replyError(id, e)  {
+        reply(id, false, "error", null, null,
+              (e && e.message) ? e.message : String(e));
     }
 
-    // ── اختبار 2: هل send موجود؟ ──────────────────────────
-    if (typeof send !== "function") {
-        if (typeof console !== "undefined" && console.log) {
-            try { console.log("[YAMGG-JS] 2: send NOT defined"); } catch (e) {}
+    // ── 5) JNI signature parser ─────────────────────────────
+    function prim(c) {
+        switch (c) {
+        case 'Z': return 'boolean'; case 'B': return 'byte';
+        case 'C': return 'char';    case 'S': return 'short';
+        case 'I': return 'int';     case 'J': return 'long';
+        case 'F': return 'float';   case 'D': return 'double';
+        case 'V': return 'void';    default: return c;
         }
-        return;
     }
-    try { console.log("[YAMGG-JS] 2: send defined"); } catch (e) {}
-
-    // ── اختبار 3: إرسال cpp_ready قبل أي شيء ─────────────
-    try {
-        send({ type: "cpp_ready" });
-        try { console.log("[YAMGG-JS] 3: cpp_ready sent OK"); } catch (e) {}
-    } catch (e) {
-        try { console.log("[YAMGG-JS] 3: cpp_ready send FAILED: " + e); } catch (_) {}
-    }
-
-    // ── اختبار 4: هل Agent موجود؟ ─────────────────────────
-    try {
-        console.log("[YAMGG-JS] 4: Agent=" + typeof globalThis.Agent +
-                    " Java=" + typeof globalThis.Java);
-    } catch (e) {}
-
-    // ── اختبار 5: إرسال bootstrap_debug ───────────────────
-    try {
-        send({ type: "bootstrap_debug",
-               hasAgent: typeof globalThis.Agent !== "undefined",
-               hasSend: typeof send === "function",
-               hasJava: typeof Java !== "undefined" });
-    } catch (e) {}
-
-    // ── اختبار 6: Agent check ─────────────────────────────
-    if (!globalThis.Agent || typeof globalThis.Agent.registerCommand !== "function") {
-        try { send({ type: "cpp_error",
-                     message: "Agent.registerCommand unavailable" }); } catch (e) {}
-        try { console.log("[YAMGG-JS] 6: NO AGENT, returning"); } catch (e) {}
-        return;
+    function parseSig(sig) {
+        if (!sig) return [];
+        var out = []; var i = 0;
+        while (i < sig.length) {
+            var c = sig[i];
+            if (c === '(') { i++; continue; }
+            if (c === ')') break;
+            if (c === 'L') {
+                var e = sig.indexOf(';', i);
+                if (e === -1) break;
+                out.push(sig.substring(i + 1, e).replace(/\//g, '.'));
+                i = e + 1;
+            } else if (c === '[') {
+                var d = 0;
+                while (sig[i] === '[') { d++; i++; }
+                if (sig[i] === 'L') {
+                    var e2 = sig.indexOf(';', i);
+                    if (e2 === -1) break;
+                    out.push(new Array(d + 1).join('[') +
+                             sig.substring(i + 1, e2).replace(/\//g, '.'));
+                    i = e2 + 1;
+                } else { out.push(new Array(d + 1).join('[') + sig[i]); i++; }
+            } else { out.push(prim(c)); i++; }
+        }
+        return out;
     }
 
-    try { console.log("[YAMGG-JS] 6: Agent OK, continuing"); } catch (e) {}
-    try { send({ type: "bootstrap_agent_ok" }); } catch (e) {}
+    // ── 6) mat (JSON → Java object) ─────────────────────────
+    function mat(v) {
+        if (v === null || v === undefined) return v;
+        if (typeof v !== "object") return v;
+        if (typeof v.handle === "number") return get(v.handle);
+        if ("kind" in v) {
+            switch (v.kind) {
+            case "int": case "short": case "byte": return v.value | 0;
+            case "long":
+                return (typeof Int64 === "function")
+                    ? Int64(String(v.value)) : Number(v.value);
+            case "float": case "double": return Number(v.value);
+            case "boolean": return !!v.value;
+            case "string": return String(v.value);
+            case "char": return String(v.value)[0] || "\0";
+            case "null": return null;
+            case "undefined": return undefined;
+            case "enum": return Java.use(v.className).valueOf(v.enumName);
+            case "array": return Java.array(v.elementType,
+                (v.elements || []).map(mat));
+            default: return v.value;
+            }
+        }
+        if ("value" in v) return v.value;
+        return v;
+    }
 
-    // ════════════════════════════════════════════════════════
-    //  بقية كود الـ bootstrap (handle table, commands, etc.)
-    // ════════════════════════════════════════════════════════
-    try { console.log("[YAMGG-JS] 7: bootstrap complete"); } catch (e) {}
+    // ── 7) تسجيل recv على قناة مخصصة (بدل Agent) ────────────
+    // لا نستخدم recv("cmd") — الجسر المدمج يستخدمه.
+    // نستخدم قناة "yamgg_cmd" التي يرسلها C++ عبر post_raw.
+    recv("yamgg_cmd", function (msg) {
+        try {
+            var cmd = (typeof msg === "string") ? JSON.parse(msg) : msg;
+            var action = cmd.action;
+
+            switch (action) {
+            case "cpp_use_class":
+                replyHandle(cmd.id, alloc(Java.use(cmd.className))); break;
+
+            case "cpp_get_method": {
+                var c = get(cmd.classHandle);
+                if (!c) throw new Error("no class handle");
+                var m = c[cmd.methodName];
+                if (!m) throw new Error("no method " + cmd.methodName);
+                var method = cmd.signature
+                    ? m.overload.apply(m, parseSig(cmd.signature))
+                    : (m.overloads && m.overloads.length ? m.overloads[0] : m);
+                replyHandle(cmd.id, alloc(method));
+                break;
+            }
+
+            case "cpp_noop":
+                replyVoid(cmd.id); break;
+
+            default:
+                replyError(cmd.id, new Error("unknown action: " + action));
+            }
+        } catch (e) {
+            try { replyError(0, e); } catch (e2) {}
+        }
+    });
+
+    // ── 8) إشعار الجاهزية النهائية ──────────────────────────
     try { send({ type: "cpp_ready_final" }); } catch (e) {}
 })();
 )YAMJS";
@@ -203,29 +292,36 @@ void JavaScriptBridge::post_raw_json(const String& json) {
 }
 
 void JavaScriptBridge::on_message(const Message& m) {
-    auto parsed = JsonValue::parse(m.payload);
+    // The whole JSON message from JS.
+    String raw = m.payload.empty() ? "" : m.payload;
+
+    // frida's send() wraps: { "type": "send", "payload": {realEvent} }
+    // Our bootstrap uses send({type:"cpp_ready",...}) which arrives as:
+    //   { "type": "send", "payload": {"type":"cpp_ready",...} }
+    auto parsed = JsonValue::parse(raw);
     if (!parsed) {
-        YAM_LOG_WARN() << "bridge: bad JSON: " << m.payload.substr(0, 200);
+        YAM_LOG_WARN() << "bridge: bad JSON: " << raw;
         return;
     }
     auto& top = parsed.value();
+
     String type;
     if (auto* t = top.get("type")) type = t->as_str();
-    if (type.empty()) return;
-    if (type == "batch") {
-        if (auto* arr = top.get("events")) {
-            if (arr->is_arr())
-                for (auto& ev : arr->arr_val) on_event_json(ev);
+
+    // Unwrap frida's send() envelope.
+    if (type == "send") {
+        if (auto* inner = top.get("payload")) {
+            // inner must be an object with a "type" field.
+            if (inner->is_obj()) {
+                on_event_json(*inner);
+            } else {
+                YAM_LOG_WARN() << "bridge: send payload not object";
+            }
         }
         return;
     }
-    if (type == "reply") {
-        if (auto* p = top.get("payload")) {
-            String inner = p->is_str() ? p->as_str() : p->stringify();
-            on_reply(inner);
-        }
-        return;
-    }
+
+    // Direct message (no envelope).
     on_event_json(top);
 }
 
