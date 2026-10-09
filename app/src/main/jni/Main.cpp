@@ -12,8 +12,17 @@
 #include <chrono>
 #include <thread>
 
-#include <glib.h>
-#include <glib-object.h>
+// ── GLib forward declarations (avoid pulling glib.h into app source) ──
+extern "C" {
+    typedef struct _GMainContext GMainContext;
+    typedef int gboolean;
+    GMainContext* g_main_context_get_thread_default(void);
+    GMainContext* g_main_context_default(void);
+    gboolean      g_main_context_iteration(GMainContext* context, gboolean may_block);
+}
+#ifndef FALSE
+#  define FALSE 0
+#endif
 
 #include "Core/Runtime.h"
 #include "Core/DexLoader.h"
