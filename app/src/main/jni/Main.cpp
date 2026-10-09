@@ -81,113 +81,52 @@ static void* init_thread(void*) {
 
         static const char* kActivityHookJs = R"JS(
 (function() {
-    "use strict";
-
-    if (typeof Java === "undefined") {
-        send({type:"hook_error", message:"Java undefined"});
-        return;
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 1 — Force class loader (unblocks Java.perform queue)
-    // ═══════════════════════════════════════════════════════════
     try {
+        if (typeof Java === "undefined") {
+            send({type:"hook_error", message:"Java undefined"});
+            return;
+        }
+
+        // Force class loader first
+        try {
+            Java.performNow(function() {
+                try {
+                    if (Java.classFactory.loader === null) {
+                        var AT = Java.use("android.app.ActivityThread");
+                        var app = AT.currentApplication();
+                        if (app !== null) {
+                            Java.classFactory.loader = app.getClassLoader();
+                            send({type:"hook_info", message:"loader set"});
+                        }
+                    }
+                } catch(e) {}
+            });
+        } catch(e) {}
+
+        // Install onResume hook
         Java.performNow(function() {
             try {
-                if (Java.classFactory.loader === null) {
-                    var AT = Java.use("android.app.ActivityThread");
-                    var app = AT.currentApplication();
-                    if (app !== null) {
-                        Java.classFactory.loader = app.getClassLoader();
-                        send({type:"hook_info", message:"loader set"});
+                var Activity = Java.use("android.app.Activity");
+                var origOnResume = Activity.onResume;
+                Activity.onResume.implementation = function() {
+                    origOnResume.call(this);
+                    try {
+                        var ModView = Java.use("com.yamgg.modview.ModView");
+                        ModView.attach(this);
+                        send({type:"modview_attached",
+                              className:"" + this.getClass().getName()});
+                    } catch(e) {
+                        send({type:"attach_error", message:"" + e});
                     }
-                }
+                };
+                send({type:"activity_hook_installed"});
             } catch(e) {
-                send({type:"hook_info", message:"loader set failed: " + e});
+                send({type:"hook_error", message:"inner:" + e});
             }
         });
     } catch(e) {
-        send({type:"hook_error", message:"performNow(loader): " + e});
+        send({type:"hook_error", message:"outer:" + e});
     }
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 2 — Attach to CURRENT activity immediately
-    // ═══════════════════════════════════════════════════════════
-    Java.performNow(function() {
-        try {
-            var attached = false;
-            var ActivityThread = Java.use("android.app.ActivityThread");
-            var at = ActivityThread.currentActivityThread();
-
-            if (at !== null) {
-                var records = at.mActivities.value;
-                var n = records.size();
-
-                for (var i = 0; i < n; i++) {
-                    var rec = records.valueAt(i);
-                    if (!rec) continue;
-
-                    var act = null;
-                    try { act = rec.activity.value; } catch(e) {}
-                    if (act === null || act === undefined) continue;
-
-                    try {
-                        var isFinishing = act.isFinishing();
-                        if (isFinishing) continue;
-                    } catch(e) {}
-
-                    try {
-                        var ModView = Java.use("com.yamgg.modview.ModView");
-                        ModView.attach(act);
-                        send({
-                            type: "modview_attached_now",
-                            className: "" + act.getClass().getName(),
-                            index: i
-                        });
-                        attached = true;
-                        break;
-                    } catch(e) {
-                        send({type:"attach_now_error", message:"" + e});
-                    }
-                }
-            }
-
-            if (!attached) {
-                send({type:"hook_info", message:"no active activity yet"});
-            }
-        } catch(e) {
-            send({type:"hook_error", message:"current-activity scan: " + e});
-        }
-    });
-
-    // ═══════════════════════════════════════════════════════════
-    // STEP 3 — Hook onResume for any FUTURE activity
-    // ═══════════════════════════════════════════════════════════
-    Java.performNow(function() {
-        try {
-            var Activity = Java.use("android.app.Activity");
-            var origOnResume = Activity.onResume;
-
-            Activity.onResume.implementation = function() {
-                origOnResume.call(this);
-
-                try {
-                    var ModView = Java.use("com.yamgg.modview.ModView");
-                    ModView.attach(this);
-                    send({
-                        type: "modview_attached",
-                        className: "" + this.getClass().getName()
-                    });
-                } catch(e) {
-                    send({type:"attach_error", message:"" + e});
-                }
-            };
-
-            send({type:"activity_hook_installed"});
-        } catch(e) {
-            send({type:"hook_error", message:"hook install: " + e});
-        }
-    });
 })();
 )JS";
 
