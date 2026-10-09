@@ -67,8 +67,7 @@ bool YamBridge::initialize() {
         DBG(">>> [11b] bridge NOT ready after YAM::init; leaving it up, returning false");
         // Do NOT call bridge.initialize() again — that reassigns script_ and
         // triggers the previous Script destructor while callbacks are in flight.
-        #undef DBG
-        return false;
+            return false;
     }
     DBG(">>> [12] bridge is ready");
 
@@ -79,7 +78,6 @@ bool YamBridge::initialize() {
     ready_.store(true);
     initialized_.store(true);
     DBG(">>> [15] READY");
-    #undef DBG
     return true;
 }
 
