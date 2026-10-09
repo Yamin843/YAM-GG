@@ -1212,47 +1212,4 @@ Result<void> YAM::init(const EntryOptions& opt) { return FinalGlue::initialize_a
 Result<void> YAM::shutdown() { return FinalGlue::shutdown_all(); }
 bool YAM::started() { return FinalGlue::initialized(); }
 
-// ===========================================================================
-// RuntimeDiag
-// ===========================================================================
-
-namespace { TimePoint g_start_time = Clock::now(); }
-
-DiagSnapshot RuntimeDiag::snapshot() {
-    DiagSnapshot s;
-    s.runtime_init = Runtime::instance().is_initialized();
-    s.java_ready = JavaFacade::is_ready();
-    s.registry_entries = registry().size();
-    s.registry_bytes = registry().total_bytes();
-    s.uptime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        Clock::now() - g_start_time).count();
-    return s;
-}
-String RuntimeDiag::to_json(const DiagSnapshot& s) {
-    char b[512];
-    std::snprintf(b, sizeof(b),
-        "{\"runtime_init\":%s,\"java_ready\":%s,"
-        "\"registry_entries\":%zu,\"registry_bytes\":%zu,\"uptime_ms\":%lld}",
-        s.runtime_init ? "true" : "false", s.java_ready ? "true" : "false",
-        s.registry_entries, s.registry_bytes,
-        static_cast<long long>(s.uptime_ms));
-    return b;
-}
-String RuntimeDiag::to_string(const DiagSnapshot& s) {
-    char b[256];
-    std::snprintf(b, sizeof(b),
-        "runtime=%d java=%d reg=%zu bytes=%zu up=%lldms",
-        s.runtime_init, s.java_ready, s.registry_entries, s.registry_bytes,
-        static_cast<long long>(s.uptime_ms));
-    return b;
-}
-
-// ===========================================================================
-// install_event_router
-// ===========================================================================
-
-void install_event_router() {
-    YAM_LOG_INFO() << "event router installed";
-}
-
 } // namespace yam

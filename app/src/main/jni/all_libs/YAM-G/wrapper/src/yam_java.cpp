@@ -1489,8 +1489,4 @@ usize JavaHookManager::size() const {
 // SECTION 8 — install_event_router
 // ===========================================================================
 
-void install_event_router() {
-    YAM_LOG_INFO() << "event router installed";
-}
-
 } // namespace yam
