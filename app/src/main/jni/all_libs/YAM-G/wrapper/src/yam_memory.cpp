@@ -488,10 +488,10 @@ gboolean Module::visit_module(YamModule* m, gpointer user) {
     const gchar* pt = yam_module_get_path(m);
     mod.name_ = nm ? nm : "";
     mod.path_ = pt ? pt : "";
-    YamMemoryRange range{};
-    if (yam_module_get_range(m, &range)) {
-        mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range.base_address));
-        mod.size_ = range.size;
+    const YamMemoryRange* range = yam_module_get_range(m);
+    if (range) {
+        mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range->base_address));
+        mod.size_ = range->size;
     }
     out->push_back(std::move(mod));
     return 1;
@@ -513,10 +513,10 @@ Result<Module> Module::find(const String& name) {
     const gchar* pt = yam_module_get_path(m);
     mod.name_ = nm ? nm : name;
     mod.path_ = pt ? pt : "";
-    YamMemoryRange range{};
-    if (yam_module_get_range(m, &range)) {
-        mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range.base_address));
-        mod.size_ = range.size;
+    const YamMemoryRange* range = yam_module_get_range(m);
+    if (range) {
+        mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range->base_address));
+        mod.size_ = range->size;
     }
     return Result<Module>::ok(std::move(mod));
 }
@@ -530,10 +530,10 @@ Result<Module> Module::find_by_address(void* addr) {
     const gchar* pt = yam_module_get_path(m);
     mod.name_ = nm ? nm : "";
     mod.path_ = pt ? pt : "";
-    YamMemoryRange range{};
-    if (yam_module_get_range(m, &range)) {
-        mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range.base_address));
-        mod.size_ = range.size;
+    const YamMemoryRange* range = yam_module_get_range(m);
+    if (range) {
+        mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range->base_address));
+        mod.size_ = range->size;
     }
     return Result<Module>::ok(std::move(mod));
 }
@@ -546,10 +546,10 @@ Module Module::main() {
         const gchar* pt = yam_module_get_path(m);
         mod.name_ = nm ? nm : "";
         mod.path_ = pt ? pt : "";
-        YamMemoryRange range{};
-        if (yam_module_get_range(m, &range)) {
-            mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range.base_address));
-            mod.size_ = range.size;
+        const YamMemoryRange* range = yam_module_get_range(m);
+        if (range) {
+            mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range->base_address));
+            mod.size_ = range->size;
         }
     }
     return mod;
@@ -559,14 +559,16 @@ void* Module::find_export(const String& name) const {
     if (name.empty()) return nullptr;
     YamModule* m = yam_process_find_module_by_name(name_.c_str());
     if (!m) return nullptr;
-    return yam_module_find_export_by_name(m, name.c_str());
+    YamAddress a = yam_module_find_export_by_name(m, name.c_str());
+    return reinterpret_cast<void*>(static_cast<uintptr_t>(a));
 }
 
 void* Module::find_symbol(const String& name) const {
     if (name.empty()) return nullptr;
     YamModule* m = yam_process_find_module_by_name(name_.c_str());
     if (!m) return nullptr;
-    return yam_module_find_symbol_by_name(m, name.c_str());
+    YamAddress a = yam_module_find_symbol_by_name(m, name.c_str());
+    return reinterpret_cast<void*>(static_cast<uintptr_t>(a));
 }
 
 void* Module::find_global_export(const String& name) {
@@ -581,8 +583,8 @@ gboolean export_visitor(const YamExportDetails* d, gpointer user) {
     if (!d || !ctx || !ctx->out) return 0;
     ExportSymbol e;
     e.name = d->name ? d->name : "";
-    e.address = d->address;
-    e.type = d->type ? d->type : "";
+    e.address = reinterpret_cast<void*>(static_cast<uintptr_t>(d->address));
+    e.type = std::to_string(static_cast<int>(d->type));
     ctx->out->push_back(std::move(e));
     return 1;
 }
@@ -634,10 +636,13 @@ void* Symbol::resolve_in(const String& mod, const String& name) {
 std::vector<void*> Symbol::resolve_matching(const String& pattern) {
     std::vector<void*> out;
     if (pattern.empty()) return out;
-    YamPtrArray* arr = yam_find_functions_matching(pattern.c_str());
+    GArray* arr = yam_find_functions_matching(pattern.c_str());
     if (!arr) return out;
-    for (guint i = 0; i < arr->len; ++i)
-        out.push_back(arr->pdata[i]);
+    for (guint i = 0; i < arr->len; ++i) {
+        YamAddress a = g_array_index(arr, YamAddress, i);
+        out.push_back(reinterpret_cast<void*>(static_cast<uintptr_t>(a)));
+    }
+    g_array_unref(arr);
     return out;
 }
 
