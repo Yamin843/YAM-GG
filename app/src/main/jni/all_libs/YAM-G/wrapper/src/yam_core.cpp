@@ -1172,7 +1172,7 @@ usize Gc::live_bytes() { return registry().total_bytes(); }
 extern "C" void yamgg_pump_once() {
     static std::atomic<int> call_count{0};
     int n = call_count.fetch_add(1);
-    bool verbose = (n < 5) || (n % 500 == 0);
+    bool verbose = (n < 5) || (n % 10000 == 0);
 
     GMainContext* td = g_main_context_get_thread_default();
     GMainContext* def = g_main_context_default();

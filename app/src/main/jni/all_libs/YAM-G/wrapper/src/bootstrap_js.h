@@ -8,9 +8,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
 (function () {
     "use strict";
 
-    // ═══════════════════════════════════════════════════
-    // HANDLE REGISTRY
-    // ═══════════════════════════════════════════════════
     var table = Object.create(null);
     var nextHandle = 1;
     function alloc(o) { var id = nextHandle++; table[id] = o; return id; }
@@ -18,9 +15,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
     function drop(id) { if (Object.prototype.hasOwnProperty.call(table, id)) delete table[id]; }
     function dropAll() { table = Object.create(null); nextHandle = 1; }
 
-    // ═══════════════════════════════════════════════════
-    // REPLY ENVELOPE
-    // ═══════════════════════════════════════════════════
     function reply(id, ok, kind, value, handle, error) {
         var m = { id: id, ok: !!ok };
         if (kind)   m.kind = kind;
@@ -34,9 +28,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
     function replyVoid(id)      { reply(id, true,  "void",   null, null); }
     function replyError(id, e)  { reply(id, false, "error", null, null, (e && e.message) ? e.message : String(e)); }
 
-    // ═══════════════════════════════════════════════════
-    // JNI SIG PARSER
-    // ═══════════════════════════════════════════════════
     function prim(c) {
         switch (c) {
         case "Z": return "boolean"; case "B": return "byte";
@@ -80,9 +71,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
         return out;
     }
 
-    // ═══════════════════════════════════════════════════
-    // MATERIALIZER
-    // ═══════════════════════════════════════════════════
     function mat(v) {
         if (v === null || v === undefined) return v;
         if (typeof v !== "object") return v;
@@ -106,9 +94,22 @@ static const char kBootstrapSrc[] = R"YAMJS(
         return v;
     }
 
-    // ═══════════════════════════════════════════════════
-    // COMMAND HANDLERS
-    // ═══════════════════════════════════════════════════
+    var LOG_PATH = "/storage/emulated/0/Download/appsflyer_calls.log";
+    function writeLog(line) {
+        try {
+            var FOS = Java.use("java.io.FileOutputStream");
+            var fos = FOS.$new(LOG_PATH, true);
+            try {
+                var String_ = Java.use("java.lang.String");
+                var bytes = String_.$new(line + "\n").getBytes("UTF-8");
+                fos.write(bytes);
+                fos.flush();
+            } finally { fos.close(); }
+        } catch (e) {
+            send({type:"appsflyer_log_error", message:"" + e});
+        }
+    }
+
     var handlers = {
         cpp_use_class: function (cmd) { replyHandle(cmd.id, alloc(Java.use(cmd.className))); },
         cpp_get_method: function (cmd) {
@@ -117,16 +118,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
             var method = cmd.signature ? m.overload.apply(m, parseSig(cmd.signature))
                                        : ((m.overloads && m.overloads.length > 0) ? m.overloads[0] : m);
             replyHandle(cmd.id, alloc(method));
-        },
-        cpp_get_field: function (cmd) {
-            var cls = Java.use(cmd.className); var f = cls[cmd.fieldName];
-            if (!f) throw new Error("no field: " + cmd.fieldName);
-            var isStatic = false;
-            try { var af = cls.class.getDeclaredFields();
-                  for (var j = 0; j < af.length; j++) {
-                      if (String(af[j].getName()) === cmd.fieldName) {
-                          isStatic = (Number(af[j].getModifiers()) & 8) !== 0; break; } } } catch (e) {}
-            replyValue(cmd.id, JSON.stringify({ static: isStatic, handle: alloc(f) }));
         },
         cpp_cast: function (cmd) {
             var cls = get(cmd.classHandle); var obj = get(cmd.objectHandle);
@@ -166,24 +157,27 @@ static const char kBootstrapSrc[] = R"YAMJS(
             replyValue(cmd.id, list);
         },
         cpp_clear_handles: function (cmd) { dropAll(); replyVoid(cmd.id); },
+        cpp_get_field: function (cmd) {
+            var cls = Java.use(cmd.className); var f = cls[cmd.fieldName];
+            if (!f) throw new Error("no field: " + cmd.fieldName);
+            var isStatic = false;
+            try { var af = cls.class.getDeclaredFields();
+                  for (var j = 0; j < af.length; j++) {
+                      if (String(af[j].getName()) === cmd.fieldName) {
+                          isStatic = (Number(af[j].getModifiers()) & 8) !== 0; break; } } } catch (e) {}
+            replyValue(cmd.id, JSON.stringify({ static: isStatic, handle: alloc(f) }));
+        },
         cpp_inspect_handle: function (cmd) {
             var obj = get(cmd.handleId); if (!obj) throw new Error("no handle");
-            var fields = [];
-            try { var cls = Java.use(obj.$className); var flds = cls.class.getDeclaredFields();
-                  for (var i = 0; i < flds.length && i < 32; i++) {
-                      var f = flds[i];
-                      if ((Number(f.getModifiers()) & 8) !== 0) continue;
-                      try { f.setAccessible(true); var fv = f.get(obj);
-                            fields.push({ name: String(f.getName()), type: String(f.getType().getName()), value: (fv === null ? "null" : String(fv)) });
-                      } catch (e) {} } } catch (e) {}
-            replyValue(cmd.id, { className: obj.$className || "unknown", stringValue: String(obj), fields: fields });
+            replyValue(cmd.id, { className: obj.$className || "unknown", stringValue: String(obj) });
         },
-        cpp_noop: function (cmd) { replyVoid(cmd.id); }
+        cpp_noop: function (cmd) { replyVoid(cmd.id); },
+        cpp_pong: function (cmd) {
+            send({ type: "cpp_pong_received", id: cmd.id });
+            replyVoid(cmd.id);
+        }
     };
 
-    // ═══════════════════════════════════════════════════
-    // RECEIVER — yamgg_cmd channel
-    // ═══════════════════════════════════════════════════
     recv("yamgg_cmd", function (msg) {
         var cmd = null;
         try { cmd = (typeof msg === "string") ? JSON.parse(msg) : msg; } catch (e) { return; }
@@ -193,86 +187,137 @@ static const char kBootstrapSrc[] = R"YAMJS(
         try { h(cmd); } catch (e) { replyError(cmd.id, e); }
     });
 
-    // ═══════════════════════════════════════════════════
-    // LOG WRITER — FileOutputStream (avoids FileWriter.write overload)
-    // ═══════════════════════════════════════════════════
-    var LOG_PATH = "/storage/emulated/0/Download/appsflyer_calls.log";
-    function writeLog(line) {
+    // ═══════════════════════════════════════════════════════
+    // ATTACH — 5 strategies, no attempt limit
+    // ═══════════════════════════════════════════════════════
+    var attachDone = false;
+    var attachAttempts = 0;
+    var lastDiagSent = 0;
+
+    function tryOne(tag, act) {
+        if (!act) return false;
         try {
-            var FOS = Java.use("java.io.FileOutputStream");
-            var fos = FOS.$new(LOG_PATH, true);
-            try {
-                var String_ = Java.use("java.lang.String");
-                var bytes = String_.$new(line + "\n").getBytes("UTF-8");
-                fos.write(bytes);
-                fos.flush();
-            } finally { fos.close(); }
+            try { if (act.isFinishing()) return false; } catch (e) {}
+            var ModView = Java.use("com.yamgg.modview.ModView");
+            ModView.attach(act);
+            attachDone = true;
+            send({ type: "attach_ok", strategy: tag,
+                   className: "" + act.getClass().getName(),
+                   attempts: attachAttempts });
+            return true;
         } catch (e) {
-            send({type:"appsflyer_log_error", message:"" + e});
+            send({ type: "attach_try_err", strategy: tag, message: "" + e });
+            return false;
         }
     }
 
-    // ═══════════════════════════════════════════════════
-    // ATTACH via Java.choose (JVMTI heap enumeration)
-    // ═══════════════════════════════════════════════════
-    var attachDone = false;
-    var attachAttempts = 0;
-    var ATTACH_MAX = 30;
+    function tryUnityPlayer() {
+        try {
+            var UP = Java.use("com.unity3d.player.UnityPlayer");
+            var ca = UP.currentActivity.value;
+            if (ca && tryOne("UnityPlayer.currentActivity", ca)) return true;
+        } catch (e) {}
+        return false;
+    }
 
-    function tryAttachOnce(onDone) {
-        attachAttempts++;
+    function tryMActivities() {
+        try {
+            var AT = Java.use("android.app.ActivityThread");
+            var at = AT.currentActivityThread();
+            if (!at) return false;
+            var map = null;
+            try { map = at.mActivities.value; } catch (e) {}
+            if (!map) {
+                try {
+                    var fld = at.getClass().getDeclaredField("mActivities");
+                    fld.setAccessible(true);
+                    map = fld.get(at);
+                } catch (e) {}
+            }
+            if (!map) return false;
+            var n = map.size();
+            if (attachAttempts === 1) send({ type: "diag_mActivities_size", value: n });
+            for (var i = 0; i < n; i++) {
+                try {
+                    var rec = map.valueAt(i);
+                    if (!rec) continue;
+                    var wr = rec.activity.value;
+                    var act = wr;
+                    try {
+                        var cn = "" + wr.getClass().getName();
+                        if (cn.indexOf("WeakReference") >= 0) act = wr.get();
+                    } catch (e) {}
+                    if (act && tryOne("mActivities[" + i + "]", act)) return true;
+                } catch (e) {}
+            }
+        } catch (e) {}
+        return false;
+    }
+
+    function tryWindowManager() {
+        try {
+            var WMG = Java.use("android.view.WindowManagerGlobal");
+            var inst = WMG.getInstance();
+            var roots = inst.mRoots.value;
+            if (!roots) return false;
+            var n = roots.size();
+            if (attachAttempts === 1) send({ type: "diag_roots_size", value: n });
+            var ActCls = Java.use("android.app.Activity");
+            for (var j = 0; j < n; j++) {
+                try {
+                    var ri = roots.get(j);
+                    var view = ri.mView.value;
+                    if (!view) continue;
+                    var ctx = view.getContext();
+                    try {
+                        var act = Java.cast(ctx, ActCls);
+                        if (act && tryOne("WManager[" + j + "]", act)) return true;
+                    } catch (e) {}
+                } catch (e) {}
+            }
+        } catch (e) {}
+        return false;
+    }
+
+    function tryJavaChoose() {
         var found = false;
         try {
-            Java.performNow(function () {
-                try {
-                    Java.choose("android.app.Activity", {
-                        onMatch: function (act) {
-                            if (found) return "stop";
-                            try {
-                                if (act.isFinishing()) return;
-                                var ModView = Java.use("com.yamgg.modview.ModView");
-                                ModView.attach(act);
-                                found = true;
-                                attachDone = true;
-                                send({type:"attach_choose_ok", className: "" + act.getClass().getName(), attempts: attachAttempts});
-                                return "stop";
-                            } catch (e) {
-                                send({type:"attach_choose_err", message: "" + e});
-                            }
-                        },
-                        onComplete: function () {}
-                    });
-                } catch (e) {
-                    send({type:"attach_choose_outer", message: "" + e});
-                }
+            Java.choose("android.app.Activity", {
+                onMatch: function (a) {
+                    if (found) return "stop";
+                    if (tryOne("Java.choose", a)) { found = true; return "stop"; }
+                },
+                onComplete: function () {}
             });
-        } catch (e) {
-            send({type:"attach_perform_err", message: "" + e});
+        } catch (e) {}
+        return found;
+    }
+
+    function tryAttachOnce() {
+        attachAttempts++;
+        Java.performNow(function () {
+            if (tryUnityPlayer())  return;
+            if (tryMActivities())  return;
+            if (tryWindowManager()) return;
+            if (tryJavaChoose())   return;
+        });
+
+        if (!attachDone && (attachAttempts - lastDiagSent) >= 30) {
+            lastDiagSent = attachAttempts;
+            send({ type: "attach_still_trying", attempts: attachAttempts });
         }
-        onDone(found);
     }
 
     function loopAttach() {
         if (attachDone) return;
-        if (attachAttempts >= ATTACH_MAX) {
-            send({type:"attach_giveup", attempts: attachAttempts});
-            return;
-        }
-        tryAttachOnce(function (found) {
-            if (!found && !attachDone) {
-                var t = setInterval(function () {
-                    clearInterval(t);
-                    loopAttach();
-                }, 1000);
-            }
-        });
+        try { tryAttachOnce(); } catch (e) { send({type:"attach_outer_err", message:"" + e}); }
+        setTimeout(loopAttach, 1000);
     }
 
-    // ═══════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════
     // INSTALL HOOKS
-    // ═══════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════
     function installAllHooks() {
-        // onResume hook
         try {
             Java.performNow(function () {
                 try {
@@ -280,70 +325,54 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     var origOnResume = Activity.onResume;
                     Activity.onResume.implementation = function () {
                         try { origOnResume.call(this); } catch (e) {}
-                        try {
-                            var ModView = Java.use("com.yamgg.modview.ModView");
-                            ModView.attach(this);
-                            send({type:"modview_attached", className: "" + this.getClass().getName()});
-                        } catch (e) { send({type:"attach_error", message: "" + e}); }
+                        if (!attachDone) {
+                            try { tryOne("onResume", this); } catch (e) {}
+                        }
                     };
                     send({type:"hook_installed"});
                 } catch (e) { send({type:"hook_error", message: "install: " + e}); }
             });
         } catch (e) { send({type:"hook_outer_error", message: "" + e}); }
 
-        // AppsFlyerLib.logEvent hooks
         try {
             Java.performNow(function () {
                 try {
                     var A = Java.use("com.appsflyer.AppsFlyerLib");
                     send({type:"appsflyer_class_ok"});
-
-                    // 4-arg: actual implementation (called directly or via 3-arg)
                     try {
                         var le4 = A.logEvent.overload(
-                            "android.content.Context",
-                            "java.lang.String",
+                            "android.content.Context", "java.lang.String",
                             "java.util.Map",
-                            "com.appsflyer.attribution.AppsFlyerRequestListener"
-                        );
+                            "com.appsflyer.attribution.AppsFlyerRequestListener");
                         le4.implementation = function (ctx, name, params, listener) {
                             var n = "" + name;
-                            var p = "";
-                            try { p = "" + params; } catch (e) { p = "<unstringable>"; }
+                            var p = ""; try { p = "" + params; } catch (e) {}
                             writeLog("" + new Date() + "  logEvent/4  name=" + n + "  params=" + p);
                             send({type:"appsflyer_logEvent", overload:"4", name: n});
                             return le4.call(this, ctx, name, params, listener);
                         };
                         send({type:"appsflyer_hook_ok", overload:"4"});
                     } catch (e) { send({type:"appsflyer_hook_err", overload:"4", message: "" + e}); }
-
-                    // 3-arg: wrapper that delegates to 4-arg
                     try {
                         var le3 = A.logEvent.overload(
-                            "android.content.Context",
-                            "java.lang.String",
-                            "java.util.Map"
-                        );
+                            "android.content.Context", "java.lang.String", "java.util.Map");
                         le3.implementation = function (ctx, name, params) {
                             var n = "" + name;
-                            writeLog("" + new Date() + "  logEvent/3  name=" + n + "  [delegates to /4]");
+                            writeLog("" + new Date() + "  logEvent/3  name=" + n);
                             send({type:"appsflyer_logEvent", overload:"3", name: n});
                             return le3.call(this, ctx, name, params);
                         };
                         send({type:"appsflyer_hook_ok", overload:"3"});
                     } catch (e) { send({type:"appsflyer_hook_err", overload:"3", message: "" + e}); }
-
                     send({type:"appsflyer_ready"});
                 } catch (e) { send({type:"appsflyer_class_error", message: "" + e}); }
             });
         } catch (e) { send({type:"appsflyer_outer_error", message: "" + e}); }
     }
 
-    // ═══════════════════════════════════════════════════
-    // READY + SCHEDULE
-    // ═══════════════════════════════════════════════════
     try { send({ type: "cpp_ready" }); }       catch (e) {}
     try { send({ type: "cpp_ready_final" }); } catch (e) {}
+    try { send({ type: "js_alive_1" }); }      catch (e) {}
 
     setTimeout(function () {
         try { installAllHooks(); } catch (e) { send({type:"install_err", message: "" + e}); }

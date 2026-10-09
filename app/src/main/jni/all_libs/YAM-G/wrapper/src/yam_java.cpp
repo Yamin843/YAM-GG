@@ -238,6 +238,22 @@ void JavaScriptBridge::on_event_json(const JsonValue& ev) {
         YAM_LOG_INFO() << "cpp bootstrap: ready";
         return;
     }
+
+    // ─── C→JS round-trip test (verifies Script::post channel works) ───
+    if (type == "js_alive_1") {
+        YAM_LOG_INFO() << "js_alive_1 received from JS — sending cpp_pong back";
+        if (script_) {
+            String reply = "{\"type\":\"yamgg_cmd\",\"payload\":"
+                           "{\"action\":\"cpp_pong\",\"id\":777}}";
+            script_->post(reply);
+        }
+        return;
+    }
+
+    if (type == "cpp_pong_received") {
+        YAM_LOG_INFO() << ">>> C→JS ROUND-TRIP OK (cpp_pong_received from JS)";
+        return;
+    }
     if (type == "cpp_error") {
         String msg = "cpp bootstrap error";
         if (auto* v = ev.get("message")) msg = v->as_str(msg);
