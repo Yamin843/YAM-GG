@@ -40,16 +40,11 @@ static int readApiLevel() {
 static std::string readCmdline() {
     std::ifstream f("/proc/self/cmdline", std::ios::binary);
     if (!f) return "";
-    // cap at 8KB — cmdline يجب ألا يكون أكبر
-    char buf[8192];
-    f.read(buf, sizeof(buf) - 1);
-    std::streamsize n = f.gcount();
-    if (n <= 0) return "";
-    buf[n] = 0;
-    std::string s(buf, static_cast<size_t>(n));
-    // trim trailing NULs
+    // بلا cap — نقرأ كل شيء حتى EOF. kernel يضع حداً طبيعياً 128KB.
+    std::stringstream ss;
+    ss << f.rdbuf();
+    std::string s = ss.str();
     while (!s.empty() && s.back() == '\0') s.pop_back();
-    // internal NULs → ':'
     for (char& c : s) if (c == '\0') c = ':';
     return s;
 }

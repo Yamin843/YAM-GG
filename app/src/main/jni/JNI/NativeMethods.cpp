@@ -70,11 +70,12 @@ static jstring JNICALL impl_nativeGetPendingCmd(JNIEnv* env, jclass clazz) {
     int needed = yamgg_peekPendingCmdSize();
     if (needed <= 0) return nullptr;
 
-    // تخصيص دقيق — لا سقف صناعي. إذا الأمر 50 MB، نخصّص 50 MB.
-    // الحماية الوحيدة: عدد بايت معقول حتى لا ينهار النظام من خِداع داخلي.
-    if (needed < 0 || needed > (256 << 20)) {
+    // تخصيص دقيق — لا سقف. إذا الأمر 500 MB، نخصّص 500 MB.
+    // الحماية الوحيدة: reject سالب (خطأ protocol)، و reject ما يتجاوز
+    // حد jstring (INT_MAX - 16) لأن JNI NewStringUTF يقتطع عنده بصمت.
+    if (needed <= 0 || needed >= (INT_MAX - 16)) {
         __android_log_print(ANDROID_LOG_ERROR, "YAMGG",
-            "cmd size insane: %d", needed);
+            "cmd size invalid: %d", needed);
         return nullptr;
     }
 

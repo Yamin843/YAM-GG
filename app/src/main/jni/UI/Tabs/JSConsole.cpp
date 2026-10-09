@@ -24,7 +24,8 @@ JSConsole& JSConsole::instance() { static JSConsole i; return i; }
 void JSConsole::pushOutput(const std::string& line) {
     std::lock_guard<std::mutex> lk(mu_);
     output_.push_back(line);
-    if (output_.size() > 3000) output_.erase(output_.begin(), output_.begin() + 800);
+    // لا cap. لا حذف تلقائي. إذا احتاج المستخدم clear، يضغط Clear Log.
+    // الإبقاء على كل السطور يجعل التشخيص ممكناً بلا فقدان.
 }
 
 void JSConsole::evaluate(const std::string& code) {

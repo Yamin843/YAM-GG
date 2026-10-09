@@ -87,11 +87,9 @@ bool YamBridge::initialize() {
     yam::events::on("user_script_loaded", [](const yam::Event& ev) {
         std::string nm = ev.get_str("name");
         std::lock_guard<std::mutex> lk(g_scriptLoadMutex);
-        // حد أعلى حتى لا تنمو الخرائط بلا نهاية عند تسريب اسم
-        if (g_scriptLoadResult.size() > 64) {
-            g_scriptLoadResult.clear();
-            g_scriptLoadError.clear();
-        }
+        // لا cap — كل loadScriptSync يزيل عنصره عند الاكتمال/الـ timeout،
+        // فلا تسريب طبيعي. الحجم كبير فقط إذا كانت خرائط loadScript
+        // معلّقة (نادرة).
         g_scriptLoadResult[nm] = {true, ev.get_bool("ok", false)};
         g_scriptLoadError[nm]  = ev.get_str("error");
         g_scriptLoadCv.notify_all();
@@ -99,10 +97,6 @@ bool YamBridge::initialize() {
     yam::events::on("script_failed", [](const yam::Event& ev) {
         std::string nm = ev.get_str("name");
         std::lock_guard<std::mutex> lk(g_scriptLoadMutex);
-        if (g_scriptLoadResult.size() > 64) {
-            g_scriptLoadResult.clear();
-            g_scriptLoadError.clear();
-        }
         g_scriptLoadResult[nm] = {true, false};
         g_scriptLoadError[nm]  = ev.get_str("error");
         g_scriptLoadCv.notify_all();

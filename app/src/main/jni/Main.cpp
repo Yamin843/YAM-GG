@@ -209,13 +209,11 @@ extern "C" void yamgg_postCommand(const char* json) {
     if (!json) return;
     std::lock_guard<std::mutex> lk(g_cmdMutex);
 
-    const size_t kMaxQueue = 4096;
-    if (g_cmdQueue.size() >= kMaxQueue) {
-        // طَرْح أقدم أمر — نسجّل ذلك بدل الصمت
-        g_cmdQueue.pop();
-        uint64_t n = g_droppedCmds.fetch_add(1) + 1;
-
-        // لا نُغرق اللوغ: كل 5 ثوانٍ على الأكثر
+    // لا cap. الطابور ينمو بحرية. إذا وصل إلى 10000 عنصر، نُسجّل
+    // تحذيراً للمراقبة لكن لا نُسقط أي أمر. النظام الذي يتجاوز هذا
+    // الحجم يعني أن JS poller لا يعمل — نحتاج معالجة ذلك في JS،
+    // لا حذف بيانات المستخدم.
+    if (g_cmdQueue.size() == 10000 || g_cmdQueue.size() == 100000) {
         int64_t now = static_cast<int64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count());
@@ -223,8 +221,8 @@ extern "C" void yamgg_postCommand(const char* json) {
         if (now - last > 5000) {
             g_lastDropLogMs.store(now);
             __android_log_print(ANDROID_LOG_WARN, "YAMGG",
-                "cmd queue overflow: dropped %llu commands so far (size=%zu)",
-                (unsigned long long)n, g_cmdQueue.size());
+                "cmd queue growing: size=%zu (JS poller slow?)",
+                g_cmdQueue.size());
         }
     }
     g_cmdQueue.push(std::string(json));

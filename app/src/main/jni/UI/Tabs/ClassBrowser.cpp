@@ -177,7 +177,7 @@ void ClassBrowser::triggerLoadClasses() {
         "var all=Java.enumerateLoadedClassesSync();"
         "var f=" + fjson + ";"
         "var out=[];"
-        "for(var i=0;i<all.length&&out.length<1500;i++){"
+        "for(var i=0;i<all.length;i++){"
         "if(all[i].indexOf(f)>=0)out.push(all[i]);"
         "}"
         "send({type:'classes_list',count:out.length,classes:out});"
@@ -269,10 +269,10 @@ void ClassBrowser::findInstances(const std::string& cls) {
     std::string js = "(function(){try{var items=[];Java.choose(" + cn + ",{"
         "onMatch:function(x){try{var h=createHandle(x,'java'," + cn + ");var fields=[];"
         "try{var cls=Java.use(String(x.$className));var flds=cls.class.getDeclaredFields();"
-        "for(var i=0;i<flds.length&&i<32;i++){var f=flds[i];if((f.getModifiers()&8)!==0)continue;"
+        "for(var i=0;i<flds.length;i++){var f=flds[i];if((f.getModifiers()&8)!==0)continue;"
         "try{f.setAccessible(true);var fv=f.get(x);fields.push({name:String(f.getName()),value:describe(fv)});}catch(e){}}}catch(e){}"
         "items.push({handle:h,className:String(x.$className),fields:fields});}catch(e){}"
-        "if(items.length>=30)return 'stop';},onComplete:function(){"
+        "},onComplete:function(){"
         "send({type:'instances_result',className:" + cn + ",items:items});}});"
         "}catch(e){send({type:'instances_result',className:" + cn + ",items:[]});}})();";
     sendJS(js);

@@ -11,26 +11,32 @@ static const char kBootstrapSrc[] = R"YAMJS(
     // ═══════ HANDLE REGISTRY ═══════
     var table = Object.create(null);
     var nextHandle = 1;
-    // LRU: نحفظ ترتيب الاستخدام حتى لا تنمو الـ table بلا حد
-    // (مثلاً في hook_cb الذي يخصّص handle لكل arg).
-    var handleOrder = [];  // FIFO
-    var MAX_HANDLES = 8192;
+
+    // لا حدود ثابتة. الحذف تلقائي عندما يجمع JS الـ handle object.
+    // FinalizationRegistry متاح في QuickJS 2020+ و V8 8+.
+    var registry = (typeof FinalizationRegistry === "function")
+        ? new FinalizationRegistry(function (id) {
+            if (Object.prototype.hasOwnProperty.call(table, id)) {
+                delete table[id];
+            }
+        })
+        : null;
+
     function alloc(o) {
         var id = nextHandle++;
         table[id] = o;
-        handleOrder.push(id);
-        if (handleOrder.length > MAX_HANDLES) {
-            // احذف أقدم 25% لجعل الحذف amortized O(1)
-            var trim = Math.floor(MAX_HANDLES / 4);
-            for (var i = 0; i < trim; i++) {
-                var old = handleOrder.shift();
-                delete table[old];
-            }
+        if (registry && o !== null && typeof o === "object") {
+            try { registry.register(o, id); } catch (e) {}
         }
         return id;
     }
+
     function drop(id) {
         if (Object.prototype.hasOwnProperty.call(table, id)) {
+            var o = table[id];
+            if (registry && o !== null && typeof o === "object") {
+                try { registry.unregister(o); } catch (e) {}
+            }
             delete table[id];
         }
     }
@@ -238,48 +244,94 @@ static const char kBootstrapSrc[] = R"YAMJS(
         }
     }
 
-    // ═══════ DESCRIBE ═══════
+    // ═══════ DESCRIBE (unbounded, cycle-safe) ═══════
+    // لا حدود على عدد العناصر أو عمق الكائنات. نستخدم WeakSet لتتبع
+    // الدورات (cycles) لتفادي infinite recursion فقط.
     function describe(v) {
+        var seen = new WeakSet();
+        return describeRec(v, seen, 0);
+    }
+
+    function describeRec(v, seen, depth) {
         if (v === null) return "null";
         if (v === undefined) return "undefined";
         var t = typeof v;
         if (t === "number" || t === "boolean") return String(v);
         if (t === "string") return JSON.stringify(v);
+        if (t === "function") return "<fn " + (v.name || "anon") + ">";
+        if (t !== "object") return String(v);
+
+        // cycle check
+        if (typeof seen.add === "function") {
+            if (seen.has(v)) return "<circular>";
+            try { seen.add(v); } catch (e) {}
+        }
+
         try {
             var cn = v.$className ? String(v.$className) : "";
-            if (!cn) return JSON.stringify(v);
+            if (!cn) {
+                // plain JS object — لا نتعمق
+                return JSON.stringify(v);
+            }
+
             if (cn === "java.lang.String") return JSON.stringify(String(v));
+
+            // الأغلفة البدائية
             if (cn === "java.lang.Integer" || cn === "java.lang.Long" ||
                 cn === "java.lang.Short" || cn === "java.lang.Byte" ||
                 cn === "java.lang.Float" || cn === "java.lang.Double" ||
                 cn === "java.lang.Boolean" || cn === "java.lang.Character")
                 return String(v);
+
+            // المصفوفات — بلا حدود
             if (cn.charAt(0) === LB) {
-                try {
-                    var n = v.length, parts = [];
-                    for (var i = 0; i < n && i < 30; i++) parts.push(describe(v[i]));
-                    return "(" + cn + ")" + LB + parts.join(",") + RB;
-                } catch (e) { return "<" + cn + ">"; }
+                var out = [];
+                var n = 0;
+                try { n = Number(v.length) || 0; } catch (e) { n = 0; }
+                for (var i = 0; i < n; i++) {
+                    var el;
+                    try { el = v[i]; } catch (e) { el = null; }
+                    out.push(describeRec(el, seen, depth + 1));
+                }
+                return "(" + cn + ")" + LB + out.join(",") + RB;
             }
+
+            // Map
             if (cn.indexOf("Map") >= 0) {
+                var mp = [];
                 try {
-                    var it = v.keySet().iterator(), p2 = [], k2 = 0;
-                    while (it.hasNext() && k2 < 30) {
-                        var kk = it.next();
-                        p2.push(describe(kk) + ":" + describe(v.get(kk))); k2++;
+                    var it = v.entrySet().iterator();
+                    while (it.hasNext()) {
+                        var e = it.next();
+                        var k = e.getKey();
+                        var val = e.getValue();
+                        mp.push(describeRec(k, seen, depth + 1) + ":" +
+                                describeRec(val, seen, depth + 1));
                     }
-                    return "(" + cn + "){" + p2.join(",") + "}";
                 } catch (e) { return "<" + cn + ">"; }
+                return "(" + cn + "){" + mp.join(",") + "}";
             }
-            if (cn.indexOf("List") >= 0 || cn.indexOf("Set") >= 0 || cn.indexOf("Collection") >= 0) {
+
+            // List / Set / Collection
+            if (cn.indexOf("List") >= 0 ||
+                cn.indexOf("Set") >= 0 ||
+                cn.indexOf("Collection") >= 0 ||
+                cn.indexOf("Queue") >= 0 ||
+                cn.indexOf("Deque") >= 0) {
+                var li = [];
                 try {
-                    var it2 = v.iterator(), p3 = [], k3 = 0;
-                    while (it2.hasNext() && k3 < 30) { p3.push(describe(it2.next())); k3++; }
-                    return "(" + cn + ")" + LB + p3.join(",") + RB;
+                    var it2 = v.iterator();
+                    while (it2.hasNext()) {
+                        li.push(describeRec(it2.next(), seen, depth + 1));
+                    }
                 } catch (e) { return "<" + cn + ">"; }
+                return "(" + cn + ")" + LB + li.join(",") + RB;
             }
+
             return "<" + cn + " " + String(v) + ">";
-        } catch (e) { return "<err:" + e + ">"; }
+        } catch (e) {
+            return "<err:" + e + ">";
+        }
     }
 
     // ═══════ cpp_* HANDLERS ═══════
@@ -677,7 +729,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 for (var i = 0; i < ls.length; i++) {
                     try { out.push(String(ls[i])); } catch (e) {}
                 }
-                send({type: "loaders_list", count: out.length, loaders: out});
+                sendMaybeChunked({type: "loaders_list", count: out.length, loaders: out});
             } catch (e) {
                 send({type: "loaders_list", count: 0, loaders: []});
             }
@@ -694,7 +746,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
                             (f.className + "." + f.methodName)));
                     }
                 }
-                send({type: "backtrace_result", frames: frames});
+                sendMaybeChunked({type: "backtrace_result", frames: frames});
             } catch (e) {
                 send({type: "backtrace_result", frames: []});
             }
@@ -955,7 +1007,9 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 catch (e) { return; }
 
                 var drained = 0;
-                for (var i = 0; i < 32; i++) {
+                var safety = 0;
+                while (safety < 1000000) {
+                    safety++;
                     try {
                         var raw = MV.nativeGetPendingCmd();
                         if (!raw) break;
