@@ -166,32 +166,6 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
 }
 
 // ===========================================================================
-// C++ → JS command dispatch via ModView.sPendingCmd/sCmdSeq
-// ===========================================================================
-extern "C" void yamgg_postCommand(const char* json) {
-    if (!json || !g_vm || !g_modViewClass) return;
-
-    JNIEnv* env = nullptr;
-    if (g_vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) return;
-
-    jfieldID cmdFid = env->GetStaticFieldID(g_modViewClass, "sPendingCmd", "Ljava/lang/String;");
-    if (!cmdFid) { env->ExceptionClear(); return; }
-    jfieldID seqFid = env->GetStaticFieldID(g_modViewClass, "sCmdSeq", "I");
-    if (!seqFid) { env->ExceptionClear(); return; }
-
-    jstring js = env->NewStringUTF(json);
-    if (!js) { env->ExceptionClear(); return; }
-
-    env->SetStaticObjectField(g_modViewClass, cmdFid, js);
-    env->DeleteLocalRef(js);
-
-    jint seq = env->GetStaticIntField(g_modViewClass, seqFid);
-    env->SetStaticIntField(g_modViewClass, seqFid, seq + 1);
-
-    if (env->ExceptionCheck()) env->ExceptionClear();
-}
-
-// ===========================================================================
 // JNI bridges for ModView native methods
 // ===========================================================================
 extern "C" JNIEXPORT void JNICALL

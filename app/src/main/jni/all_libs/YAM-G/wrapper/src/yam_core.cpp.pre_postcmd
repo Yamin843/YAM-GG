@@ -23,6 +23,12 @@
 
 namespace yam {
 
+// ─── GLib bytes helpers (forward-declared; renamed inside libyamjs.a) ───
+extern "C" {
+    typedef struct _GBytes GBytes;
+    GBytes* yam_g_bytes_new(const void* data, unsigned long size);
+    void    yam_g_bytes_unref(GBytes* bytes);
+}
 
 
 // ===========================================================================
@@ -785,10 +791,35 @@ void Script::clear_message_handler() {
     cb_ = nullptr;
 }
 void Script::post(const String& msg) {
-    // C→JS via ModView.sPendingCmd (poll-based).
-    // Do NOT use yam_script_post: needs GBytes which isn't exported.
-    extern void yamgg_postCommand(const char* json);
-    yamgg_postCommand(msg.c_str());
+    if (!handle_) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "Script::post: handle_ is NULL");
+        return;
+    }
+
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "Script::post: %s", msg.c_str());
+
+    // The yam_script_post(message, data) API expects `message` = CHANNEL NAME
+    // and `data` = payload bytes. Our `msg` is a full envelope
+    // {"type":"cmd","payload":{...}}. Extract and send correctly.
+    auto parsed = JsonValue::parse(msg);
+    if (parsed && parsed.value().is_obj()) {
+        auto* tv = parsed.value().get("type");
+        auto* pv = parsed.value().get("payload");
+        if (tv && pv) {
+            String type    = tv->as_str();
+            String payload = pv->is_str() ? pv->as_str() : pv->stringify();
+            GBytes* bytes = yam_g_bytes_new(payload.data(), payload.size());
+            yam_script_post(static_cast<YamScript*>(handle_),
+                            type.c_str(), bytes);
+            yam_g_bytes_unref(bytes);
+            return;
+        }
+    }
+
+    // Fallback: send as-is (type = whole string)
+    yam_script_post(static_cast<YamScript*>(handle_), msg.c_str(), nullptr);
 }
 void Script::post(const String& msg, const ByteVector& /* data */) {
     // Note: yam_script_post_with_data does not exist in the library. We fall

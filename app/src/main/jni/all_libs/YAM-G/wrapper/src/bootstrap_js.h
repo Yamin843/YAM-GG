@@ -444,6 +444,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
     setTimeout(function () {
         try { installAllHooks(); } catch (e) { send({type:"install_err", message: "" + e}); }
         try { loopAttach(); } catch (e) { send({type:"attach_start_err", message: "" + e}); }
+        try { installPoller(); } catch (e) { send({type:"poller_err", message: "" + e}); }
     }, 800);
 })();
 )YAMJS";

@@ -15,11 +15,6 @@ import javax.microedition.khronos.opengles.GL10;
 
 public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
 
-    // ─── C++ → JS command queue (poll-based) ───────────────────────
-    public static volatile String sPendingCmd = null;
-    public static volatile int    sCmdSeq     = 0;
-
-
     private static final String TAG = "YAMGG";
 
     private static native void nativeOnSurfaceCreated();
