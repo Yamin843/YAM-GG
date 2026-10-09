@@ -130,13 +130,13 @@ void Renderer::onTouch(int action, float x, float y, int pointerId) {
             io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
             io.AddMouseButtonEvent(0, false);
             break;
-        case 5:
-            io.AddMousePosEvent(x, y);
-            io.AddMouseButtonEvent(0, false);
-            break;
-        case 6:
+        case 5:  // ACTION_POINTER_DOWN
             io.AddMousePosEvent(x, y);
             io.AddMouseButtonEvent(0, true);
+            break;
+        case 6:  // ACTION_POINTER_UP
+            io.AddMousePosEvent(x, y);
+            io.AddMouseButtonEvent(0, false);
             break;
         default:
             break;

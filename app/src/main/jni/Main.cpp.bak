@@ -87,29 +87,32 @@ static void* init_thread(void*) {
             return;
         }
 
-        // Force class loader first
+        // 1) اعثر على ClassLoader الخاص بالـ dex الذي حمّلناه
+        var targetLoader = null;
         try {
-            Java.performNow(function() {
+            var loaders = Java.enumerateClassLoadersSync();
+            for (var i = 0; i < loaders.length; i++) {
                 try {
-                    if (Java.classFactory.loader === null) {
-                        var AT = Java.use("android.app.ActivityThread");
-                        var app = AT.currentApplication();
-                        if (app !== null) {
-                            Java.classFactory.loader = app.getClassLoader();
-                            send({type:"hook_info", message:"loader set"});
-                        }
-                    }
+                    loaders[i].loadClass("com.yamgg.modview.ModView");
+                    targetLoader = loaders[i];
+                    break;
                 } catch(e) {}
-            });
+            }
         } catch(e) {}
 
-        // Install onResume hook
-        Java.performNow(function() {
+        if (targetLoader) {
+            Java.classFactory.loader = targetLoader;
+            send({type:"hook_info", message:"loader set"});
+        } else {
+            send({type:"hook_error", message:"ModView loader not found"});
+        }
+
+        // 2) ثبّت hook على Activity.onResume
+        Java.perform(function() {
             try {
                 var Activity = Java.use("android.app.Activity");
-                var origOnResume = Activity.onResume;
                 Activity.onResume.implementation = function() {
-                    origOnResume.call(this);
+                    this.onResume();
                     try {
                         var ModView = Java.use("com.yamgg.modview.ModView");
                         ModView.attach(this);

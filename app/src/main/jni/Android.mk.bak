@@ -86,7 +86,7 @@ LOCAL_LDLIBS := \
     -ldl \
     -lz \
     -lm \
-    -lc++_shared \
+    -lc++_static \
     -lunwind
 
 LOCAL_STATIC_LIBRARIES := \

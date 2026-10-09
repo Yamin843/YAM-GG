@@ -1,0 +1,1341 @@
+// ===========================================================================
+// yam_java.cpp — JS bridge to libyamjs.a's embedded java-bridge
+// ===========================================================================
+// Architecture:
+//   - The library already has an embedded java-bridge listening on recv("cmd").
+//   - It provides `globalThis.Agent` with `registerCommand`.
+//   - We register our custom commands via Agent.registerCommand.
+//   - We NEVER install our own recv("cmd") — that would displace the bridge.
+// ===========================================================================
+
+#include "yam_java_model.hpp"
+#include "yam_internal.hpp"
+
+namespace yam {
+
+// ===========================================================================
+
+// ===========================================================================
+// SECTION 2 — JavaReplyParser
+// ===========================================================================
+
+bool JavaReplyParser::parse(const String& json, JavaReply& out) {
+    auto r = JsonValue::parse(json);
+    if (!r) return false;
+    auto& j = r.value();
+    if (!j.is_obj()) return false;
+    if (auto* v = j.get("id"))     out.id = static_cast<u64>(v->as_i64(0));
+    if (auto* v = j.get("ok"))     out.ok = v->as_bool(false);
+    if (auto* v = j.get("error"))  out.error = v->as_str();
+    if (auto* v = j.get("kind"))   out.kind = v->as_str();
+    if (auto* v = j.get("handle")) out.handle = static_cast<u64>(v->as_i64(0));
+    if (auto* v = j.get("result")) {
+        if (v->is_str()) out.result = v->as_str();
+        else out.result = v->stringify();
+    }
+    return true;
+}
+
+// ===========================================================================
+// SECTION 3 — Bootstrap source (JS)
+// ===========================================================================
+
+namespace detail {
+
+const char* const kBootstrapSrc = R"YAMJS(
+(function () {
+    "use strict";
+
+    // ── 1) إرسال cpp_ready فوراً ─────────────────────────────
+    try { send({ type: "cpp_ready" }); } catch (e) {}
+
+    // ── 2) إرسال تشخيصي ─────────────────────────────────────
+    try {
+        send({
+            type: "bootstrap_debug",
+            hasAgent: typeof globalThis.Agent !== "undefined",
+            hasSend:  typeof send === "function",
+            hasJava:  typeof Java !== "undefined",
+            hasRecv:  typeof recv === "function"
+        });
+    } catch (e) {}
+
+    // ── 3) جدول handles ─────────────────────────────────────
+    var table = Object.create(null);
+    var nextHandle = 1;
+    function alloc(o) { var id = nextHandle++; table[id] = o; return id; }
+    function get(id)   { return table[id] || null; }
+    function drop(id)  { delete table[id]; }
+    function dropAll() { table = Object.create(null); nextHandle = 1; }
+
+    // ── 4) helper للـ reply envelopes ───────────────────────
+    function reply(id, ok, kind, value, handle, error) {
+        var m = { id: id, ok: !!ok };
+        if (kind)  m.kind = kind;
+        if (value !== undefined && value !== null) m.result = value;
+        if (handle !== undefined && handle !== null) m.handle = handle;
+        if (error) m.error = String(error);
+        send({ type: "reply", payload: JSON.stringify(m) });
+    }
+    function replyHandle(id, h) { reply(id, true, "handle", null, h); }
+    function replyValue(id, v)  { reply(id, true, "value", v); }
+    function replyNull(id)      { reply(id, true, "null"); }
+    function replyVoid(id)      { reply(id, true, "void"); }
+    function replyError(id, e)  {
+        reply(id, false, "error", null, null,
+              (e && e.message) ? e.message : String(e));
+    }
+
+    // ── 5) JNI signature parser ─────────────────────────────
+    function prim(c) {
+        switch (c) {
+        case 'Z': return 'boolean'; case 'B': return 'byte';
+        case 'C': return 'char';    case 'S': return 'short';
+        case 'I': return 'int';     case 'J': return 'long';
+        case 'F': return 'float';   case 'D': return 'double';
+        case 'V': return 'void';    default: return c;
+        }
+    }
+    function parseSig(sig) {
+        if (!sig) return [];
+        var out = []; var i = 0;
+        while (i < sig.length) {
+            var c = sig[i];
+            if (c === '(') { i++; continue; }
+            if (c === ')') break;
+            if (c === 'L') {
+                var e = sig.indexOf(';', i);
+                if (e === -1) break;
+                out.push(sig.substring(i + 1, e).replace(/\//g, '.'));
+                i = e + 1;
+            } else if (c === '[') {
+                var d = 0;
+                while (sig[i] === '[') { d++; i++; }
+                if (sig[i] === 'L') {
+                    var e2 = sig.indexOf(';', i);
+                    if (e2 === -1) break;
+                    out.push(new Array(d + 1).join('[') +
+                             sig.substring(i + 1, e2).replace(/\//g, '.'));
+                    i = e2 + 1;
+                } else { out.push(new Array(d + 1).join('[') + sig[i]); i++; }
+            } else { out.push(prim(c)); i++; }
+        }
+        return out;
+    }
+
+    // ── 6) mat (JSON → Java object) ─────────────────────────
+    function mat(v) {
+        if (v === null || v === undefined) return v;
+        if (typeof v !== "object") return v;
+        if (typeof v.handle === "number") return get(v.handle);
+        if ("kind" in v) {
+            switch (v.kind) {
+            case "int": case "short": case "byte": return v.value | 0;
+            case "long":
+                return (typeof Int64 === "function")
+                    ? Int64(String(v.value)) : Number(v.value);
+            case "float": case "double": return Number(v.value);
+            case "boolean": return !!v.value;
+            case "string": return String(v.value);
+            case "char": return String(v.value)[0] || "\0";
+            case "null": return null;
+            case "undefined": return undefined;
+            case "enum": return Java.use(v.className).valueOf(v.enumName);
+            case "array": return Java.array(v.elementType,
+                (v.elements || []).map(mat));
+            default: return v.value;
+            }
+        }
+        if ("value" in v) return v.value;
+        return v;
+    }
+
+    // ── 7) تسجيل recv على قناة مخصصة (بدل Agent) ────────────
+    // لا نستخدم recv("cmd") — الجسر المدمج يستخدمه.
+    // نستخدم قناة "yamgg_cmd" التي يرسلها C++ عبر post_raw.
+    recv("yamgg_cmd", function (msg) {
+        try {
+            var cmd = (typeof msg === "string") ? JSON.parse(msg) : msg;
+            var action = cmd.action;
+
+            switch (action) {
+            case "cpp_use_class":
+                replyHandle(cmd.id, alloc(Java.use(cmd.className))); break;
+
+            case "cpp_get_method": {
+                var c = get(cmd.classHandle);
+                if (!c) throw new Error("no class handle");
+                var m = c[cmd.methodName];
+                if (!m) throw new Error("no method " + cmd.methodName);
+                var method = cmd.signature
+                    ? m.overload.apply(m, parseSig(cmd.signature))
+                    : (m.overloads && m.overloads.length ? m.overloads[0] : m);
+                replyHandle(cmd.id, alloc(method));
+                break;
+            }
+
+            case "cpp_noop":
+                replyVoid(cmd.id); break;
+
+            default:
+                replyError(cmd.id, new Error("unknown action: " + action));
+            }
+        } catch (e) {
+            try { replyError(0, e); } catch (e2) {}
+        }
+    });
+
+    // ── 8) إشعار الجاهزية النهائية ──────────────────────────
+    try { send({ type: "cpp_ready_final" }); } catch (e) {}
+})();
+)YAMJS";
+
+} // namespace detail
+
+
+// ===========================================================================
+// SECTION 4 — JavaScriptBridge lifecycle
+// ===========================================================================
+
+JavaScriptBridge::JavaScriptBridge() = default;
+JavaScriptBridge::~JavaScriptBridge() { if (ready_.load()) shutdown(); }
+
+JavaScriptBridge& JavaScriptBridge::instance() {
+    static JavaScriptBridge inst;
+    return inst;
+}
+
+Result<void> JavaScriptBridge::initialize() {
+    if (ready_.load()) return Result<void>::ok();
+    script_ = Script::create("__yam_cpp_bootstrap__", detail::kBootstrapSrc);
+    script_->set_message_handler([this](const Message& m) { on_message(m); });
+    auto lr = script_->load();
+    if (!lr) {
+        YAM_LOG_ERROR() << "bootstrap load failed: " << lr.error_message();
+        return Result<void>::err(ErrorCode::ScriptLoadFailed, lr.error_message());
+    }
+    i64 waited = 0;
+    while (!ready_.load() && waited < 15000) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        waited += 10;
+    }
+    if (!ready_.load()) {
+        YAM_LOG_WARN() << "bootstrap: no cpp_ready in 15s";
+        return Result<void>::err(ErrorCode::Timeout, "cpp_ready not received");
+    }
+    YAM_LOG_INFO() << "js bridge ready";
+    return Result<void>::ok();
+}
+
+Result<void> JavaScriptBridge::shutdown() {
+    if (!script_) return Result<void>::ok();
+    script_->clear_message_handler();
+    script_->unload();
+    script_.reset();
+    ready_.store(false);
+    return Result<void>::ok();
+}
+
+Result<void> JavaScriptBridge::send(const String& command_json) {
+    if (!script_) return Result<void>::err(ErrorCode::NotInitialized, "no script");
+    String wrapped = "{\"type\":\"cmd\",\"payload\":" + command_json + "}";
+    script_->post(wrapped);
+    return Result<void>::ok();
+}
+
+Result<JavaReply> JavaScriptBridge::call(const String& cmd_inner, i64 timeout_ms) {
+    if (!script_) return Result<JavaReply>::err(ErrorCode::NotInitialized, "no script");
+    u64 id = 0;
+    {
+        auto p = JsonValue::parse(cmd_inner);
+        if (p && p.value().is_obj()) {
+            if (auto* v = p.value().get("id")) id = static_cast<u64>(v->as_i64(0));
+        }
+    }
+    if (id == 0) id = next_id_.fetch_add(1);
+    auto sync = std::make_shared<detail::JavaSync>();
+    {
+        std::lock_guard<std::mutex> lk(pending_mu_);
+        pending_[id] = sync;
+    }
+    String wrapped = "{\"type\":\"cmd\",\"payload\":" + cmd_inner + "}";
+    script_->post(wrapped);
+    sync->wait(timeout_ms);
+    JavaReply out;
+    {
+        std::lock_guard<std::mutex> lk(pending_mu_);
+        auto it = replies_.find(id);
+        if (it == replies_.end()) {
+            pending_.erase(id);
+            return Result<JavaReply>::err(ErrorCode::Timeout, "reply timeout");
+        }
+        out = it->second;
+        replies_.erase(it);
+        pending_.erase(id);
+    }
+    if (!out.ok && !out.error.empty())
+        return Result<JavaReply>::err(ErrorCode::InternalError, out.error);
+    return Result<JavaReply>::ok(std::move(out));
+}
+
+void JavaScriptBridge::post_raw(const String& type, const JsonValue& payload) {
+    if (!script_) return;
+    JsonValue msg;
+    msg.type = JsonValue::Type::Object;
+    msg.obj_val["type"] = JsonValue(type);
+    msg.obj_val["payload"] = payload;
+    script_->post(msg.stringify());
+}
+
+void JavaScriptBridge::post_raw_json(const String& json) {
+    if (script_) script_->post(json);
+}
+
+void JavaScriptBridge::on_message(const Message& m) {
+    // The whole JSON message from JS.
+    String raw = m.payload.empty() ? "" : m.payload;
+
+    // frida's send() wraps: { "type": "send", "payload": {realEvent} }
+    // Our bootstrap uses send({type:"cpp_ready",...}) which arrives as:
+    //   { "type": "send", "payload": {"type":"cpp_ready",...} }
+    auto parsed = JsonValue::parse(raw);
+    if (!parsed) {
+        YAM_LOG_WARN() << "bridge: bad JSON: " << raw;
+        return;
+    }
+    auto& top = parsed.value();
+
+    String type;
+    if (auto* t = top.get("type")) type = t->as_str();
+
+    // Unwrap frida's send() envelope.
+    if (type == "send") {
+        if (auto* inner = top.get("payload")) {
+            // inner must be an object with a "type" field.
+            if (inner->is_obj()) {
+                on_event_json(*inner);
+            } else {
+                YAM_LOG_WARN() << "bridge: send payload not object";
+            }
+        }
+        return;
+    }
+
+    // Direct message (no envelope).
+    on_event_json(top);
+}
+
+void JavaScriptBridge::on_reply(const String& payload_json) {
+    JavaReply reply;
+    if (!JavaReplyParser::parse(payload_json, reply)) {
+        YAM_LOG_WARN() << "bad reply: " << payload_json;
+        return;
+    }
+    Ptr<detail::JavaSync> sync;
+    {
+        std::lock_guard<std::mutex> lk(pending_mu_);
+        auto it = pending_.find(reply.id);
+        if (it != pending_.end()) sync = it->second;
+        replies_[reply.id] = reply;
+    }
+    if (sync) sync->notify();
+}
+
+void JavaScriptBridge::on_event_json(const JsonValue& ev) {
+    String type;
+    if (auto* t = ev.get("type")) type = t->as_str();
+    if (type.empty()) return;
+
+    if (type == "cpp_ready") {
+        ready_.store(true);
+        YAM_LOG_INFO() << "cpp bootstrap: ready";
+        return;
+    }
+    if (type == "cpp_error") {
+        String msg = "cpp bootstrap error";
+        if (auto* v = ev.get("message")) msg = v->as_str(msg);
+        YAM_LOG_ERROR() << msg;
+        return;
+    }
+    if (type == "agent_ready") {
+        YAM_LOG_INFO() << "embedded bridge: agent_ready";
+    }
+    if (type == "hook_cb") {
+        HookCallback cb;
+        { std::lock_guard<std::mutex> lk(cb_mu_); cb = hook_cb_; }
+        if (cb) {
+            i64 cb_id = 0; u64 this_h = 0;
+            std::vector<u64> args;
+            if (auto* v = ev.get("callbackId")) cb_id = v->as_i64(0);
+            if (auto* v = ev.get("thisHandle")) this_h = static_cast<u64>(v->as_i64(0));
+            if (auto* v = ev.get("argHandles")) {
+                if (v->is_arr())
+                    for (auto& a : v->arr_val) args.push_back(static_cast<u64>(a.as_i64(0)));
+            }
+            try { cb(cb_id, args, this_h); }
+            catch (const std::exception& e) { YAM_LOG_ERROR() << "hook_cb: " << e.what(); }
+        }
+    }
+    if (type == "console") {
+        ConsoleCallback cb;
+        { std::lock_guard<std::mutex> lk(cb_mu_); cb = console_cb_; }
+        if (cb) {
+            String level = "log", line;
+            if (auto* v = ev.get("level")) level = v->as_str("log");
+            if (auto* v = ev.get("line")) line = v->as_str();
+            cb(level, line);
+        }
+    }
+    if (type == "eval_result") {
+        EvalCallback cb;
+        { std::lock_guard<std::mutex> lk(cb_mu_); cb = eval_cb_; }
+        if (cb) {
+            u64 id = 0; bool ok = false; String result, error;
+            if (auto* v = ev.get("id")) id = static_cast<u64>(v->as_i64(0));
+            if (auto* v = ev.get("ok")) ok = v->as_bool(false);
+            if (auto* v = ev.get("result")) result = v->is_str() ? v->as_str() : v->stringify();
+            if (auto* v = ev.get("error")) error = v->as_str();
+            cb(id, ok, result, error);
+        }
+    }
+    Event e;
+    e.type = type;
+    e.data = ev;
+    e.timestamp = time_util::now_ms();
+    events::dispatch(e);
+}
+
+void JavaScriptBridge::set_hook_callback(HookCallback cb) {
+    std::lock_guard<std::mutex> lk(cb_mu_);
+    hook_cb_ = std::move(cb);
+}
+void JavaScriptBridge::set_console_callback(ConsoleCallback cb) {
+    std::lock_guard<std::mutex> lk(cb_mu_);
+    console_cb_ = std::move(cb);
+}
+void JavaScriptBridge::set_eval_callback(EvalCallback cb) {
+    std::lock_guard<std::mutex> lk(cb_mu_);
+    eval_cb_ = std::move(cb);
+}
+
+// ===========================================================================
+// SECTION 5 — JavaScriptBridge command helpers
+// ===========================================================================
+
+namespace {
+String js(const String& k, const String& v) {
+    return ",\"" + k + "\":\"" + str::escape_json(v) + "\"";
+}
+String jn(const String& k, i64 v) {
+    return ",\"" + k + "\":" + std::to_string(v);
+}
+String jr(const String& k, const String& raw) {
+    return ",\"" + k + "\":" + raw;
+}
+String jb(const String& k, bool v) {
+    return ",\"" + k + "\":" + (v ? "true" : "false");
+}
+String cmd_head(u64 id, const char* action) {
+    return "{\"id\":" + std::to_string(id) + ",\"action\":\"" + action + "\"";
+}
+}
+
+// ---------------------------------------------------------------------------
+// Custom commands (reply-based)
+// ---------------------------------------------------------------------------
+
+Result<JavaReply> JavaScriptBridge::use_class(const String& cls) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_use_class") + js("className", cls) + "}");
+}
+Result<JavaReply> JavaScriptBridge::get_method(u64 c, const String& m, const String& s) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_get_method") +
+                jn("classHandle", static_cast<i64>(c)) +
+                js("methodName", m) + js("signature", s) + "}");
+}
+Result<JavaReply> JavaScriptBridge::cast(u64 c, u64 o) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_cast") +
+                jn("classHandle", static_cast<i64>(c)) +
+                jn("objectHandle", static_cast<i64>(o)) + "}");
+}
+Result<JavaReply> JavaScriptBridge::create_string(const String& v) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_create_string") + js("value", v) + "}");
+}
+Result<JavaReply> JavaScriptBridge::array_of(const String& t, const String& e) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_array_of") + js("elementType", t) +
+                jr("elements", e.empty() ? "[]" : e) + "}");
+}
+Result<JavaReply> JavaScriptBridge::array_length(u64 h) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_array_length") + jn("handle", static_cast<i64>(h)) + "}");
+}
+Result<JavaReply> JavaScriptBridge::array_get(u64 h, usize i) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_array_get") +
+                jn("handle", static_cast<i64>(h)) +
+                jn("index", static_cast<i64>(i)) + "}");
+}
+Result<JavaReply> JavaScriptBridge::array_set(u64 h, usize i, const String& v) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_array_set") +
+                jn("handle", static_cast<i64>(h)) +
+                jn("index", static_cast<i64>(i)) +
+                jr("value", v.empty() ? "null" : v) + "}");
+}
+Result<JavaReply> JavaScriptBridge::new_instance(u64 c, const String& a) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_new_instance") +
+                jn("classHandle", static_cast<i64>(c)) +
+                jr("args", a.empty() ? "[]" : a) + "}");
+}
+Result<JavaReply> JavaScriptBridge::release_handle(u64 h) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_release_handle") + jn("handle", static_cast<i64>(h)) + "}");
+}
+Result<JavaReply> JavaScriptBridge::list_handles() {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_list_handles") + "}");
+}
+Result<JavaReply> JavaScriptBridge::clear_handles() {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_clear_handles") + "}");
+}
+Result<JavaReply> JavaScriptBridge::inspect_handle(u64 h) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_inspect_handle") + jn("handleId", static_cast<i64>(h)) + "}");
+}
+Result<JavaReply> JavaScriptBridge::get_field_by_name(const String& cls, const String& f) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_get_field") +
+                js("className", cls) + js("fieldName", f) + "}");
+}
+Result<JavaReply> JavaScriptBridge::snapshot_fields(u64 h) {
+    return inspect_handle(h);
+}
+Result<JavaReply> JavaScriptBridge::retain(u64) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "cpp_noop") + "}");
+}
+
+// ---------------------------------------------------------------------------
+// Native bridge commands (fire-and-forget)
+// ---------------------------------------------------------------------------
+
+Result<JavaReply> JavaScriptBridge::ping() {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "ping") + "}");
+}
+Result<void> JavaScriptBridge::list_targets() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "list_targets") + "}");
+}
+Result<JavaReply> JavaScriptBridge::env_info() {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "env_info") + "}");
+}
+Result<JavaReply> JavaScriptBridge::enumerate_classes() {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "enumerate_classes") + "}");
+}
+Result<JavaReply> JavaScriptBridge::enumerate_loaders() {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "enumerate_loaders") + "}");
+}
+Result<void> JavaScriptBridge::clear_traces() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "clear") + "}");
+}
+Result<void> JavaScriptBridge::list_hooks() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "list_hooks") + "}");
+}
+Result<JavaReply> JavaScriptBridge::get_internals() {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "internals") + "}");
+}
+Result<void> JavaScriptBridge::watch_stop_all() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "watch_stop_all") + "}");
+}
+Result<void> JavaScriptBridge::watch_list() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "watch_list") + "}");
+}
+Result<void> JavaScriptBridge::bp_state() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "bp_state") + "}");
+}
+Result<void> JavaScriptBridge::cancel_all_breakpoints() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "cancel_all_breakpoints") + "}");
+}
+Result<void> JavaScriptBridge::clear_probe_cache() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "clear_probe_cache") + "}");
+}
+Result<void> JavaScriptBridge::handle_bytes() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "handle_bytes") + "}");
+}
+Result<JavaReply> JavaScriptBridge::get_handle_budget() {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "get_handle_budget") + "}");
+}
+Result<void> JavaScriptBridge::repl_history() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "repl_history") + "}");
+}
+Result<void> JavaScriptBridge::repl_history_clear() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "repl_history_clear") + "}");
+}
+Result<void> JavaScriptBridge::call_history() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "call_history") + "}");
+}
+Result<void> JavaScriptBridge::call_history_clear() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "call_history_clear") + "}");
+}
+Result<void> JavaScriptBridge::console_dump() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "console_dump") + "}");
+}
+Result<void> JavaScriptBridge::console_clear() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "console_clear") + "}");
+}
+Result<void> JavaScriptBridge::list_native() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "list_native") + "}");
+}
+Result<void> JavaScriptBridge::revert_native() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "revert_native") + "}");
+}
+Result<void> JavaScriptBridge::auto_list() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "auto_list") + "}");
+}
+Result<void> JavaScriptBridge::auto_clear() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "auto_clear") + "}");
+}
+Result<JavaReply> JavaScriptBridge::list_extensions() {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "list_extensions") + "}");
+}
+Result<void> JavaScriptBridge::list_user_scripts() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "list_user_scripts") + "}");
+}
+Result<void> JavaScriptBridge::clear_user_scripts() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "clear_user_scripts") + "}");
+}
+Result<void> JavaScriptBridge::chunk_list() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "chunk_list") + "}");
+}
+Result<void> JavaScriptBridge::trace_handles_clear() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "trace_handles_clear") + "}");
+}
+Result<void> JavaScriptBridge::deopt_everything() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "deoptimize_all") + "}");
+}
+Result<void> JavaScriptBridge::deopt_boot_image() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "deoptimize_boot_image") + "}");
+}
+Result<void> JavaScriptBridge::hook_dex_loader() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "hook_dex_loader") + "}");
+}
+Result<void> JavaScriptBridge::hook_load_class() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "hook_load_class") + "}");
+}
+Result<void> JavaScriptBridge::hook_load_library() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "hook_load_library") + "}");
+}
+Result<void> JavaScriptBridge::hook_app_oncreate() {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "hook_app_oncreate") + "}");
+}
+
+// ---------------------------------------------------------------------------
+// Parametrized commands (fire-and-forget)
+// ---------------------------------------------------------------------------
+
+Result<void> JavaScriptBridge::trace(u64 tid, const String& c, const String& m,
+                                     const String& s, i32 st, i32 sk, i32 mm,
+                                     bool has_ov, const String& ov) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "trace");
+    cmd += jn("traceId", static_cast<i64>(tid));
+    cmd += js("className", c); cmd += js("methodName", m); cmd += js("signature", s);
+    cmd += jn("stackDepth", st); cmd += jn("skip", sk); cmd += jn("minMs", mm);
+    if (has_ov) cmd += jr("overrideReturn", ov);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::trace_class(u64 tid, const String& c, const String& p,
+                                            i32 st, i32 sk, i32 mm) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "trace_class");
+    cmd += jn("traceId", static_cast<i64>(tid));
+    cmd += js("className", c); cmd += js("pattern", p);
+    cmd += jn("stackDepth", st); cmd += jn("skip", sk); cmd += jn("minMs", mm);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::untrace(u64 tid) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "untrace") + jn("traceId", static_cast<i64>(tid)) + "}");
+}
+Result<void> JavaScriptBridge::untrace_range(u64 a, u64 b) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "untrace_range");
+    cmd += jn("firstId", static_cast<i64>(a));
+    cmd += jn("lastId", static_cast<i64>(b));
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::pause(u64 tid) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "pause") + jn("traceId", static_cast<i64>(tid)) + "}");
+}
+Result<void> JavaScriptBridge::resume(u64 tid) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "resume") + jn("traceId", static_cast<i64>(tid)) + "}");
+}
+Result<void> JavaScriptBridge::set_param(u64 tid, i32 i, const String& t, const String& v) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "set_param");
+    cmd += jn("traceId", static_cast<i64>(tid));
+    cmd += jn("index", i);
+    cmd += js("type", t); cmd += js("value", v);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::clear_param(u64 tid, i32 i) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "clear_param");
+    cmd += jn("traceId", static_cast<i64>(tid));
+    cmd += jn("index", i);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::set_param_spec(u64 tid, i32 i, const String& s) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "set_param_spec");
+    cmd += jn("traceId", static_cast<i64>(tid));
+    cmd += jn("index", i);
+    cmd += jr("spec", s);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::enumerate_methods(const String& q) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "query_methods") + js("query", q) + "}");
+}
+Result<JavaReply> JavaScriptBridge::backtrace(i32 l) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "backtrace") + jn("limit", l) + "}");
+}
+Result<void> JavaScriptBridge::deopt_class(const String& c) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "deoptimize_class") + js("className", c) + "}");
+}
+Result<void> JavaScriptBridge::deopt_method(u64) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "deoptimize_all") + "}");
+}
+Result<JavaReply> JavaScriptBridge::list_own(const String& c) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "list_own") + js("className", c) + "}");
+}
+Result<JavaReply> JavaScriptBridge::list_overloads(const String& c, const String& m) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "list_overloads");
+    cmd += js("className", c); cmd += js("methodName", m);
+    cmd += "}";
+    return call(cmd);
+}
+Result<void> JavaScriptBridge::query_methods(const String& q) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "query_methods") + js("query", q) + "}");
+}
+Result<void> JavaScriptBridge::build_template(const String& c, const String& m, const String& s) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "build_template");
+    cmd += js("className", c); cmd += js("methodName", m); cmd += js("signature", s);
+    cmd += "}";
+    return send(cmd);
+}
+Result<JavaReply> JavaScriptBridge::probe_class(const String& c) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "probe_class") + js("className", c) + "}");
+}
+Result<void> JavaScriptBridge::inspect_class(u64) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "internals") + "}");
+}
+Result<void> JavaScriptBridge::read_field(u64 h, const String& f) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "read_field");
+    cmd += jn("handleId", static_cast<i64>(h)); cmd += js("fieldName", f);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::write_field(u64 h, const String& f, const String& e) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "write_field");
+    cmd += jn("handleId", static_cast<i64>(h)); cmd += js("fieldName", f);
+    cmd += js("expr", e);
+    cmd += "}";
+    return send(cmd);
+}
+Result<JavaReply> JavaScriptBridge::read_static(const String& c, const String& f) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "read_static");
+    cmd += js("className", c); cmd += js("fieldName", f);
+    cmd += "}";
+    return call(cmd);
+}
+Result<void> JavaScriptBridge::write_static(const String& c, const String& f, const String& e) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "write_static");
+    cmd += js("className", c); cmd += js("fieldName", f); cmd += js("expr", e);
+    cmd += "}";
+    return send(cmd);
+}
+Result<JavaReply> JavaScriptBridge::list_static_fields(const String& c) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "list_static_fields") + js("className", c) + "}");
+}
+Result<void> JavaScriptBridge::call(u64 call_id, const String& cls, const String& m,
+                                    const String& sig, bool is_static, u64 inst,
+                                    const String& args_json, const String& mod_fields) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "call");
+    cmd += jn("callId", static_cast<i64>(call_id));
+    cmd += js("className", cls); cmd += js("methodName", m); cmd += js("signature", sig);
+    cmd += jb("isStatic", is_static);
+    cmd += jn("instanceHandle", static_cast<i64>(inst));
+    cmd += jr("argsSpec", args_json.empty() ? "[]" : args_json);
+    if (!mod_fields.empty()) cmd += jr("modifyInstanceFields", mod_fields);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::construct(u64 call_id, const String& cls,
+                                          const String& ctor_sig, const String& args) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "construct");
+    cmd += jn("callId", static_cast<i64>(call_id));
+    cmd += js("className", cls); cmd += js("ctorSig", ctor_sig);
+    cmd += jr("argsSpec", args.empty() ? "[]" : args);
+    cmd += "}";
+    return send(cmd);
+}
+Result<JavaReply> JavaScriptBridge::call_method(u64 i, u64 m, const String& a) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "call_method") +
+                jn("instanceHandle", static_cast<i64>(i)) +
+                jn("methodHandle", static_cast<i64>(m)) +
+                jr("args", a.empty() ? "[]" : a) + "}");
+}
+Result<JavaReply> JavaScriptBridge::get_field(u64 i, u64 f) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "get_field") +
+                jn("instanceHandle", static_cast<i64>(i)) +
+                jn("fieldHandle", static_cast<i64>(f)) + "}");
+}
+Result<void> JavaScriptBridge::set_field(u64 i, u64 f, const String& v) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "set_field") +
+                jn("instanceHandle", static_cast<i64>(i)) +
+                jn("fieldHandle", static_cast<i64>(f)) +
+                jr("value", v.empty() ? "null" : v) + "}");
+}
+Result<void> JavaScriptBridge::read_path(u64 h, const String& p) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "read_path") +
+                jn("handleId", static_cast<i64>(h)) + js("query", p) + "}");
+}
+Result<void> JavaScriptBridge::write_path(u64 h, const String& p, const String& e) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "write_path");
+    cmd += jn("handleId", static_cast<i64>(h)); cmd += js("query", p); cmd += js("expr", e);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::invoke_on(u64 h, const String& m, const String& sig, const String& a) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "invoke_on");
+    cmd += jn("handleId", static_cast<i64>(h)); cmd += js("methodName", m);
+    cmd += js("signature", sig); cmd += jr("argsSpec", a.empty() ? "[]" : a);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::hook_method(u64 m, i64 cb) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "hook_method");
+    cmd += jn("methodHandle", static_cast<i64>(m));
+    cmd += jn("callbackId", cb);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::unhook_method(u64 m) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "unhook") + jn("methodHandle", static_cast<i64>(m)) + "}");
+}
+Result<JavaReply> JavaScriptBridge::choose(const String& c) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "choose") + js("className", c) + "}");
+}
+Result<void> JavaScriptBridge::set_breakpoint(u64 tid, bool e, i32 every) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "set_breakpoint");
+    cmd += jn("traceId", static_cast<i64>(tid));
+    cmd += jb("breakpoint", e);
+    cmd += jn("breakpointEvery", every);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::run_user_script(const String& n, const String& c) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "run_user_script");
+    cmd += js("name", n); cmd += js("code", c);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::load_scripts_batch(const std::vector<std::pair<String,String>>& scripts) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "load_scripts_batch");
+    cmd += ",\"scripts\":[";
+    for (size_t i = 0; i < scripts.size(); ++i) {
+        if (i) cmd += ",";
+        cmd += "{\"name\":\"" + str::escape_json(scripts[i].first) +
+               "\",\"code\":\"" + str::escape_json(scripts[i].second) + "\"}";
+    }
+    cmd += "]}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::watch_start(u64 h, const String& f, i64 ms) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "watch_start");
+    cmd += jn("handleId", static_cast<i64>(h)); cmd += js("fieldName", f);
+    cmd += jn("intervalMs", ms);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::watch_stop(u64 wid) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "watch_stop") + jn("watchId", static_cast<i64>(wid)) + "}");
+}
+Result<void> JavaScriptBridge::watch_start_interval(u64 h, const String& f, i32 ms) {
+    return watch_start(h, f, ms);
+}
+Result<void> JavaScriptBridge::set_bp_timeout(i64 ms) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "set_bp_timeout") + jn("timeoutMs", ms) + "}");
+}
+Result<void> JavaScriptBridge::set_throwable_stacktrace(bool e) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "set_throwable_stacktrace") + jb("enabled", e) + "}");
+}
+Result<void> JavaScriptBridge::set_repl_async_enabled(bool e) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "set_repl_async") + jb("enabled", e) + "}");
+}
+Result<void> JavaScriptBridge::agent_emit(const String& ev, const String& payload) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "agent_emit");
+    cmd += js("query", ev); cmd += jr("payload", payload.empty() ? "{}" : payload);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::hook_native(const String& a, const String& e, const String& l) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "hook_native");
+    cmd += js("address", a); cmd += js("onEnter", e); cmd += js("onLeave", l);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::replace_native(const String& a, const String& b) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "replace_native");
+    cmd += js("address", a); cmd += js("replaceBody", b);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::unhook_native(u64 hid) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "unhook_native") + jn("hookId", static_cast<i64>(hid)) + "}");
+}
+Result<void> JavaScriptBridge::scan_memory(const String& a, u64 s, const String& p) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "scan_memory");
+    cmd += js("address", a); cmd += jn("size", static_cast<i64>(s)); cmd += js("query", p);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::modules_list(const String& f) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "modules_list") + js("query", f) + "}");
+}
+Result<void> JavaScriptBridge::exports_list(const String& m, const String& f) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "exports_list");
+    cmd += js("moduleName", m); cmd += js("query", f);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::auto_add(const String& c, const String& p) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "auto_add");
+    cmd += js("className", c); cmd += js("pattern", p);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::auto_remove(u64 tid) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "auto_remove") + jn("traceId", static_cast<i64>(tid)) + "}");
+}
+Result<void> JavaScriptBridge::auto_enable(bool e) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "auto_enable") + jb("enabled", e) + "}");
+}
+Result<void> JavaScriptBridge::update_auto_rule(u64 tid, const String& p) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "update_auto_rule");
+    cmd += jn("traceId", static_cast<i64>(tid)); cmd += js("pattern", p);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::chunk_begin(const String& kind, const String& payload) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "chunk_begin");
+    cmd += js("kind", kind); cmd += jr("payload", payload);
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::chunk_next(u64 sid, u64 idx) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "chunk_next");
+    cmd += jn("sessionId", static_cast<i64>(sid));
+    cmd += jn("chunkIndex", static_cast<i64>(idx));
+    cmd += "}";
+    return send(cmd);
+}
+Result<void> JavaScriptBridge::chunk_all(u64 sid) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "chunk_all") + jn("sessionId", static_cast<i64>(sid)) + "}");
+}
+Result<void> JavaScriptBridge::chunk_end(u64 sid) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "chunk_end") + jn("sessionId", static_cast<i64>(sid)) + "}");
+}
+Result<void> JavaScriptBridge::trace_handles_list(u64 tid) {
+    u64 id = next_id_.fetch_add(1);
+    return send(cmd_head(id, "trace_handles_list") +
+                jn("traceId", static_cast<i64>(tid)) + "}");
+}
+Result<void> JavaScriptBridge::replay(u64 rid, const String& cls, const String& m,
+                                       const String& sig, bool is_static, u64 inst,
+                                       const String& args, i32 times, i32 inter,
+                                       bool stop_on_error) {
+    u64 id = next_id_.fetch_add(1);
+    String cmd = cmd_head(id, "replay");
+    cmd += jn("replayId", static_cast<i64>(rid));
+    cmd += js("className", cls); cmd += js("methodName", m); cmd += js("signature", sig);
+    cmd += jb("isStatic", is_static);
+    cmd += jn("instanceHandle", static_cast<i64>(inst));
+    cmd += jr("argsSpec", args.empty() ? "[]" : args);
+    cmd += jn("times", times); cmd += jn("interleaveMs", inter);
+    cmd += jb("stopOnError", stop_on_error);
+    cmd += "}";
+    return send(cmd);
+}
+Result<JavaReply> JavaScriptBridge::eval(const String& c) {
+    u64 id = next_id_.fetch_add(1);
+    return call(cmd_head(id, "eval") + js("code", c) + "}");
+}
+Result<void> JavaScriptBridge::wait_cpp_ready(i64) {
+    return Result<void>::ok();
+}
+
+// ===========================================================================
+// SECTION 6 — JavaFacade
+// ===========================================================================
+
+Result<void> JavaFacade::start() {
+    auto r = JavaScriptBridge::instance().initialize();
+    if (!r) return r;
+    install_event_router();
+    return Result<void>::ok();
+}
+Result<void> JavaFacade::stop() {
+    return JavaScriptBridge::instance().shutdown();
+}
+bool JavaFacade::is_ready() {
+    return JavaScriptBridge::instance().is_ready();
+}
+
+Result<Handle> JavaFacade::use(const String& cls) {
+    auto r = JavaScriptBridge::instance().use_class(cls);
+    if (!r) return Result<Handle>::err(r.error_code(), r.error_message());
+    if (r.value().kind != "handle")
+        return Result<Handle>::err(ErrorCode::ClassNotFound, cls);
+    HandleId id = registry().register_entry(RegistryKind::JavaClass, cls,
+                                            reinterpret_cast<void*>(r.value().handle));
+    return Result<Handle>::ok(Handle(id));
+}
+Result<std::vector<String>> JavaFacade::enumerate_classes() {
+    // The bridge sends classes_list as an event. We register a temporary
+    // listener and wait for it.
+    std::mutex mu;
+    std::condition_variable cv;
+    std::vector<String> result;
+    bool got = false;
+    events::on("classes_list", [&](const Event& ev) {
+        std::lock_guard<std::mutex> lk(mu);
+        if (auto* v = ev.get("classes")) {
+            if (v->is_arr())
+                for (auto& e : v->arr_val) result.push_back(e.as_str());
+        }
+        got = true;
+        cv.notify_all();
+    });
+    JavaScriptBridge::instance().enumerate_classes();
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        cv.wait_for(lk, std::chrono::milliseconds(3000), [&]{ return got; });
+    }
+    return Result<std::vector<String>>::ok(std::move(result));
+}
+Result<std::vector<String>> JavaFacade::enumerate_loaders() {
+    std::mutex mu;
+    std::condition_variable cv;
+    std::vector<String> result;
+    bool got = false;
+    events::on("loaders_list", [&](const Event& ev) {
+        std::lock_guard<std::mutex> lk(mu);
+        if (auto* v = ev.get("loaders")) {
+            if (v->is_arr())
+                for (auto& e : v->arr_val) result.push_back(e.as_str());
+        }
+        got = true;
+        cv.notify_all();
+    });
+    JavaScriptBridge::instance().enumerate_loaders();
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        cv.wait_for(lk, std::chrono::milliseconds(3000), [&]{ return got; });
+    }
+    return Result<std::vector<String>>::ok(std::move(result));
+}
+Result<u64> JavaFacade::method(u64 cls, const String& n, const String& s) {
+    auto r = JavaScriptBridge::instance().get_method(cls, n, s);
+    if (!r) return Result<u64>::err(r.error_code(), r.error_message());
+    if (r.value().kind != "handle")
+        return Result<u64>::err(ErrorCode::MethodNotFound, n);
+    return Result<u64>::ok(r.value().handle);
+}
+Result<u64> JavaFacade::new_instance(u64 cls, const std::vector<u64>& args) {
+    String a = "[";
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (i) a += ",";
+        a += "{\"handle\":" + std::to_string(args[i]) + "}";
+    }
+    a += "]";
+    auto r = JavaScriptBridge::instance().new_instance(cls, a);
+    if (!r) return Result<u64>::err(r.error_code(), r.error_message());
+    if (r.value().kind != "handle")
+        return Result<u64>::err(ErrorCode::InternalError, "new_instance");
+    return Result<u64>::ok(r.value().handle);
+}
+Result<u64> JavaFacade::cast(u64 cls, u64 obj) {
+    auto r = JavaScriptBridge::instance().cast(cls, obj);
+    if (!r) return Result<u64>::err(r.error_code(), r.error_message());
+    if (r.value().kind != "handle")
+        return Result<u64>::err(ErrorCode::TypeError, "cast");
+    return Result<u64>::ok(r.value().handle);
+}
+Result<JavaReply> JavaFacade::call(u64 inst, u64 method, const std::vector<u64>& args) {
+    String a = "[";
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (i) a += ",";
+        a += "{\"handle\":" + std::to_string(args[i]) + "}";
+    }
+    a += "]";
+    return JavaScriptBridge::instance().call_method(inst, method, a);
+}
+Result<JavaReply> JavaFacade::call_static(u64, u64 method, const std::vector<u64>& args) {
+    return call(0, method, args);
+}
+Result<JavaReply> JavaFacade::get_field(u64 inst, u64 field) {
+    return JavaScriptBridge::instance().get_field(inst, field);
+}
+Result<void> JavaFacade::set_field(u64 inst, u64 field, u64 value) {
+    String v = "{\"handle\":" + std::to_string(value) + "}";
+    auto r = JavaScriptBridge::instance().set_field(inst, field, v);
+    if (!r) return Result<void>::err(r.error_code(), r.error_message());
+    return Result<void>::ok();
+}
+Result<u64> JavaFacade::create_string(const String& utf8) {
+    auto r = JavaScriptBridge::instance().create_string(utf8);
+    if (!r) return Result<u64>::err(r.error_code(), r.error_message());
+    if (r.value().kind != "handle")
+        return Result<u64>::err(ErrorCode::InternalError, "create_string");
+    return Result<u64>::ok(r.value().handle);
+}
+Result<void> JavaFacade::deopt_method(u64 m) {
+    auto r = JavaScriptBridge::instance().deopt_method(m);
+    if (!r) return Result<void>::err(r.error_code(), r.error_message());
+    return Result<void>::ok();
+}
+Result<void> JavaFacade::deopt_class(const String& c) {
+    auto r = JavaScriptBridge::instance().deopt_class(c);
+    if (!r) return Result<void>::err(r.error_code(), r.error_message());
+    return Result<void>::ok();
+}
+Result<void> JavaFacade::deopt_everything() {
+    auto r = JavaScriptBridge::instance().deopt_everything();
+    if (!r) return Result<void>::err(r.error_code(), r.error_message());
+    return Result<void>::ok();
+}
+Result<void> JavaFacade::deopt_boot_image() {
+    auto r = JavaScriptBridge::instance().deopt_boot_image();
+    if (!r) return Result<void>::err(r.error_code(), r.error_message());
+    return Result<void>::ok();
+}
+Result<void> JavaFacade::hook_method(u64 m,
+    std::function<void(const std::vector<u64>&, u64)> cb) {
+    (void)m;
+    auto r = JavaHookManager::instance().hook("", "", "",
+        [cb](const std::vector<u64>& a, u64 t) { cb(a, t); });
+    if (!r) return Result<void>::err(r.error_code(), r.error_message());
+    return Result<void>::ok();
+}
+Result<void> JavaFacade::unhook_method(u64) { return Result<void>::ok(); }
+Result<usize> JavaFacade::choose(const String& cls, std::function<int(Handle)> on_match) {
+    // Trigger choose; results arrive as events from the JS side.
+    // For now we register a temporary listener on "choose_result".
+    std::mutex mu;
+    std::condition_variable cv;
+    std::vector<u64> handles;
+    bool got = false;
+    events::on("choose_result", [&](const Event& ev) {
+        std::lock_guard<std::mutex> lk(mu);
+        if (auto* v = ev.get("handles")) {
+            if (v->is_arr())
+                for (auto& e : v->arr_val) handles.push_back(static_cast<u64>(e.as_i64(0)));
+        }
+        got = true;
+        cv.notify_all();
+    });
+    auto r = JavaScriptBridge::instance().choose(cls);
+    if (!r) return Result<usize>::err(r.error_code(), r.error_message());
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        cv.wait_for(lk, std::chrono::milliseconds(3000), [&]{ return got; });
+    }
+    usize count = 0;
+    for (u64 h : handles) {
+        HandleId hid = registry().register_entry(RegistryKind::JavaObject, cls,
+                                                  reinterpret_cast<void*>(h));
+        Handle handle(hid);
+        ++count;
+        if (on_match) {
+            int rc = on_match(handle);
+            if (rc != 0) break;
+        }
+    }
+    return Result<usize>::ok(count);
+}
+Result<std::vector<Handle>> JavaFacade::choose_all(const String& cls) {
+    (void)cls;
+    return Result<std::vector<Handle>>::ok({});
+}
+
+// ===========================================================================
+// SECTION 7 — JavaHookManager
+// ===========================================================================
+
+namespace {
+std::atomic<i64> g_cb_id{1};
+std::mutex g_hook_mu;
+std::unordered_map<i64, JavaHookManager::Fn> g_hook_fns;
+}
+
+JavaHookManager::JavaHookManager() {
+    JavaScriptBridge::instance().set_hook_callback(
+        [](i64 id, const std::vector<u64>& args, u64 this_h) {
+            JavaHookManager::Fn fn;
+            { std::lock_guard<std::mutex> lk(g_hook_mu);
+              auto it = g_hook_fns.find(id);
+              if (it != g_hook_fns.end()) fn = it->second; }
+            if (fn) {
+                try { fn(args, this_h); }
+                catch (const std::exception& e) {
+                    YAM_LOG_ERROR() << "hook fn: " << e.what(); }
+            }
+        });
+}
+JavaHookManager::~JavaHookManager() = default;
+JavaHookManager& JavaHookManager::instance() {
+    static JavaHookManager inst;
+    return inst;
+}
+Result<HandleId> JavaHookManager::hook(const String& cls, const String& method,
+                                        const String& sig, Fn fn) {
+    auto cr = JavaFacade::use(cls);
+    if (!cr) return Result<HandleId>::err(cr.error_code(), cr.error_message());
+    u64 cls_bridge = reinterpret_cast<u64>(cr.value().raw());
+    auto mr = JavaFacade::method(cls_bridge, method, sig);
+    if (!mr) return Result<HandleId>::err(mr.error_code(), mr.error_message());
+    i64 cb_id = g_cb_id.fetch_add(1);
+    { std::lock_guard<std::mutex> lk(g_hook_mu); g_hook_fns[cb_id] = std::move(fn); }
+    auto hr = JavaScriptBridge::instance().hook_method(mr.value(), cb_id);
+    if (!hr) {
+        std::lock_guard<std::mutex> lk(g_hook_mu);
+        g_hook_fns.erase(cb_id);
+        return Result<HandleId>::err(hr.error_code(), hr.error_message());
+    }
+    HandleId id = registry().register_entry(RegistryKind::JavaMethod, cls,
+                                             reinterpret_cast<void*>(mr.value()));
+    return Result<HandleId>::ok(id);
+}
+Result<void> JavaHookManager::unhook(HandleId id) {
+    auto rec = registry().lookup(id);
+    if (!rec) return Result<void>::err(ErrorCode::MethodNotFound, "hook id");
+    JavaScriptBridge::instance().unhook_method(
+        reinterpret_cast<u64>(rec->native_handle));
+    { std::lock_guard<std::mutex> lk(mu_); hooks_.erase(id); }
+    return Result<void>::ok();
+}
+void JavaHookManager::clear() {
+    std::vector<HandleId> ids;
+    { std::lock_guard<std::mutex> lk(mu_);
+      for (auto& p : hooks_) ids.push_back(p.first); }
+    for (auto id : ids) unhook(id);
+}
+usize JavaHookManager::size() const {
+    std::lock_guard<std::mutex> lk(mu_);
+    return hooks_.size();
+}
+
+// ===========================================================================
+// SECTION 8 — install_event_router
+// ===========================================================================
+
+} // namespace yam

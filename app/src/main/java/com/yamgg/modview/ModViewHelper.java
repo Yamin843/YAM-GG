@@ -10,11 +10,13 @@ public class ModViewHelper {
 
     private static final String TAG = "YAMGG";
     private static boolean sInstalled = false;
+    private static ClassLoader sLoader = null;
 
     public static void install(final ClassLoader loader) {
         if (sInstalled) return;
         sInstalled = true;
-        Log.i(TAG, "install() called");
+        sLoader = loader;
+        Log.i(TAG, "install() called, loader=" + loader);
     }
 
     public static void onActivityResumed(Activity activity) {

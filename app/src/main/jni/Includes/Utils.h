@@ -2,6 +2,7 @@
 #define YAMGG_UTILS_H
 #include <unistd.h>
 #include <string>
+#include <cstring>
 static inline bool isLibraryLoaded(const char* name) {
     FILE* fp = fopen("/proc/self/maps", "r");
     if (!fp) return false;
