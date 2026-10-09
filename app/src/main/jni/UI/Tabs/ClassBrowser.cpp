@@ -248,9 +248,9 @@ void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
         "send({type:'trace_on_ok'});"
         "}catch(e){send({type:'trace_err',message:''+e});}})();";
     sendJS(js);
-    m.tracing = true;
     {
         std::lock_guard<std::mutex> lk(mu_);
+        m.tracing = true;
         tracedMethods_.insert(cls + "::" + m.name);
     }
 }
@@ -459,9 +459,9 @@ void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
                     "}"
                     "send({type:'trace_off_ok'});}catch(e){}})();";
                 sendJS(js);
-                m.tracing = false;
                 {
                     std::lock_guard<std::mutex> lk(mu_);
+                    m.tracing = false;
                     tracedMethods_.erase(cls + "::" + m.name);
                 }
             } else {

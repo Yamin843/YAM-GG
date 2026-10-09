@@ -111,14 +111,36 @@ bool YamBridge::initialize() {
 void YamBridge::shutdown() {
     std::lock_guard<std::mutex> lk(mu_);
     if (!initialized_.load()) return;
+
+    // ─── 1. امسح callbacks أولاً — نمنع وصول أي استدعاء من الجسر
+    //            بعد أن نُفكّك الحالة.
+    try {
+        auto& bridge = yam::JavaScriptBridge::instance();
+        bridge.set_hook_callback(nullptr);
+        bridge.set_console_callback(nullptr);
+        bridge.set_eval_callback(nullptr);
+    } catch (...) {}
+
+    // ─── 2. أزل hookCb_ المحلي
+    hookCb_ = nullptr;
+
+    // ─── 3. أوقف YAM
     try {
         yam::YAM::shutdown();
     } catch (...) {}
+
+    // ─── 4. افرغ خرائط السكربتات
     {
         std::lock_guard<std::mutex> lk2(g_scriptLoadMutex);
         g_scriptLoadResult.clear();
         g_scriptLoadError.clear();
     }
+
+    {
+        std::lock_guard<std::mutex> lk3(mu_);
+        scriptNames_.clear();
+    }
+
     ready_.store(false);
     initialized_.store(false);
 }

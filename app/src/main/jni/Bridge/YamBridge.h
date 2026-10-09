@@ -2,6 +2,7 @@
 #define YAMGG_BRIDGE_YAMBRIDGE_H
 
 #include <string>
+#include <functional>
 #include <cstdint>
 #include <mutex>
 #include <atomic>

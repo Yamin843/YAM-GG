@@ -1232,15 +1232,25 @@ std::unordered_map<i64, JavaHookManager::Fn> g_hook_fns;
 
 JavaHookManager::JavaHookManager() {
     JavaScriptBridge::instance().set_hook_callback(
-        [](i64 id, const std::vector<u64>& args, u64 this_h) {
+        [](i64 cb_id, const String& phase,
+           const std::vector<u64>& args, u64 this_h,
+           u64 /*ret_h*/, bool /*is_void*/, const String& /*ex_msg*/)
+        {
+            // نُمرّر المرحلة "enter" فقط إلى callback الـ JavaHookManager.
+            // مراحل leave/exception متاحة عبر yam::events::on("hook_cb").
+            if (phase != "enter") return;
+
             JavaHookManager::Fn fn;
-            { std::lock_guard<std::mutex> lk(g_hook_mu);
-              auto it = g_hook_fns.find(id);
-              if (it != g_hook_fns.end()) fn = it->second; }
+            {
+                std::lock_guard<std::mutex> lk(g_hook_mu);
+                auto it = g_hook_fns.find(cb_id);
+                if (it != g_hook_fns.end()) fn = it->second;
+            }
             if (fn) {
                 try { fn(args, this_h); }
                 catch (const std::exception& e) {
-                    YAM_LOG_ERROR() << "hook fn: " << e.what(); }
+                    YAM_LOG_ERROR() << "hook fn: " << e.what();
+                }
             }
         });
 }

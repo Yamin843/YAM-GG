@@ -395,9 +395,18 @@ Result<void> JavaHook::install(const String& cls,
 }
 
 Result<void> JavaHook::uninstall() {
-    if (!installed_) return Result<void>::ok();
-    auto r = JavaHookManager::instance().unhook(method_handle_);
+    if (!installed_ && method_handle_ == 0) {
+        return Result<void>::ok();
+    }
+    Result<void> r = Result<void>::ok();
+    if (method_handle_ != 0) {
+        r = JavaHookManager::instance().unhook(method_handle_);
+        // صفّر الحالة حتى لو فشل الإلغاء — لا نُبقِي handle قديماً.
+        method_handle_ = 0;
+    }
     installed_ = false;
+    cb_id_ = 0;
+    cb_ = nullptr;
     return r;
 }
 

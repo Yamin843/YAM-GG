@@ -571,6 +571,9 @@ static const char kBootstrapSrc[] = R"YAMJS(
             }
             m.__ygg_hook_cb = cbId;
             var orig = m.__ygg_hook_orig;
+            // captureReturn: يمنع تسريب handle على كل return إذا لم يطلبه C++.
+            // الافتراضي false — الـ callback 2-arg لا يرى return أصلاً.
+            var captureReturn = (cmd.captureReturn === true);
 
             m.implementation = function () {
                 var a = Array.prototype.slice.call(arguments);
@@ -581,8 +584,11 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     try { ah.push(alloc(a[i])); }
                     catch (e) { ah.push(0); }
                 }
+                // thisHandle: يُخصَّص فقط عند الطلب (كثيف في hook)
                 var th = 0;
-                try { th = alloc(this); } catch (e) {}
+                if (cmd.captureThis === true) {
+                    try { th = alloc(this); } catch (e) {}
+                }
                 try {
                     send({type: "hook_cb", callbackId: cbId, phase: "enter",
                           argHandles: ah, thisHandle: th});
@@ -607,7 +613,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
 
                 // ─── ON LEAVE ───
                 var rh = 0;
-                if (r !== null && r !== undefined) {
+                if (captureReturn && r !== null && r !== undefined) {
                     try { rh = alloc(r); } catch (e) {}
                 }
                 try {
