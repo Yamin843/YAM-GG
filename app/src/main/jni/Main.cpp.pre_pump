@@ -1,8 +1,5 @@
 #include <jni.h>
 #include <pthread.h>
-#include <atomic>
-#include <chrono>
-#include <thread>
 #include <unistd.h>
 #include <android/log.h>
 #include <dlfcn.h>
@@ -20,7 +17,6 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 static JavaVM* g_vm = nullptr;
-static std::atomic<bool> g_pump_running{true};
 static jclass g_modViewClass = nullptr;
 static std::atomic<bool> g_initialized{false};
 
@@ -308,19 +304,7 @@ static const char* kAppsFlyerHookJs = R"JS(
         }
     }
 
-    LOGI("init_thread: complete — entering GMainContext pump loop");
-
-    // Keep the JS scheduler alive by pumping GMainContext.
-    // Without this, yam_script_post() messages queue forever
-    // and recv("cmd", ...) handlers never fire.
-    {
-        GMainContext* ctx = g_main_context_default();
-        while (g_pump_running.load(std::memory_order_acquire)) {
-            while (g_main_context_iteration(ctx, FALSE)) {}
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        }
-    }
-    LOGI("init_thread: pump loop exited");
+    LOGI("init_thread: complete");
 
     if (attached) Runtime::instance().detachCurrentThread();
     return nullptr;
@@ -366,10 +350,6 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
     (void)vm;
     (void)reserved;
     LOGI("JNI_OnUnload called");
-
-    // Stop the pump loop first, so it doesn't touch JS state during teardown.
-    g_pump_running.store(false, std::memory_order_release);
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     JNIEnv* env = nullptr;
     if (g_vm) g_vm->GetEnv((void**)&env, JNI_VERSION_1_6);
