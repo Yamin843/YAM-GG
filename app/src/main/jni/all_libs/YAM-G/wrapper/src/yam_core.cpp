@@ -971,7 +971,7 @@ Result<ByteVector> HexPattern::compile(const String& pattern) {
 
 } // namespace detail
 // ===========================================================================
-// ObjectRegistry
+// SECTION 19 — ObjectRegistry
 // ===========================================================================
 
 ObjectRegistry& ObjectRegistry::instance() {
@@ -1054,7 +1054,7 @@ std::vector<Ptr<RegistryEntry>> ObjectRegistry::snapshot() const {
 }
 
 // ===========================================================================
-// Gc
+// SECTION 20 — Gc
 // ===========================================================================
 
 void Gc::collect() {
@@ -1062,9 +1062,8 @@ void Gc::collect() {
     auto snap = r.snapshot();
     for (auto& e : snap) {
         if (!e) continue;
-        if (e->ref_count.load(std::memory_order_acquire) == 0) {
+        if (e->ref_count.load(std::memory_order_acquire) == 0)
             r.release(e->id);
-        }
     }
 }
 
@@ -1074,18 +1073,12 @@ void Gc::sweep(i64 max_age_ms) {
     auto snap = r.snapshot();
     for (auto& e : snap) {
         if (!e) continue;
-        if (e->ref_count.load() == 0 && (now - e->last_used_ms) > max_age_ms) {
+        if (e->ref_count.load() == 0 && (now - e->last_used_ms) > max_age_ms)
             r.release(e->id);
-        }
     }
 }
 
-usize Gc::live_entries() {
-    return registry().size();
-}
-
-usize Gc::live_bytes() {
-    return registry().total_bytes();
-}
+usize Gc::live_entries() { return registry().size(); }
+usize Gc::live_bytes() { return registry().total_bytes(); }
 
 } // namespace yam
