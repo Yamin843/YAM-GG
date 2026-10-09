@@ -130,10 +130,6 @@ jclass DexLoader::findClass(JNIEnv* env, const char* name) {
                 "(Ljava/lang/String;)Ljava/lang/Class;");
         if (loadClass) {
             jstring jname = env->NewStringUTF(name);
-            if (!jname) {
-                if (env->ExceptionCheck()) env->ExceptionClear();
-                return nullptr;
-            }
             jclass cls = reinterpret_cast<jclass>(
                     env->CallObjectMethod(classLoaderObj_, loadClass, jname));
             env->DeleteLocalRef(jname);
@@ -145,27 +141,12 @@ jclass DexLoader::findClass(JNIEnv* env, const char* name) {
         }
     }
 
-    jclass fallback = env->FindClass(name);
-    if (!fallback && env->ExceptionCheck()) env->ExceptionClear();
-    return fallback;
+    return env->FindClass(name);
 }
 
 jobject DexLoader::classLoader(JNIEnv* env) {
     if (!env) return nullptr;
     return classLoaderObj_;
-}
-
-void DexLoader::detach(JNIEnv* env) {
-    if (!env) return;
-    if (classLoaderObj_) {
-        env->DeleteGlobalRef(classLoaderObj_);
-        classLoaderObj_ = nullptr;
-    }
-    if (classLoaderClass_) {
-        env->DeleteGlobalRef(classLoaderClass_);
-        classLoaderClass_ = nullptr;
-    }
-    loaded_ = false;
 }
 
 } // namespace yamgg

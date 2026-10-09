@@ -14,7 +14,6 @@ public:
     bool isLoaded() const { return loaded_; }
     jclass findClass(JNIEnv* env, const char* name);
     jobject classLoader(JNIEnv* env);
-    void detach(JNIEnv* env);
 
 private:
     DexLoader() = default;

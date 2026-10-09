@@ -2,11 +2,10 @@
 // yam_java.cpp — JS bridge to libyamjs.a's embedded java-bridge
 // ===========================================================================
 // Architecture:
-//   - The library has an embedded java-bridge listening on recv("cmd").
-//   - We add a sibling listener on recv("yamgg_cmd") for our own cpp_* commands.
-//   - Built-in commands (trace, pause, ...) still go via cmd.
-//   - Our commands reply through a "reply" envelope; the bridge's events
-//     come through as-is. We never replace recv("cmd").
+//   - The library already has an embedded java-bridge listening on recv("cmd").
+//   - It provides `globalThis.Agent` with `registerCommand`.
+//   - We register our custom commands via Agent.registerCommand.
+//   - We NEVER install our own recv("cmd") — that would displace the bridge.
 // ===========================================================================
 
 #include "yam_java_model.hpp"
@@ -103,7 +102,8 @@ Result<JavaReply> JavaScriptBridge::call(const String& cmd_inner, i64 timeout_ms
     if (!script_)
         return Result<JavaReply>::err(ErrorCode::NotInitialized, "no script");
 
-    u64    id     = 0;
+    // Extract id and action from command
+    u64    id = 0;
     String action;
     {
         auto p = JsonValue::parse(cmd_inner);
@@ -114,19 +114,25 @@ Result<JavaReply> JavaScriptBridge::call(const String& cmd_inner, i64 timeout_ms
     }
     if (id == 0) id = next_id_.fetch_add(1);
 
+    // ═════════════════════════════════════════════════════════════════
     // Routing:
-    //   cpp_*    → yamgg_cmd  (our bootstrap, replies via "reply" envelope)
-    //   others   → cmd         (embedded bridge, event-based, no sync wait)
+    //   cpp_*    → yamgg_cmd (our bootstrap) — expect reply envelope
+    //   others   → cmd        (embedded bridge) — fire and forget
+    // ═════════════════════════════════════════════════════════════════
     bool is_cpp = (action.size() >= 4 && action.compare(0, 4, "cpp_") == 0);
 
     if (!is_cpp) {
+        // Embedded bridge command: no synchronous reply.
         String wrapped = "{\"type\":\"cmd\",\"payload\":" + cmd_inner + "}";
         script_->post(wrapped);
         JavaReply out;
-        out.id = id; out.ok = true; out.kind = "void";
+        out.id   = id;
+        out.ok   = true;
+        out.kind = "void";
         return Result<JavaReply>::ok(std::move(out));
     }
 
+    // Custom command: send on yamgg_cmd, wait for reply envelope.
     auto sync = std::make_shared<detail::JavaSync>();
     {
         std::lock_guard<std::mutex> lk(pending_mu_);
@@ -144,7 +150,7 @@ Result<JavaReply> JavaScriptBridge::call(const String& cmd_inner, i64 timeout_ms
         if (it == replies_.end()) {
             pending_.erase(id);
             return Result<JavaReply>::err(ErrorCode::Timeout,
-                "reply timeout: " + action);
+                "reply timeout for action: " + action);
         }
         out = it->second;
         replies_.erase(it);

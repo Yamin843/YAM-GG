@@ -65,6 +65,7 @@ LOCAL_CPPFLAGS := \
     -DNDEBUG \
     -DIMGUI_IMPL_OPENGL_ES3=1 \
     -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1 \
+    -Wno-everything \
     -Wno-error
 
 LOCAL_CFLAGS := -w -O2 -DNDEBUG

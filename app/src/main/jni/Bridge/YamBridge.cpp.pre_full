@@ -6,22 +6,12 @@
 
 #include <android/log.h>
 #include <chrono>
-#include <condition_variable>
-#include <unordered_map>
 
 #define LOG_TAG "YAMGG"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 namespace yamgg {
-
-namespace {
-std::mutex                                              g_scriptLoadMutex;
-std::condition_variable                                 g_scriptLoadCv;
-std::unordered_map<std::string, std::pair<bool,bool>>   g_scriptLoadResult; // name → {done, ok}
-std::unordered_map<std::string, std::string>            g_scriptLoadError;  // name → error
-}
-
 
 YamBridge::YamBridge() = default;
 YamBridge::~YamBridge() = default;
@@ -83,22 +73,6 @@ bool YamBridge::initialize() {
 
     DBG(">>> [13] installEventRouter");
     installEventRouter();
-
-    // Registered once — updates a static map so loadScriptSync can wait.
-    yam::events::on("user_script_loaded", [](const yam::Event& ev) {
-        std::string nm = ev.get_str("name");
-        std::lock_guard<std::mutex> lk(g_scriptLoadMutex);
-        g_scriptLoadResult[nm] = {true, ev.get_bool("ok", false)};
-        g_scriptLoadError[nm]  = ev.get_str("error");
-        g_scriptLoadCv.notify_all();
-    });
-    yam::events::on("script_failed", [](const yam::Event& ev) {
-        std::string nm = ev.get_str("name");
-        std::lock_guard<std::mutex> lk(g_scriptLoadMutex);
-        g_scriptLoadResult[nm] = {true, false};
-        g_scriptLoadError[nm]  = ev.get_str("error");
-        g_scriptLoadCv.notify_all();
-    });
     DBG(">>> [14] router installed");
 
     ready_.store(true);
@@ -266,8 +240,12 @@ YamBridge::LoadResult YamBridge::loadScript(const std::string& name,
 bool YamBridge::unloadScript(const std::string& name) {
     if (!ready_.load()) return false;
     try {
-        // Ask JS side to unload user scripts (the java-bridge exposes this).
-        yam::JavaScriptBridge::instance().clear_user_scripts();
+        std::string code =
+            "(function(){try{"
+            "if(globalThis.__yamgg_scripts&&globalThis.__yamgg_scripts['" + name + "'])"
+            "{delete globalThis.__yamgg_scripts['" + name + "'];}}"
+            "catch(e){}})();";
+        yam::JavaScriptBridge::instance().eval(code);
     } catch (...) {
         return false;
     }
@@ -284,46 +262,6 @@ bool YamBridge::unloadScript(const std::string& name) {
 std::vector<std::string> YamBridge::listScripts() const {
     std::lock_guard<std::mutex> lk(mu_);
     return scriptNames_;
-}
-
-YamBridge::LoadResult YamBridge::loadScriptSync(const std::string& name,
-                                                   const std::string& code,
-                                                   int timeout_ms) {
-    LoadResult out;
-    if (!ready_.load()) { out.error = "bridge not ready"; return out; }
-
-    // Reset state for this name
-    {
-        std::lock_guard<std::mutex> lk(g_scriptLoadMutex);
-        g_scriptLoadResult[name] = {false, false};
-        g_scriptLoadError[name].clear();
-    }
-
-    try {
-        auto r = yam::JavaScriptBridge::instance().run_user_script(name, code);
-        if (!r) { out.error = r.error_message(); return out; }
-    } catch (const std::exception& e) {
-        out.error = e.what();
-        return out;
-    }
-
-    std::unique_lock<std::mutex> lk(g_scriptLoadMutex);
-    bool got = g_scriptLoadCv.wait_for(lk,
-        std::chrono::milliseconds(timeout_ms),
-        [&]{ auto it = g_scriptLoadResult.find(name);
-             return it != g_scriptLoadResult.end() && it->second.first; });
-
-    if (got) {
-        auto it = g_scriptLoadResult.find(name);
-        out.ok = it->second.second;
-        if (!out.ok) out.error = g_scriptLoadError[name];
-    } else {
-        out.error = "timeout waiting for '" + name + "' load result";
-    }
-
-    g_scriptLoadResult.erase(name);
-    g_scriptLoadError.erase(name);
-    return out;
 }
 
 void YamBridge::setOutputSink(void (*sink)(const std::string&)) {

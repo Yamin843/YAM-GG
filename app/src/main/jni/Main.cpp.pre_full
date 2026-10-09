@@ -9,6 +9,7 @@
 
 #include "Core/Runtime.h"
 #include "Core/DexLoader.h"
+#include "Core/HookManager.h"
 #include "Bridge/YamBridge.h"
 #include "UI/Renderer.h"
 #include "JNI/NativeMethods.h"
@@ -73,6 +74,7 @@ static void* init_thread(void*) {
         LOGE("init_thread: YamBridge init failed");
     } else {
         LOGI("init_thread: YamBridge ready");
+        HookManager::instance().installActivityHooks(env);
 
         // ─────────────────────────────────────────────────────────
         //  تثبيت hook فعلي على Activity.onResume
@@ -365,9 +367,6 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
     (void)reserved;
     LOGI("JNI_OnUnload called");
 
-    g_pump_running.store(false, std::memory_order_release);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
     // Stop the pump loop first, so it doesn't touch JS state during teardown.
     g_pump_running.store(false, std::memory_order_release);
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -376,7 +375,7 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
     if (g_vm) g_vm->GetEnv((void**)&env, JNI_VERSION_1_6);
 
     if (env) {
-        DexLoader::instance().detach(env);
+        HookManager::instance().uninstallAll(env);
         if (g_modViewClass) {
             env->DeleteGlobalRef(g_modViewClass);
             g_modViewClass = nullptr;
@@ -412,6 +411,11 @@ Java_com_yamgg_modview_ModView_nativeOnTouch(JNIEnv* env, jclass clazz,
     jni::onTouch(env, clazz, action, x, y, pointerId);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_yamgg_modview_ModView_nativeOnKey(JNIEnv* env, jclass clazz,
+                                            jint keyCode, jint action) {
+    jni::onKey(env, clazz, keyCode, action);
+}
 
 __attribute__((constructor))
 static void lib_constructor() {

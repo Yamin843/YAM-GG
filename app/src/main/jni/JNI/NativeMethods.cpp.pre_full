@@ -33,6 +33,10 @@ static void JNICALL impl_nativeOnTouch(JNIEnv* env, jclass clazz,
     Renderer::instance().onTouch((int)action, (float)x, (float)y, (int)pointerId);
 }
 
+static void JNICALL impl_nativeOnKey(JNIEnv* env, jclass clazz,
+                                      jint keyCode, jint action) {
+    (void)env; (void)clazz; (void)keyCode; (void)action;
+}
 
 static const JNINativeMethod g_methods[] = {
     {"nativeOnSurfaceCreated", "()V", (void*)impl_nativeOnSurfaceCreated},
@@ -57,6 +61,7 @@ void onSurfaceCreated(JNIEnv* env, jclass clazz) { impl_nativeOnSurfaceCreated(e
 void onSurfaceChanged(JNIEnv* env, jclass clazz, jint w, jint h) { impl_nativeOnSurfaceChanged(env, clazz, w, h); }
 void onDrawFrame(JNIEnv* env, jclass clazz, jint w, jint h) { impl_nativeOnDrawFrame(env, clazz, w, h); }
 void onTouch(JNIEnv* env, jclass clazz, jint a, jfloat x, jfloat y, jint p) { impl_nativeOnTouch(env, clazz, a, x, y, p); }
+void onKey(JNIEnv* env, jclass clazz, jint k, jint a) { impl_nativeOnKey(env, clazz, k, a); }
 
 } // namespace jni
 } // namespace yamgg

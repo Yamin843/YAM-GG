@@ -21,7 +21,6 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
     private static native void nativeOnSurfaceChanged(int width, int height);
     private static native void nativeOnDrawFrame(int width, int height);
     private static native void nativeOnTouch(int action, float x, float y, int pointerId);
-    private static native void nativeOnKey(int keyCode, int action);
 
     private static volatile ModView sInstance = null;
     private static volatile Activity sActivity = null;
