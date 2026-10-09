@@ -34,159 +34,12 @@ using namespace yamgg;
 // ── Wrapper-provided helper (see yam_core.cpp) ──
 extern "C" void yamgg_pump_once();
 
-
 // ===========================================================================
 // Activity.onResume hook + current-activity attach
 // ===========================================================================
-static const char* kActivityHookJs = R"JS(
-(function () {
-    "use strict";
-    if (typeof Java === "undefined") {
-        send({type:"hook_error", message:"Java undefined"});
-        return;
-    }
-
-    // ── STEP 1 — attach to CURRENT activity (no onResume needed) ──
-    try {
-        Java.performNow(function () {
-            try {
-                Java.scheduleOnMainThread(function () {
-                    try {
-                        var ActivityThread = Java.use("android.app.ActivityThread");
-                        var at = ActivityThread.currentActivityThread();
-                        if (!at) { send({type:"attach_now_info", message:"no ActivityThread"}); return; }
-
-                        var mActivities = at.mActivities.value;
-                        if (!mActivities) { send({type:"attach_now_info", message:"no mActivities"}); return; }
-
-                        var n = mActivities.size();
-                        for (var i = 0; i < n; i++) {
-                            try {
-                                var rec = mActivities.valueAt(i);
-                                if (!rec) continue;
-                                var act = null;
-                                try { act = rec.activity.value; } catch (e) { continue; }
-                                if (!act) continue;
-                                try { if (act.isFinishing()) continue; } catch (e) {}
-
-                                var ModView = Java.use("com.yamgg.modview.ModView");
-                                ModView.attach(act);
-                                send({type:"attach_now_ok",
-                                      className: "" + act.getClass().getName(),
-                                      index: i});
-                                return;
-                            } catch (e) {
-                                send({type:"attach_now_skip", index: i, message: "" + e});
-                            }
-                        }
-                        send({type:"attach_now_none"});
-                    } catch (e) {
-                        send({type:"attach_now_error", message: "" + e});
-                    }
-                });
-            } catch (e) {
-                send({type:"attach_now_outer", message: "" + e});
-            }
-        });
-    } catch (e) {
-        send({type:"attach_now_outer2", message: "" + e});
-    }
-
-    // ── STEP 2 — hook onResume for future activities ──
-    try {
-        Java.performNow(function () {
-            try {
-                var Activity     = Java.use("android.app.Activity");
-                var origOnResume = Activity.onResume;
-                Activity.onResume.implementation = function () {
-                    try { origOnResume.call(this); } catch (e) {}
-                    try {
-                        var ModView = Java.use("com.yamgg.modview.ModView");
-                        ModView.attach(this);
-                        send({type:"modview_attached",
-                              className: "" + this.getClass().getName()});
-                    } catch (e) {
-                        send({type:"attach_error", message: "" + e});
-                    }
-                };
-                send({type:"hook_installed"});
-            } catch (e) {
-                send({type:"hook_error", message: "install: " + e});
-            }
-        });
-    } catch (e) {
-        send({type:"hook_outer_error", message: "" + e});
-    }
-})();
-)JS";
-
 // ===========================================================================
 // AppsFlyer trackEvent hook
 // ===========================================================================
-static const char* kAppsFlyerHookJs = R"JS(
-(function () {
-    "use strict";
-    if (typeof Java === "undefined") {
-        send({type:"appsflyer_error", message:"Java undefined"});
-        return;
-    }
-
-    var LOG_PATH = "/storage/emulated/0/Download/appsflyer_calls.log";
-
-    function writeLog(line) {
-        try {
-            var FileWriter = Java.use("java.io.FileWriter");
-            var fw = FileWriter.$new(LOG_PATH, true);
-            try { fw.write(line + "\n"); fw.flush(); }
-            finally { fw.close(); }
-        } catch (e) {
-            send({type:"appsflyer_log_error", message:"" + e});
-        }
-    }
-
-    Java.performNow(function () {
-        try {
-            var C = Java.use("com.appsflyer.unity.AppsFlyerAndroidWrapper");
-            send({type:"appsflyer_class_ok"});
-
-            // Overload 1: (String, HashMap) -> void
-            try {
-                var m2 = C.trackEvent.overload("java.lang.String", "java.util.HashMap");
-                m2.implementation = function (name, params) {
-                    writeLog("" + new Date() + "  trackEvent/2  name=" + name + "  params=" + params);
-                    send({type:"appsflyer_hit", overload:"2", name:"" + name});
-                    return m2.call(this, name, params);
-                };
-                send({type:"appsflyer_hook_ok", overload:"2"});
-            } catch (e) {
-                send({type:"appsflyer_hook_err", overload:"2", message:"" + e});
-            }
-
-            // Overload 2: (String, HashMap, boolean, String) -> void
-            try {
-                var m4 = C.trackEvent.overload(
-                    "java.lang.String", "java.util.HashMap",
-                    "boolean", "java.lang.String");
-                m4.implementation = function (name, params, isRevenue, currency) {
-                    writeLog("" + new Date() + "  trackEvent/4  name=" + name
-                             + "  params=" + params + "  isRevenue=" + isRevenue
-                             + "  currency=" + currency);
-                    send({type:"appsflyer_hit", overload:"4", name:"" + name});
-                    return m4.call(this, name, params, isRevenue, currency);
-                };
-                send({type:"appsflyer_hook_ok", overload:"4"});
-            } catch (e) {
-                send({type:"appsflyer_hook_err", overload:"4", message:"" + e});
-            }
-
-            send({type:"appsflyer_ready"});
-        } catch (e) {
-            send({type:"appsflyer_class_error", message:"" + e});
-        }
-    });
-})();
-)JS";
-
 // ===========================================================================
 // init_thread
 // ===========================================================================
@@ -238,15 +91,6 @@ static void* init_thread(void*) {
         LOGE("init_thread: YamBridge init failed");
     } else {
         LOGI("init_thread: YamBridge ready");
-
-        auto r1 = YamBridge::instance().loadScript("__activity_hook__", kActivityHookJs);
-        if (r1.ok) LOGI("init_thread: Activity hook script OK");
-        else        LOGE("init_thread: Activity hook script FAILED: %s", r1.error.c_str());
-
-        auto r2 = YamBridge::instance().loadScript("__appsflyer_hook__", kAppsFlyerHookJs);
-        if (r2.ok) LOGI("init_thread: AppsFlyer hook script OK");
-        else        LOGE("init_thread: AppsFlyer hook script FAILED: %s", r2.error.c_str());
-    }
 
     LOGI("init_thread: complete — entering GMainContext pump loop");
 
