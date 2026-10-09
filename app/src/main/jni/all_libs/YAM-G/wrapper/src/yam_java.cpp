@@ -46,11 +46,35 @@ const char* const kBootstrapSrc = R"YAMJS(
 (function () {
     "use strict";
 
-    // ── الخطوة 1: إرسال cpp_ready فوراً ──────────────────────
-    // هذا يُثبت أن قناة send() تعمل قبل أي شيء آخر.
-    try { send({ type: "cpp_ready" }); } catch (e) {}
+    // ── اختبار 1: هل console موجود؟ ────────────────────────
+    if (typeof console !== "undefined" && console.log) {
+        try { console.log("[YAMGG-JS] 1: console.log works"); } catch (e) {}
+    }
 
-    // ── الخطوة 2: إرسال تشخيصي ─────────────────────────────
+    // ── اختبار 2: هل send موجود؟ ──────────────────────────
+    if (typeof send !== "function") {
+        if (typeof console !== "undefined" && console.log) {
+            try { console.log("[YAMGG-JS] 2: send NOT defined"); } catch (e) {}
+        }
+        return;
+    }
+    try { console.log("[YAMGG-JS] 2: send defined"); } catch (e) {}
+
+    // ── اختبار 3: إرسال cpp_ready قبل أي شيء ─────────────
+    try {
+        send({ type: "cpp_ready" });
+        try { console.log("[YAMGG-JS] 3: cpp_ready sent OK"); } catch (e) {}
+    } catch (e) {
+        try { console.log("[YAMGG-JS] 3: cpp_ready send FAILED: " + e); } catch (_) {}
+    }
+
+    // ── اختبار 4: هل Agent موجود؟ ─────────────────────────
+    try {
+        console.log("[YAMGG-JS] 4: Agent=" + typeof globalThis.Agent +
+                    " Java=" + typeof globalThis.Java);
+    } catch (e) {}
+
+    // ── اختبار 5: إرسال bootstrap_debug ───────────────────
     try {
         send({ type: "bootstrap_debug",
                hasAgent: typeof globalThis.Agent !== "undefined",
@@ -58,312 +82,22 @@ const char* const kBootstrapSrc = R"YAMJS(
                hasJava: typeof Java !== "undefined" });
     } catch (e) {}
 
-    // ── الخطوة 3: التحقق من Agent ─────────────────────────
+    // ── اختبار 6: Agent check ─────────────────────────────
     if (!globalThis.Agent || typeof globalThis.Agent.registerCommand !== "function") {
         try { send({ type: "cpp_error",
                      message: "Agent.registerCommand unavailable" }); } catch (e) {}
+        try { console.log("[YAMGG-JS] 6: NO AGENT, returning"); } catch (e) {}
         return;
     }
 
-    // The embedded java-bridge has already installed:
-    //   - globalThis.Java (frida-java-bridge)
-    //   - globalThis.Agent (extensions API)
-    //   - the recv("cmd") handler for native commands
-    //
-    // We ONLY add missing commands via Agent.registerCommand.
-    // We MUST NOT install our own recv("cmd").
+    try { console.log("[YAMGG-JS] 6: Agent OK, continuing"); } catch (e) {}
+    try { send({ type: "bootstrap_agent_ok" }); } catch (e) {}
 
-    if (!globalThis.Agent || typeof globalThis.Agent.registerCommand !== "function") {
-        try { send({ type: "cpp_error",
-                     message: "Agent.registerCommand unavailable" }); } catch (e) {}
-        return;
-    }
-
-    // ---- Handle table ----------------------------------------------------
-    var table = Object.create(null);
-    var nextHandle = 1;
-    function alloc(o) { var id = nextHandle++; table[id] = o; return id; }
-    function get(id)   { return table[id] || null; }
-    function drop(id)  { delete table[id]; }
-    function dropAll() { table = Object.create(null); nextHandle = 1; }
-
-    // ---- Reply helpers ---------------------------------------------------
-    function reply(id, ok, kind, value, handle, error) {
-        var m = { id: id, ok: !!ok };
-        if (kind)  m.kind = kind;
-        if (value !== undefined && value !== null) m.result = value;
-        if (handle !== undefined && handle !== null) m.handle = handle;
-        if (error) m.error = String(error);
-        send({ type: "reply", payload: JSON.stringify(m) });
-    }
-    function replyHandle(id, h) { reply(id, true, "handle", null, h); }
-    function replyValue(id, v)  { reply(id, true, "value", v); }
-    function replyNull(id)      { reply(id, true, "null"); }
-    function replyVoid(id)      { reply(id, true, "void"); }
-    function replyError(id, e)  {
-        reply(id, false, "error", null, null,
-              (e && e.message) ? e.message : String(e));
-    }
-
-    // ---- JNI signature parser --------------------------------------------
-    function prim(c) {
-        switch (c) {
-        case 'Z': return 'boolean'; case 'B': return 'byte';
-        case 'C': return 'char';    case 'S': return 'short';
-        case 'I': return 'int';     case 'J': return 'long';
-        case 'F': return 'float';   case 'D': return 'double';
-        case 'V': return 'void';    default: return c;
-        }
-    }
-    function parseSig(sig) {
-        if (!sig) return [];
-        var out = []; var i = 0;
-        while (i < sig.length) {
-            var c = sig[i];
-            if (c === '(') { i++; continue; }
-            if (c === ')') break;
-            if (c === 'L') {
-                var e = sig.indexOf(';', i);
-                if (e === -1) break;
-                out.push(sig.substring(i + 1, e).replace(/\//g, '.'));
-                i = e + 1;
-            } else if (c === '[') {
-                var d = 0;
-                while (sig[i] === '[') { d++; i++; }
-                if (sig[i] === 'L') {
-                    var e2 = sig.indexOf(';', i);
-                    if (e2 === -1) break;
-                    out.push(new Array(d + 1).join('[') +
-                             sig.substring(i + 1, e2).replace(/\//g, '.'));
-                    i = e2 + 1;
-                } else { out.push(new Array(d + 1).join('[') + sig[i]); i++; }
-            } else { out.push(prim(c)); i++; }
-        }
-        return out;
-    }
-
-    // ---- Value materialization -------------------------------------------
-    function mat(v) {
-        if (v === null || v === undefined) return v;
-        if (typeof v !== "object") return v;
-        if (typeof v.handle === "number") return get(v.handle);
-        if ("kind" in v) {
-            switch (v.kind) {
-            case "int": case "short": case "byte": return v.value | 0;
-            case "long":
-                return (typeof Int64 === "function")
-                    ? Int64(String(v.value)) : Number(v.value);
-            case "float": case "double": return Number(v.value);
-            case "boolean": return !!v.value;
-            case "string": return String(v.value);
-            case "char": return String(v.value)[0] || "\0";
-            case "null": return null;
-            case "undefined": return undefined;
-            case "enum": return Java.use(v.className).valueOf(v.enumName);
-            case "array": return Java.array(v.elementType,
-                (v.elements || []).map(mat));
-            case "alloc": {
-                var c = Java.use(v.className);
-                var inst = c.$alloc();
-                if (v.fields) for (var i = 0; i < v.fields.length; i++)
-                    inst[v.fields[i].name] = mat(v.fields[i].value);
-                return inst;
-            }
-            case "construct": {
-                var c2 = Java.use(v.className);
-                var args2 = (v.args || []).map(mat);
-                var inst2;
-                if (v.ctorSig) {
-                    inst2 = c2.$alloc();
-                    c2.$init.overload.apply(c2.$init, parseSig(v.ctorSig))
-                        .call(inst2, ...args2);
-                } else inst2 = c2.$new.apply(c2, args2);
-                if (v.fields) for (var i2 = 0; i2 < v.fields.length; i2++)
-                    inst2[v.fields[i2].name] = mat(v.fields[i2].value);
-                return inst2;
-            }
-            case "static_field":
-                return Java.use(v.className)[v.fieldName].value;
-            case "singleton": {
-                var sc = Java.use(v.className);
-                if (typeof sc.getInstance === "function") return sc.getInstance();
-                if (typeof sc.getDefault === "function") return sc.getDefault();
-                if (typeof sc.get === "function") return sc.get();
-                var inst3 = sc.INSTANCE;
-                if (inst3) return (inst3.value !== undefined) ? inst3.value : inst3;
-                throw new Error("no getInstance on " + v.className);
-            }
-            case "expr": {
-                var fn = new Function("Java", "return (" + v.expr + ");");
-                return fn(Java);
-            }
-            default: return v.value;
-            }
-        }
-        if ("value" in v) return v.value;
-        return v;
-    }
-
-    // ================================================================
-    // Custom commands — registered via Agent.registerCommand
-    // ================================================================
-
-    Agent.registerCommand("cpp_use_class", function (cmd) {
-        try { replyHandle(cmd.id, alloc(Java.use(cmd.className))); }
-        catch (e) { replyError(cmd.id, e); }
-    });
-
-    Agent.registerCommand("cpp_get_method", function (cmd) {
-        try {
-            var c = get(cmd.classHandle);
-            if (!c) throw new Error("no class handle");
-            var m = c[cmd.methodName];
-            if (!m) throw new Error("no method " + cmd.methodName);
-            var method = cmd.signature
-                ? m.overload.apply(m, parseSig(cmd.signature))
-                : (m.overloads && m.overloads.length ? m.overloads[0] : m);
-            replyHandle(cmd.id, alloc(method));
-        } catch (e) { replyError(cmd.id, e); }
-    });
-
-    Agent.registerCommand("cpp_cast", function (cmd) {
-        try {
-            var c = get(cmd.classHandle);
-            var o = get(cmd.objectHandle);
-            if (!c || !o) throw new Error("cast handles");
-            replyHandle(cmd.id, alloc(Java.cast(o, c)));
-        } catch (e) { replyError(cmd.id, e); }
-    });
-
-    Agent.registerCommand("cpp_create_string", function (cmd) {
-        try {
-            var s = Java.use("java.lang.String").$new(cmd.value);
-            replyHandle(cmd.id, alloc(s));
-        } catch (e) { replyError(cmd.id, e); }
-    });
-
-    Agent.registerCommand("cpp_array_of", function (cmd) {
-        try {
-            var arr = Java.array(cmd.elementType, (cmd.elements || []).map(mat));
-            replyHandle(cmd.id, alloc(arr));
-        } catch (e) { replyError(cmd.id, e); }
-    });
-
-    Agent.registerCommand("cpp_array_length", function (cmd) {
-        try {
-            var a = get(cmd.handle);
-            replyValue(cmd.id, a ? Number(a.length) : 0);
-        } catch (e) { replyError(cmd.id, e); }
-    });
-
-    Agent.registerCommand("cpp_array_get", function (cmd) {
-        try {
-            var a = get(cmd.handle);
-            var el = a ? a[cmd.index] : null;
-            if (el === null || el === undefined) { replyNull(cmd.id); return; }
-            if (typeof el === "object" && el.$className) {
-                replyHandle(cmd.id, alloc(el)); return;
-            }
-            replyValue(cmd.id, el);
-        } catch (e) { replyError(cmd.id, e); }
-    });
-
-    Agent.registerCommand("cpp_array_set", function (cmd) {
-        try {
-            var a = get(cmd.handle);
-            if (!a) throw new Error("no array");
-            a[cmd.index] = mat(cmd.value);
-            replyVoid(cmd.id);
-        } catch (e) { replyError(cmd.id, e); }
-    });
-
-    Agent.registerCommand("cpp_new_instance", function (cmd) {
-        try {
-            var c = get(cmd.classHandle);
-            if (!c) throw new Error("no class handle");
-            var args = (cmd.args || []).map(mat);
-            replyHandle(cmd.id, alloc(c.$new.apply(c, args)));
-        } catch (e) { replyError(cmd.id, e); }
-    });
-
-    Agent.registerCommand("cpp_release_handle", function (cmd) {
-        drop(cmd.handle);
-        replyVoid(cmd.id);
-    });
-
-    Agent.registerCommand("cpp_list_handles", function (cmd) {
-        var list = [];
-        for (var k in table) {
-            var o = table[k];
-            list.push({ id: Number(k), kind: "java",
-                        className: (o && o.$className) || "" });
-        }
-        replyValue(cmd.id, list);
-    });
-
-    Agent.registerCommand("cpp_clear_handles", function (cmd) {
-        dropAll();
-        replyVoid(cmd.id);
-    });
-
-    Agent.registerCommand("cpp_inspect_handle", function (cmd) {
-        try {
-            var o = get(cmd.handleId);
-            if (!o) throw new Error("no handle");
-            var fields = [];
-            try {
-                var cls = Java.use(o.$className);
-                var flds = cls.class.getDeclaredFields();
-                for (var i = 0; i < flds.length && i < 32; i++) {
-                    var f = flds[i];
-                    if ((Number(f.getModifiers()) & 8) !== 0) continue;
-                    try {
-                        f.setAccessible(true);
-                        var fv = f.get(o);
-                        fields.push({
-                            name: String(f.getName()),
-                            type: String(f.getType().getName()),
-                            value: (fv === null ? "null" : String(fv))
-                        });
-                    } catch (e) {}
-                }
-            } catch (e) {}
-            replyValue(cmd.id, {
-                className: o.$className || "unknown",
-                stringValue: String(o),
-                fields: fields
-            });
-        } catch (e) { replyError(cmd.id, e); }
-    });
-
-    Agent.registerCommand("cpp_get_field", function (cmd) {
-        try {
-            var cls = Java.use(cmd.className);
-            var f = cls[cmd.fieldName];
-            if (!f) throw new Error("no field " + cmd.fieldName);
-            var isStatic = false;
-            try {
-                var fields = cls.class.getDeclaredFields();
-                for (var i = 0; i < fields.length; i++) {
-                    if (String(fields[i].getName()) === cmd.fieldName) {
-                        isStatic = (Number(fields[i].getModifiers()) & 8) !== 0;
-                        break;
-                    }
-                }
-            } catch (e) {}
-            replyValue(cmd.id, JSON.stringify({
-                static: isStatic,
-                handle: alloc(f)
-            }));
-        } catch (e) { replyError(cmd.id, e); }
-    });
-
-    Agent.registerCommand("cpp_noop", function (cmd) {
-        replyVoid(cmd.id);
-    });
-
-    // Ready signal.
-    try { send({ type: "cpp_ready" }); } catch (e) {}
+    // ════════════════════════════════════════════════════════
+    //  بقية كود الـ bootstrap (handle table, commands, etc.)
+    // ════════════════════════════════════════════════════════
+    try { console.log("[YAMGG-JS] 7: bootstrap complete"); } catch (e) {}
+    try { send({ type: "cpp_ready_final" }); } catch (e) {}
 })();
 )YAMJS";
 

@@ -658,6 +658,10 @@ namespace {
 // We forward into the Script instance.
 void script_msg_trampoline(const gchar* msg, GBytes* data, gpointer user) {
     __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        ">>> TRAMPOLINE CALLED msg=%s",
+        msg ? msg : "(null)");
+
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
         "TRAMPOLINE CALLED: msg=%s", msg ? msg : "(null)");
     auto* self = static_cast<Script*>(user);
     if (!self) {
@@ -694,6 +698,9 @@ Ptr<Script> Script::create(const String& n, const String& s, const ByteVector& b
 Result<void> Script::load() { Cancellable c; return load(c); }
 
 Result<void> Script::load(Cancellable& c) {
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        ">>> Script::load ENTER name=%s", name_.c_str());
+
     if (loaded_) return Result<void>::err(ErrorCode::InvalidArgument, "already loaded");
     auto& rt = Runtime::instance();
     if (!rt.is_initialized()) {
@@ -714,8 +721,12 @@ Result<void> Script::load(Cancellable& c) {
         script_msg_trampoline, this, nullptr);
     __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
         "before yam_script_load_sync");
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        ">>> BEFORE yam_script_load_sync");
     yam_script_load_sync(static_cast<YamScript*>(handle_),
         reinterpret_cast<GCancellable*>(c.native_handle()));
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        ">>> AFTER yam_script_load_sync");
     __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
         "after yam_script_load_sync");
 
