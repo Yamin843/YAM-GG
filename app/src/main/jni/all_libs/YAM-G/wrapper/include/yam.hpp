@@ -659,9 +659,9 @@ public:
     YAM_NODISCARD bool valid() const noexcept { return bt_ != nullptr; }
     Result<std::vector<void*>> generate(const CpuContext& ctx) const;
     static Result<BacktraceFrame> details(void* address);
-    Yam::Backtracer* raw() const noexcept { return bt_; }
+    YamBacktracer* raw() const noexcept { return bt_; }
 private:
-    Yam::Backtracer* bt_{nullptr};
+    YamBacktracer* bt_{nullptr};
 };
 
 // ===========================================================================

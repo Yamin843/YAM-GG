@@ -363,7 +363,7 @@ void Interceptor::end_transaction() {
 Ptr<InvocationContext> Interceptor::current_invocation() {
     auto* ic = obtain_interceptor();
     if (!ic) return nullptr;
-    auto* ctx = yam_interceptor_get_current_invocation(ic);
+    auto* ctx = yam_interceptor_get_current_invocation();
     if (!ctx) return nullptr;
     return std::make_shared<InvocationContext>(static_cast<void*>(ctx));
 }
@@ -411,21 +411,21 @@ YamBacktracer* make_fuzzy_bt() {
 Backtracer::Backtracer() : Backtracer(Mode::Accurate) {}
 
 Backtracer::Backtracer(Mode m) {
-    raw_ = (m == Mode::Accurate) ? make_accurate_bt() : make_fuzzy_bt();
-    if (raw_) {
+    bt_ = (m == Mode::Accurate) ? make_accurate_bt() : make_fuzzy_bt();
+    if (bt_) {
         // ref the shared singleton so its destructor path is symmetric
         // with the original behaviour.
         // (YamBacktracer has _ref/_unref but we don't have direct access here.)
     }
 }
 
-Backtracer::~Backtracer() { raw_ = nullptr; }
+Backtracer::~Backtracer() { bt_ = nullptr; }
 
 Result<std::vector<void*>> Backtracer::generate(const CpuContext& ctx) const {
-    if (!raw_) return Result<std::vector<void*>>::err(
+    if (!bt_) return Result<std::vector<void*>>::err(
         ErrorCode::BackendUnavailable, "backtracer");
     YamReturnAddressArray arr{};
-    yam_backtracer_generate(raw_, static_cast<YamCpuContext*>(ctx.raw()), &arr);
+    yam_backtracer_generate(bt_, static_cast<const YamCpuContext*>(ctx.raw()), &arr);
     std::vector<void*> out;
     out.reserve(arr.len);
     for (guint i = 0; i < arr.len; ++i) out.push_back(arr.items[i]);
