@@ -286,6 +286,13 @@ std::vector<std::string> YamBridge::listScripts() const {
     return scriptNames_;
 }
 
+void YamBridge::postEval(const std::string& code) {
+    if (!ready_.load()) return;
+    try {
+        yam::JavaScriptBridge::instance().eval(code);
+    } catch (...) {}
+}
+
 YamBridge::LoadResult YamBridge::loadScriptSync(const std::string& name,
                                                    const std::string& code,
                                                    int timeout_ms) {

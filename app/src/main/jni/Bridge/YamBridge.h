@@ -29,6 +29,7 @@ public:
     bool isReady() const { return ready_.load(); }
 
     EvalResult evaluate(const std::string& code);
+    void postEval(const std::string& code);   // fire-and-forget
     LoadResult loadScript(const std::string& name, const std::string& code);
     LoadResult loadScriptSync(const std::string& name, const std::string& code,
                                int timeout_ms = 8000);
