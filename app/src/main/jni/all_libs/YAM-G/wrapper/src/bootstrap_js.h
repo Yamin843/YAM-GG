@@ -299,39 +299,54 @@ static const char kBootstrapSrc[] = R"YAMJS(
             });
         } catch (e) { send({type:"hook_outer_error", message: "" + e}); }
 
-        // AppsFlyer hooks
+        // ─── AppsFlyer Lib hooks (logEvent) ───
         try {
             Java.performNow(function () {
                 try {
-                    var C = Java.use("com.appsflyer.unity.AppsFlyerAndroidWrapper");
+                    var A = Java.use("com.appsflyer.AppsFlyerLib");
                     send({type:"appsflyer_class_ok"});
 
+                    // 4-arg overload: actual implementation
+                    // Called directly OR via 3-arg delegation.
                     try {
-                        var m2 = C.trackEvent.overload("java.lang.String", "java.util.HashMap");
-                        m2.implementation = function (name, params) {
-                            writeLog("" + new Date() + "  trackEvent/2  name=" + name);
-                            send({type:"appsflyer_hit", overload:"2", name:"" + name});
-                            return m2.call(this, name, params);
-                        };
-                        send({type:"appsflyer_hook_ok", overload:"2"});
-                    } catch (e) { send({type:"appsflyer_hook_err", overload:"2", message:"" + e}); }
-
-                    try {
-                        var m4 = C.trackEvent.overload("java.lang.String", "java.util.HashMap", "boolean", "java.lang.String");
-                        m4.implementation = function (name, params, isRevenue, currency) {
-                            writeLog("" + new Date() + "  trackEvent/4  name=" + name + "  isRevenue=" + isRevenue);
-                            send({type:"appsflyer_hit", overload:"4", name:"" + name});
-                            return m4.call(this, name, params, isRevenue, currency);
+                        var logEvent4 = A.logEvent.overload(
+                            "android.content.Context",
+                            "java.lang.String",
+                            "java.util.Map",
+                            "com.appsflyer.attribution.AppsFlyerRequestListener"
+                        );
+                        logEvent4.implementation = function (ctx, name, params, listener) {
+                            var n = "" + name;
+                            var p = "";
+                            try { p = "" + params; } catch (e) { p = "<unstringable>"; }
+                            writeLog("" + new Date() + "  logEvent/4  name=" + n + "  params=" + p);
+                            send({type:"appsflyer_logEvent", overload:"4", name:n});
+                            return logEvent4.call(this, ctx, name, params, listener);
                         };
                         send({type:"appsflyer_hook_ok", overload:"4"});
                     } catch (e) { send({type:"appsflyer_hook_err", overload:"4", message:"" + e}); }
+
+                    // 3-arg overload: wrapper. We hook it too for visibility.
+                    // Note: it delegates to 4-arg → both hooks will fire per call.
+                    try {
+                        var logEvent3 = A.logEvent.overload(
+                            "android.content.Context",
+                            "java.lang.String",
+                            "java.util.Map"
+                        );
+                        logEvent3.implementation = function (ctx, name, params) {
+                            var n = "" + name;
+                            writeLog("" + new Date() + "  logEvent/3  name=" + n + "  [delegates to /4]");
+                            send({type:"appsflyer_logEvent", overload:"3", name:n});
+                            return logEvent3.call(this, ctx, name, params);
+                        };
+                        send({type:"appsflyer_hook_ok", overload:"3"});
+                    } catch (e) { send({type:"appsflyer_hook_err", overload:"3", message:"" + e}); }
 
                     send({type:"appsflyer_ready"});
                 } catch (e) { send({type:"appsflyer_class_error", message:"" + e}); }
             });
         } catch (e) { send({type:"appsflyer_outer_error", message:"" + e}); }
-    }
-
     // ═══════════════════════════════════════════════════════
     // READY + SCHEDULE
     // ═══════════════════════════════════════════════════════
