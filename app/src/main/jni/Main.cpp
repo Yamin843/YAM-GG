@@ -70,9 +70,97 @@ static void* init_thread(void*) {
         LOGE("init_thread: YamBridge init failed");
     } else {
         LOGI("init_thread: YamBridge ready");
-    }
+        HookManager::instance().installActivityHooks(env);
 
-    HookManager::instance().installActivityHooks(env);
+        // ─────────────────────────────────────────────────────────
+        //  تثبيت hook فعلي على Activity.onResume
+        //  (HookManager يحضّر method IDs فقط؛ لا يثبّت hook)
+        //  نستخدم YAM Java bridge + frida-java-bridge عبر JS
+        // ─────────────────────────────────────────────────────────
+        LOGI("init_thread: installing Activity.onResume hook via JS");
+
+        static const char* kActivityHookJs = R"JS(
+(function() {
+    try {
+        if (typeof Java === "undefined") {
+            send({type:"hook_error", message:"Java undefined"});
+            return;
+        }
+
+        // 1) اعثر على ClassLoader الخاص بالـ dex الذي حمّلناه
+        var targetLoader = null;
+        try {
+            var loaders = Java.enumerateClassLoadersSync();
+            for (var i = 0; i < loaders.length; i++) {
+                try {
+                    loaders[i].loadClass("com.yamgg.modview.ModView");
+                    targetLoader = loaders[i];
+                    break;
+                } catch(e) {}
+            }
+        } catch(e) {}
+
+        if (targetLoader) {
+            Java.classFactory.loader = targetLoader;
+            send({type:"hook_info", message:"loader set"});
+        } else {
+            send({type:"hook_error", message:"ModView loader not found"});
+        }
+
+        // 2) ثبّت hook على Activity.onResume
+        Java.perform(function() {
+            try {
+                var Activity = Java.use("android.app.Activity");
+                Activity.onResume.implementation = function() {
+                    this.onResume();
+                    try {
+                        var ModView = Java.use("com.yamgg.modview.ModView");
+                        ModView.attach(this);
+                        send({type:"modview_attached",
+                              className:"" + this.getClass().getName()});
+                    } catch(e) {
+                        send({type:"attach_error", message:"" + e});
+                    }
+                };
+                send({type:"activity_hook_installed"});
+            } catch(e) {
+                send({type:"hook_error", message:"inner:" + e});
+            }
+        });
+    } catch(e) {
+        send({type:"hook_error", message:"outer:" + e});
+    }
+})();
+)JS";
+
+        auto r = YamBridge::instance().loadScript("__activity_hook__", kActivityHookJs);
+        if (r.ok) {
+            LOGI("Activity hook script loaded OK");
+        } else {
+            LOGE("Activity hook script failed: %s", r.error.c_str());
+        }
+
+        // 3) مستمعي الأحداث للتشخيص
+        static bool router_installed = false;
+        if (!router_installed) {
+            router_installed = true;
+            yam::events::on("hook_error", [](const yam::Event& ev) {
+                LOGE("HOOK-ERROR: %s", ev.get_str("message").c_str());
+            });
+            yam::events::on("hook_info", [](const yam::Event& ev) {
+                LOGI("HOOK-INFO: %s", ev.get_str("message").c_str());
+            });
+            yam::events::on("activity_hook_installed", [](const yam::Event&) {
+                LOGI("Activity.onResume hook INSTALLED");
+            });
+            yam::events::on("modview_attached", [](const yam::Event& ev) {
+                LOGI("ModView attached to %s", ev.get_str("className").c_str());
+            });
+            yam::events::on("attach_error", [](const yam::Event& ev) {
+                LOGE("ModView attach error: %s", ev.get_str("message").c_str());
+            });
+        }
+    }
 
     LOGI("init_thread: complete");
 
