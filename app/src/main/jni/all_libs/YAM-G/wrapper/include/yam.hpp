@@ -1179,7 +1179,14 @@ public:
 
     Result<void> wait_cpp_ready(i64 timeout_ms = 15000);
 
-    using HookCallback = std::function<void(i64, const std::vector<u64>&, u64)>;
+    // phase: "enter" | "leave" | "exception"
+    // ret_h: valid only for "leave" (0 = void or unknown)
+    // is_void: true when original returned void
+    // ex_msg: valid only for "exception"
+    using HookCallback = std::function<void(
+        i64 /*cbId*/, const String& /*phase*/,
+        const std::vector<u64>& /*args*/, u64 /*thisH*/,
+        u64 /*retH*/, bool /*isVoid*/, const String& /*exMsg*/)>;
     using ConsoleCallback = std::function<void(const String&, const String&)>;
     using EvalCallback = std::function<void(u64, bool, const String&, const String&)>;
     void set_hook_callback(HookCallback cb);

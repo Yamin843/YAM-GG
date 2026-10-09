@@ -38,6 +38,16 @@ public:
     std::vector<std::string> listScripts() const;
 
     void installEventRouter();
+
+    // Bridge hook lifecycle callback (enter/leave/exception)
+    using HookCb = std::function<void(
+        long long /*cbId*/, const std::string& /*phase*/,
+        const std::vector<unsigned long long>& /*args*/,
+        unsigned long long /*thisH*/,
+        unsigned long long /*retH*/,
+        bool /*isVoid*/,
+        const std::string& /*exMsg*/)>;
+    void setHookCb(HookCb cb) { hookCb_ = std::move(cb); }
     void setOutputSink(void (*sink)(const std::string&));
     void setErrorSink(void (*sink)(const std::string&));
 
@@ -67,6 +77,7 @@ private:
     // Multiple evals can be in flight; match replies by arrival order.
     std::deque<std::shared_ptr<EvalSync>> pendingEvals_;
     std::mutex evalMu_;
+    HookCb hookCb_;
     void (*outputSink_)(const std::string&){nullptr};
     void (*errorSink_)(const std::string&){nullptr};
 };

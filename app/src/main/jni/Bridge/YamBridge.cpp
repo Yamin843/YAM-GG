@@ -60,6 +60,22 @@ bool YamBridge::initialize() {
     bridge.set_console_callback([this](const yam::String& l, const yam::String& s) {
         onConsole(l, s);
     });
+
+    // Hook lifecycle → forward to the user callback if set.
+    bridge.set_hook_callback([this](
+        yam::i64 cbId, const yam::String& phase,
+        const std::vector<yam::u64>& args,
+        yam::u64 thisH, yam::u64 retH,
+        bool isVoid, const yam::String& exMsg)
+    {
+        if (hookCb_) {
+            try {
+                hookCb_(cbId, phase, args, thisH, retH, isVoid, exMsg);
+            } catch (const std::exception& e) {
+                LOGE("hook cb: %s", e.what());
+            }
+        }
+    });
     bridge.set_eval_callback([this](yam::u64 id, bool ok,
                                      const yam::String& res,
                                      const yam::String& err) {

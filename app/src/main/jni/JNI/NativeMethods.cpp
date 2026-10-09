@@ -66,19 +66,28 @@ extern "C" int yamgg_peekPendingCmdSize(void);
 
 static jstring JNICALL impl_nativeGetPendingCmd(JNIEnv* env, jclass clazz) {
     (void)clazz;
-    // حجم ديناميكي — اقرأ حجم الأمر القادم أولاً (يُوفّر تخصيص 512KB
-    // لكل استدعاء، ويتعامل مع أوامر أكبر من 8KB مثل run_user_script
-    // مع كود طويل).
+
     int needed = yamgg_peekPendingCmdSize();
     if (needed <= 0) return nullptr;
 
-    int cap = needed + 16;
-    // رفع السقف إلى 4 MB لدعم load_scripts_batch مع سكربتات كبيرة.
-    if (cap > (4 << 20)) cap = (4 << 20);
+    // تخصيص دقيق — لا سقف صناعي. إذا الأمر 50 MB، نخصّص 50 MB.
+    // الحماية الوحيدة: عدد بايت معقول حتى لا ينهار النظام من خِداع داخلي.
+    if (needed < 0 || needed > (256 << 20)) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG",
+            "cmd size insane: %d", needed);
+        return nullptr;
+    }
 
-    std::vector<char> buf(cap);
-    int n = yamgg_popPendingCmd(buf.data(), cap);
+    std::vector<char> buf(needed + 16);
+    int n = yamgg_popPendingCmd(buf.data(), static_cast<int>(buf.size()));
+
+    // Buffer too small — retry with exact size (نظرياً لا يحدث، لكن احتياط)
+    if (n < 0) {
+        buf.resize(-n);
+        n = yamgg_popPendingCmd(buf.data(), static_cast<int>(buf.size()));
+    }
     if (n <= 0) return nullptr;
+
     return env->NewStringUTF(buf.data());
 }
 

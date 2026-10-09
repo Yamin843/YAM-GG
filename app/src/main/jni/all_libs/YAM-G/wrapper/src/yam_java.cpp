@@ -267,16 +267,34 @@ void JavaScriptBridge::on_event_json(const JsonValue& ev) {
         HookCallback cb;
         { std::lock_guard<std::mutex> lk(cb_mu_); cb = hook_cb_; }
         if (cb) {
-            i64 cb_id = 0; u64 this_h = 0;
+            i64  cb_id = 0;
+            u64  this_h = 0;
             std::vector<u64> args;
+            String phase = "enter";
+            u64  ret_h = 0;
+            bool is_void = true;
+            String ex_msg;
+
             if (auto* v = ev.get("callbackId")) cb_id = v->as_i64(0);
+            if (auto* v = ev.get("phase"))      phase = v->as_str("enter");
             if (auto* v = ev.get("thisHandle")) this_h = static_cast<u64>(v->as_i64(0));
             if (auto* v = ev.get("argHandles")) {
                 if (v->is_arr())
-                    for (auto& a : v->arr_val) args.push_back(static_cast<u64>(a.as_i64(0)));
+                    for (auto& a : v->arr_val)
+                        args.push_back(static_cast<u64>(a.as_i64(0)));
             }
-            try { cb(cb_id, args, this_h); }
-            catch (const std::exception& e) { YAM_LOG_ERROR() << "hook_cb: " << e.what(); }
+            if (auto* v = ev.get("returnHandle"))
+                ret_h = static_cast<u64>(v->as_i64(0));
+            if (auto* v = ev.get("isVoid"))
+                is_void = v->as_bool(true);
+            if (auto* v = ev.get("exceptionMessage"))
+                ex_msg = v->as_str();
+
+            try {
+                cb(cb_id, phase, args, this_h, ret_h, is_void, ex_msg);
+            } catch (const std::exception& e) {
+                YAM_LOG_ERROR() << "hook_cb: " << e.what();
+            }
         }
     }
     if (type == "console") {

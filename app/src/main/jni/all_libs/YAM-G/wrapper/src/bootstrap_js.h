@@ -11,7 +11,29 @@ static const char kBootstrapSrc[] = R"YAMJS(
     // ═══════ HANDLE REGISTRY ═══════
     var table = Object.create(null);
     var nextHandle = 1;
-    function alloc(o) { var id = nextHandle++; table[id] = o; return id; }
+    // LRU: نحفظ ترتيب الاستخدام حتى لا تنمو الـ table بلا حد
+    // (مثلاً في hook_cb الذي يخصّص handle لكل arg).
+    var handleOrder = [];  // FIFO
+    var MAX_HANDLES = 8192;
+    function alloc(o) {
+        var id = nextHandle++;
+        table[id] = o;
+        handleOrder.push(id);
+        if (handleOrder.length > MAX_HANDLES) {
+            // احذف أقدم 25% لجعل الحذف amortized O(1)
+            var trim = Math.floor(MAX_HANDLES / 4);
+            for (var i = 0; i < trim; i++) {
+                var old = handleOrder.shift();
+                delete table[old];
+            }
+        }
+        return id;
+    }
+    function drop(id) {
+        if (Object.prototype.hasOwnProperty.call(table, id)) {
+            delete table[id];
+        }
+    }
     function get(id) { return Object.prototype.hasOwnProperty.call(table, id) ? table[id] : null; }
     function drop(id) { if (Object.prototype.hasOwnProperty.call(table, id)) delete table[id]; }
     function dropAll() { table = Object.create(null); nextHandle = 1; }
@@ -76,46 +98,144 @@ static const char kBootstrapSrc[] = R"YAMJS(
         return out;
     }
 
-    // ═══════ MATERIALIZER ═══════
+    // ═══════ MATERIALIZER (complex Java types) ═══════
     function mat(v) {
         if (v === null || v === undefined) return v;
         if (typeof v !== "object") return v;
+
+        // Handle reference
         if (typeof v.handle === "number") return get(v.handle);
-        if ("kind" in v) {
-            switch (v.kind) {
-            case "int": case "short": case "byte": return v.value | 0;
-            case "long":
-                if (typeof Int64 === "function") return Int64(String(v.value));
-                try { send({type:"log", level:"warn",
-                            message:"Int64 unavailable; long may lose precision"}); } catch (e) {}
-                return Number(v.value);
-            case "float": case "double": return Number(v.value);
-            case "boolean": return !!v.value;
-            case "string":  return String(v.value);
-            case "char": { var sv = String(v.value); return sv.length > 0 ? sv.charAt(0) : String.fromCharCode(0); }
-            case "null":      return null;
-            case "undefined": return undefined;
-            case "enum":      return Java.use(v.className).valueOf(v.enumName);
-            case "array":     return Java.array(v.elementType, (v.elements || []).map(mat));
-            case "construct": {
-                var cc = Java.use(v.className);
-                var args = (v.args || []).map(mat);
-                var inst = cc.$new.apply(cc, args);
-                if (v.fields) for (var fi = 0; fi < v.fields.length; fi++)
-                    inst[v.fields[fi].name] = mat(v.fields[fi].value);
-                return inst;
-            }
-            case "expr": {
-                try {
-                    var fn = new Function("Java", "return (" + v.expr + ");");
-                    return fn(Java);
-                } catch (e) { return null; }
-            }
-            default: return v.value;
-            }
+
+        if (!("kind" in v)) {
+            if ("value" in v) return v.value;
+            return v;
         }
-        if ("value" in v) return v.value;
-        return v;
+
+        switch (v.kind) {
+        case "int": case "short": case "byte": return v.value | 0;
+
+        case "long":
+            if (typeof Int64 === "function") return Int64(String(v.value));
+            try { send({type:"log", level:"warn",
+                        message:"Int64 unavailable; long may lose precision"}); } catch (e) {}
+            return Number(v.value);
+
+        case "float": case "double": return Number(v.value);
+        case "boolean": return !!v.value;
+        case "string":  return String(v.value);
+        case "char": {
+            var sv = String(v.value);
+            return sv.length > 0 ? sv.charAt(0) : String.fromCharCode(0);
+        }
+
+        case "null":      return null;
+        case "undefined": return undefined;
+
+        case "enum": {
+            var ec = Java.use(v.className);
+            return ec.valueOf(v.enumName);
+        }
+
+        case "array": {
+            var elType = v.elementType || "java.lang.Object";
+            var elems = (v.elements || []).map(mat);
+            return Java.array(elType, elems);
+        }
+
+        // Array where every element is a Java handle (already-instantiated)
+        case "handle_array": {
+            var hElType = v.elementType || "java.lang.Object";
+            var hElems = (v.handles || []).map(function (h) { return get(h); });
+            return Java.array(hElType, hElems);
+        }
+
+        // Nested array (arbitrary dimensions): [[int, int], [int, int]]
+        case "nested_array": {
+            var nElType = v.elementType || "java.lang.Object";
+            var dims = v.dimensions || 1;
+            // Build Java type name: [[Ljava.lang.Object; for dims=2
+            var javaType = nElType;
+            for (var d = 0; d < dims; d++) javaType = "[" + javaType;
+            var nElems = (v.elements || []).map(function (e) {
+                // If sub-element is already a nested_array spec, recurse.
+                if (e && typeof e === "object" && e.kind === "nested_array") {
+                    return mat(e);
+                }
+                return mat(e);
+            });
+            return Java.array(javaType, nElems);
+        }
+
+        case "list": {
+            var listType = v.className || "java.util.ArrayList";
+            var ArrayList = Java.use(listType);
+            var lst = ArrayList.$new();
+            var items = v.items || [];
+            for (var li = 0; li < items.length; li++) {
+                lst.add(mat(items[li]));
+            }
+            return lst;
+        }
+
+        case "set": {
+            var setType = v.className || "java.util.HashSet";
+            var HashSet = Java.use(setType);
+            var st = HashSet.$new();
+            var sitems = v.items || [];
+            for (var si = 0; si < sitems.length; si++) {
+                st.add(mat(sitems[si]));
+            }
+            return st;
+        }
+
+        case "map": {
+            var mapType = v.className || "java.util.HashMap";
+            var HashMap = Java.use(mapType);
+            var mp = HashMap.$new();
+            var entries = v.entries || [];
+            for (var ei = 0; ei < entries.length; ei++) {
+                var e = entries[ei];
+                var mk = ("k" in e) ? mat(e.k) : null;
+                var mv = ("v" in e) ? mat(e.v) : null;
+                if (e.k != null && typeof e.k === "object" && e.k.kind === "string") {
+                    mk = Java.use("java.lang.String").$new(e.k.value);
+                }
+                if (e.v != null && typeof e.v === "object" && e.v.kind === "string") {
+                    mv = Java.use("java.lang.String").$new(e.v.value);
+                }
+                mp.put(mk, mv);
+            }
+            return mp;
+        }
+
+        case "construct": {
+            var cc = Java.use(v.className);
+            var args = (v.args || []).map(mat);
+            var inst;
+            if (v.ctorSig) {
+                inst = cc.$alloc();
+                cc.$init.overload.apply(cc.$init, parseSig(v.ctorSig))
+                           .call(inst, ...args);
+            } else {
+                inst = cc.$new.apply(cc, args);
+            }
+            if (v.fields) {
+                for (var fi = 0; fi < v.fields.length; fi++) {
+                    inst[v.fields[fi].name] = mat(v.fields[fi].value);
+                }
+            }
+            return inst;
+        }
+
+        case "expr": {
+            try {
+                var fn = new Function("Java", "return (" + v.expr + ");");
+                return fn(Java);
+            } catch (e) { return null; }
+        }
+
+        default: return v.value;
+        }
     }
 
     // ═══════ DESCRIBE ═══════
@@ -181,7 +301,23 @@ static const char kBootstrapSrc[] = R"YAMJS(
         cpp_new_instance: function (cmd) {
             var cls = get(cmd.classHandle); if (!cls) throw new Error("no class handle");
             var args = (cmd.args || []).map(mat);
-            replyHandle(cmd.id, alloc(cls.$new.apply(cls, args)));
+            var inst;
+            if (cmd.ctorSig && cmd.ctorSig.length > 0) {
+                inst = cls.$alloc();
+                var ctor = cls.$init.overload.apply(cls.$init,
+                                                     parseSig(cmd.ctorSig));
+                ctor.call(inst, ...args);
+            } else {
+                inst = cls.$new.apply(cls, args);
+            }
+            if (cmd.fields) {
+                for (var i = 0; i < cmd.fields.length; i++) {
+                    var fname = cmd.fields[i].name;
+                    var fval = mat(cmd.fields[i].value);
+                    inst[fname] = fval;
+                }
+            }
+            replyHandle(cmd.id, alloc(inst));
         },
         cpp_array_of: function (cmd) {
             var elType = cmd.elementType || "java.lang.Object";
@@ -344,8 +480,9 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     ctors.push({params: cargs});
                 }
             } catch (e3) {}
-            send({type: "class_probe", className: cmd.className,
-                  methods: methods, fields: fields, constructors: ctors});
+            sendMaybeChunked({type: "class_probe", className: cmd.className,
+                               methods: methods, fields: fields,
+                               constructors: ctors});
             replyValue(cmd.id, JSON.stringify({
                 methods: methods.length,
                 fields: fields.length
@@ -368,14 +505,18 @@ static const char kBootstrapSrc[] = R"YAMJS(
             var m = get(cmd.methodHandle);
             if (!m) throw new Error("no method handle");
             var cbId = cmd.callbackId;
+
             if (m.__ygg_hook_cb === cbId) { replyVoid(cmd.id); return; }
             if (m.__ygg_hook_orig === undefined) {
                 m.__ygg_hook_orig = m.implementation;
             }
             m.__ygg_hook_cb = cbId;
             var orig = m.__ygg_hook_orig;
+
             m.implementation = function () {
                 var a = Array.prototype.slice.call(arguments);
+
+                // ─── ON ENTER ───
                 var ah = [];
                 for (var i = 0; i < a.length; i++) {
                     try { ah.push(alloc(a[i])); }
@@ -384,10 +525,39 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 var th = 0;
                 try { th = alloc(this); } catch (e) {}
                 try {
-                    send({type: "hook_cb", callbackId: cbId,
+                    send({type: "hook_cb", callbackId: cbId, phase: "enter",
                           argHandles: ah, thisHandle: th});
                 } catch (e) {}
-                return orig.apply(this, a);
+
+                // ─── CALL ORIGINAL ───
+                var r, threw = false, exMsg = "";
+                try {
+                    r = orig.apply(this, a);
+                } catch (e) {
+                    threw = true;
+                    exMsg = "" + e;
+                    // ─── ON EXCEPTION ───
+                    try {
+                        send({type: "hook_cb", callbackId: cbId,
+                              phase: "exception",
+                              exceptionMessage: exMsg});
+                    } catch (e2) {}
+                    // إعادة الرمي بعد إشعار
+                    throw e;
+                }
+
+                // ─── ON LEAVE ───
+                var rh = 0;
+                if (r !== null && r !== undefined) {
+                    try { rh = alloc(r); } catch (e) {}
+                }
+                try {
+                    send({type: "hook_cb", callbackId: cbId, phase: "leave",
+                          returnHandle: rh,
+                          isVoid: (r === undefined)});
+                } catch (e) {}
+
+                return r;
             };
             replyVoid(cmd.id);
         },
@@ -492,9 +662,12 @@ static const char kBootstrapSrc[] = R"YAMJS(
         enumerate_classes: function (cmd) {
             try {
                 var all = Java.enumerateLoadedClassesSync();
-                send({type: "classes_list", count: all.length, classes: all});
+                sendMaybeChunked({type: "classes_list",
+                                   count: all.length,
+                                   classes: all});
             } catch (e) {
-                send({type: "classes_list", count: 0, classes: [], error: "" + e});
+                send({type: "classes_list", count: 0, classes: [],
+                      error: "" + e});
             }
         },
         enumerate_loaders: function (cmd) {
@@ -527,6 +700,37 @@ static const char kBootstrapSrc[] = R"YAMJS(
             }
         }
     };
+
+    // ═══════ CHUNKED SENDER ═══════
+    // For any payload whose JSON representation exceeds 200 KB, split it
+    // into 60 KB chunks. The C++ events layer reassembles them (see
+    // yam_events.cpp::chunks::).
+    var _nextChunkSession = 1;
+    var CHUNK_THRESHOLD = 200 * 1024;
+    var CHUNK_SIZE = 60 * 1024;
+
+    function sendMaybeChunked(obj) {
+        var json;
+        try { json = JSON.stringify(obj); }
+        catch (e) { json = ""; }
+        if (json.length <= CHUNK_THRESHOLD) {
+            send(obj);
+            return;
+        }
+        var kind = obj && obj.type ? String(obj.type) : "chunked";
+        var sid = _nextChunkSession++;
+        var total = Math.max(1, Math.ceil(json.length / CHUNK_SIZE));
+
+        send({type: "chunk_begin", sessionId: sid, kind: kind,
+              totalChunks: total, totalBytes: json.length});
+        for (var i = 0; i < total; i++) {
+            send({type: "chunk_data", sessionId: sid, index: i,
+                  totalChunks: total,
+                  data: json.substring(i * CHUNK_SIZE,
+                                        (i + 1) * CHUNK_SIZE)});
+        }
+        send({type: "chunk_end", sessionId: sid, kind: kind});
+    }
 
     // ═══════ COMMAND DISPATCHER ═══════
     function unwrapCmd(msg) {

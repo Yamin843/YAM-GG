@@ -172,16 +172,25 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
 // ===========================================================================
 // C++ → JS command queue (polled by JS via nativeGetPendingCmd)
 // ===========================================================================
+// Return semantics:
+//   > 0 : bytes written (success)
+//     0 : queue empty
+//   < 0 : buffer too small — retry with abs(return) bytes
 extern "C" int yamgg_popPendingCmd(char* out, int maxLen) {
     if (!out || maxLen <= 0) return 0;
     std::lock_guard<std::mutex> lk(g_cmdMutex);
     if (g_cmdQueue.empty()) return 0;
-    std::string cmd = g_cmdQueue.front();
-    g_cmdQueue.pop();
-    int n = (int)cmd.size();
-    if (n >= maxLen) n = maxLen - 1;
+
+    const std::string& cmd = g_cmdQueue.front();
+    int n = static_cast<int>(cmd.size());
+
+    if (n + 1 > maxLen) {
+        // لا اقتطاع — أبلغ المُستدعي بالحجم المطلوب
+        return -(n + 1);
+    }
     std::memcpy(out, cmd.data(), n);
     out[n] = 0;
+    g_cmdQueue.pop();
     return n;
 }
 
