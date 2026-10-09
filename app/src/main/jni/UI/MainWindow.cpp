@@ -1,3 +1,4 @@
+
 #include "MainWindow.h"
 #include "Theme.h"
 #include "Tabs/JSConsole.h"
@@ -13,50 +14,38 @@
 #include <cstring>
 #include <cmath>
 
-// ─── Vertical text helper (each char on own line) ───
-static std::string verticalText(const char* s) {
-    std::string out;
-    for (const char* p = s; *p; ++p) {
-        if (!out.empty()) out += '\n';
-        out += *p;
-    }
-    return out;
-}
-
-
 #define LOG_TAG "YAMGG"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 namespace yamgg {
 
 struct MainWindow::Impl {
-    bool fullscreen{false};
-    bool resetWindow{false};
-    bool firstDraw{true};
+    bool   fullscreen{false};
+    bool   resetWindow{false};
+    bool   firstDraw{true};
     ImVec2 lastPos{0, 0};
     ImVec2 lastSize{0, 0};
     ImVec2 initialSize{0, 0};
-    bool initializedSize{false};
-    int currentTab{0};
-    bool changeToJSTab{false};
-    char titleBuf[128];
-    float opacity{1.0f};
-    bool showAboutDialog{false};
+    bool   initializedSize{false};
+    int    currentTab{0};
+    char   titleBuf[128];
+    float  opacity{1.0f};
 
-    // ─── minimize state ───
-    bool  minimized{false};
+    // minimize
+    bool   minimized{false};
     ImVec2 minimizedPos{40.0f, 120.0f};
     ImVec2 lastFullPos{0, 0};
     ImVec2 lastFullSize{0, 0};
 
-    // ─── global window drag (from any empty spot) ───
-    bool  windowDragging{false};
+    // window drag
+    bool   windowDragging{false};
     ImVec2 dragStartMouse{0, 0};
     ImVec2 dragStartWindow{0, 0};
 };
 
 MainWindow::MainWindow() : impl_(new Impl()) {
     std::strncpy(impl_->titleBuf, "YAM-GG", sizeof(impl_->titleBuf) - 1);
+    impl_->titleBuf[sizeof(impl_->titleBuf) - 1] = 0;
 }
 
 MainWindow::~MainWindow() {
@@ -70,11 +59,14 @@ MainWindow& MainWindow::instance() {
 
 void MainWindow::draw() {
     if (!visible_) {
+        // reset drag state so a subsequent re-show does not "jump"
+        impl_->windowDragging = false;
         Notification::instance().draw();
         return;
     }
 
     if (impl_->minimized) {
+        impl_->windowDragging = false;
         drawMinimized();
         Notification::instance().draw();
         return;
@@ -86,27 +78,6 @@ void MainWindow::draw() {
 
     if (FileBrowser::instance().isOpen()) {
         FileBrowser::instance().draw();
-    }
-
-    if (impl_->showAboutDialog) {
-        ImGui::OpenPopup("About YAM-GG");
-        impl_->showAboutDialog = false;
-    }
-
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal("About YAM-GG", nullptr,
-                               ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("YAM-GG");
-        ImGui::Separator();
-        ImGui::Text("Version 1.0.0");
-        ImGui::Text("Independent ImGui menu with JS console.");
-        ImGui::Text("Runs on its own GLSurfaceView render thread.");
-        ImGui::Spacing();
-        if (ImGui::Button("Close", ImVec2(120, 0))) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
     }
 }
 
@@ -128,14 +99,14 @@ void MainWindow::drawMainWindow() {
     }
 
     ImGui::SetNextWindowSizeConstraints(
-            ImVec2(kMinW, kMinH),
-            ImVec2(io.DisplaySize.x, io.DisplaySize.y));
+        ImVec2(kMinW, kMinH),
+        ImVec2(io.DisplaySize.x, io.DisplaySize.y));
 
     if (impl_->firstDraw) {
         ImGui::SetNextWindowPos(
-                ImVec2((io.DisplaySize.x - impl_->initialSize.x) * 0.5f,
-                       (io.DisplaySize.y - impl_->initialSize.y) * 0.5f),
-                ImGuiCond_Always);
+            ImVec2((io.DisplaySize.x - impl_->initialSize.x) * 0.5f,
+                   (io.DisplaySize.y - impl_->initialSize.y) * 0.5f),
+            ImGuiCond_Always);
         ImGui::SetNextWindowSize(impl_->initialSize, ImGuiCond_Always);
         impl_->firstDraw = false;
     }
@@ -161,9 +132,7 @@ void MainWindow::drawMainWindow() {
         return;
     }
 
-    // ───────────────────────────────────────────────────────────
-    // زر YG (داخل النافذة، الزاوية العلوية اليمنى)
-    // ───────────────────────────────────────────────────────────
+    // ─── YG minimize button (top-right, inside window) ───
     {
         ImVec2 wpos  = ImGui::GetWindowPos();
         ImVec2 wsize = ImGui::GetWindowSize();
@@ -178,7 +147,8 @@ void MainWindow::drawMainWindow() {
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
 
-        ImGui::SetCursorScreenPos(ImVec2(wpos.x + wsize.x - sz - mg, wpos.y + mg));
+        ImGui::SetCursorScreenPos(ImVec2(wpos.x + wsize.x - sz - mg,
+                                          wpos.y + mg));
         ImGui::PushID("YG_btn");
         if (ImGui::Button("YG", ImVec2(sz, sz))) {
             impl_->lastFullPos  = wpos;
@@ -191,9 +161,7 @@ void MainWindow::drawMainWindow() {
         ImGui::PopStyleColor(4);
     }
 
-    // ───────────────────────────────────────────────────────────
-    // Sidebar
-    // ───────────────────────────────────────────────────────────
+    // ─── Sidebar ───
     const float sidebarW = 110.0f;
     ImGui::BeginChild("##Sidebar", ImVec2(sidebarW, 0), true);
     {
@@ -212,7 +180,6 @@ void MainWindow::drawMainWindow() {
             ImGui::PopStyleColor(2);
             ImGui::Spacing();
         };
-
         tabBtn("JV", 0);
         tabBtn("JS", 1);
     }
@@ -220,9 +187,7 @@ void MainWindow::drawMainWindow() {
 
     ImGui::SameLine();
 
-    // ───────────────────────────────────────────────────────────
-    // Content
-    // ───────────────────────────────────────────────────────────
+    // ─── Content ───
     ImGui::BeginChild("##ContentArea", ImVec2(0, 0), false);
     {
         if (impl_->currentTab == 0) {
@@ -233,15 +198,13 @@ void MainWindow::drawMainWindow() {
     }
     ImGui::EndChild();
 
-    // ───────────────────────────────────────────────────────────
-    // 5-zone resize edges + corner (مع إعلانات المتغيرات)
-    // ───────────────────────────────────────────────────────────
+    // ─── 5-zone resize edges + corner ───
     if (!impl_->fullscreen) {
         ImVec2 wPos  = ImGui::GetWindowPos();
         ImVec2 wSize = ImGui::GetWindowSize();
         const float edge = 48.0f;
 
-        // Top edge → move
+        // Top edge → drag
         ImGui::SetCursorScreenPos(ImVec2(wPos.x + edge, wPos.y + 2));
         ImGui::InvisibleButton("##ztop", ImVec2(wSize.x - 2*edge, edge),
             ImGuiButtonFlags_MouseButtonLeft);
@@ -250,8 +213,9 @@ void MainWindow::drawMainWindow() {
             ImGui::SetWindowPos(ImVec2(wPos.x + d.x, wPos.y + d.y));
         }
 
-        // Bottom edge → resize vertical
-        ImGui::SetCursorScreenPos(ImVec2(wPos.x + edge, wPos.y + wSize.y - edge));
+        // Bottom edge → resize height
+        ImGui::SetCursorScreenPos(ImVec2(wPos.x + edge,
+                                          wPos.y + wSize.y - edge));
         ImGui::InvisibleButton("##zbot", ImVec2(wSize.x - 2*edge, edge),
             ImGuiButtonFlags_MouseButtonLeft);
         if (ImGui::IsItemActive()) {
@@ -262,7 +226,7 @@ void MainWindow::drawMainWindow() {
             ImGui::SetWindowSize(ImVec2(wSize.x, nh));
         }
 
-        // Left edge → resize horizontal
+        // Left edge → resize width
         ImGui::SetCursorScreenPos(ImVec2(wPos.x, wPos.y + edge));
         ImGui::InvisibleButton("##zleft", ImVec2(edge, wSize.y - 2*edge),
             ImGuiButtonFlags_MouseButtonLeft);
@@ -274,8 +238,9 @@ void MainWindow::drawMainWindow() {
             ImGui::SetWindowSize(ImVec2(nw, wSize.y));
         }
 
-        // Right edge → resize horizontal
-        ImGui::SetCursorScreenPos(ImVec2(wPos.x + wSize.x - edge, wPos.y + edge));
+        // Right edge → resize width
+        ImGui::SetCursorScreenPos(ImVec2(wPos.x + wSize.x - edge,
+                                          wPos.y + edge));
         ImGui::InvisibleButton("##zright", ImVec2(edge, wSize.y - 2*edge),
             ImGuiButtonFlags_MouseButtonLeft);
         if (ImGui::IsItemActive()) {
@@ -303,54 +268,25 @@ void MainWindow::drawMainWindow() {
         }
     }
 
-    // ───────────────────────────────────────────────────────────
-    // السحب الموحّد — من أي مكان فارغ داخل النافذة
-    // ───────────────────────────────────────────────────────────
+    // ─── Unified drag from any empty spot ───
     if (!impl_->fullscreen) {
         bool hovered = ImGui::IsWindowHovered(
             ImGuiHoveredFlags_ChildWindows
             | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
             && hovered
             && !ImGui::IsAnyItemActive()) {
-            impl_->windowDragging   = true;
-            impl_->dragStartMouse   = ImGui::GetIO().MousePos;
-            impl_->dragStartWindow  = ImGui::GetWindowPos();
-        }
-        if (impl_->windowDragging) {
-            if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                ImVec2 d(ImGui::GetIO().MousePos.x - impl_->dragStartMouse.x,
-                         ImGui::GetIO().MousePos.y - impl_->dragStartMouse.y);
-                ImGui::SetWindowPos(ImVec2(impl_->dragStartWindow.x + d.x,
-                                           impl_->dragStartWindow.y + d.y));
-            } else {
-                impl_->windowDragging = false;
-            }
-        }
-    }
-
-    ImGui::End();
-}
-
-    // ───────────────────────────────────────────────────────────────
-    // السحب الموحّد — من أي مكان فارغ داخل النافذة
-    // (شريط جانبي، منطقة محتوى، إلخ) باستخدام IsAnyItemActive.
-    // ───────────────────────────────────────────────────────────────
-    if (!impl_->fullscreen) {
-        bool hovered = ImGui::IsWindowHovered(
-            ImGuiHoveredFlags_ChildWindows
-            | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
-            && hovered
-            && !ImGui::IsAnyItemActive()) {
-            impl_->windowDragging = true;
-            impl_->dragStartMouse = ImGui::GetIO().MousePos;
+            impl_->windowDragging  = true;
+            impl_->dragStartMouse  = ImGui::GetIO().MousePos;
             impl_->dragStartWindow = ImGui::GetWindowPos();
         }
+
         if (impl_->windowDragging) {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                ImVec2 d(ImGui::GetIO().MousePos.x - impl_->dragStartMouse.x,
-                         ImGui::GetIO().MousePos.y - impl_->dragStartMouse.y);
+                ImVec2 mp = ImGui::GetIO().MousePos;
+                ImVec2 d(mp.x - impl_->dragStartMouse.x,
+                         mp.y - impl_->dragStartMouse.y);
                 ImGui::SetWindowPos(ImVec2(impl_->dragStartWindow.x + d.x,
                                            impl_->dragStartWindow.y + d.y));
             } else {
@@ -360,17 +296,12 @@ void MainWindow::drawMainWindow() {
     }
 
     ImGui::End();
-}
-
-void MainWindow::drawMenuBar() {
-    // disabled per user request
 }
 
 void MainWindow::drawMinimized() {
     ImGuiIO& io = ImGui::GetIO();
     const float size = 72.0f;
 
-    // إذا خرجت خارج الشاشة — أعدها
     if (impl_->minimizedPos.x + size > io.DisplaySize.x)
         impl_->minimizedPos.x = io.DisplaySize.x - size - 8;
     if (impl_->minimizedPos.y + size > io.DisplaySize.y)
@@ -404,23 +335,19 @@ void MainWindow::drawMinimized() {
     ImGui::InvisibleButton("##yg_icon", ImVec2(size, size));
     bool active = ImGui::IsItemActive();
 
-    // نص YG في الوسط
     ImVec2 center(curPos.x + size * 0.5f, curPos.y + size * 0.5f);
     ImVec2 textSz = ImGui::CalcTextSize("YG");
     ImGui::GetWindowDrawList()->AddText(
         ImVec2(center.x - textSz.x * 0.5f, center.y - textSz.y * 0.5f),
         IM_COL32(255, 215, 0, 255), "YG");
 
-    // سحب / نقر
-    ImVec2 d(0, 0);
     if (active) {
-        d = ImGui::GetIO().MouseDelta;
+        ImVec2 d = ImGui::GetIO().MouseDelta;
         impl_->minimizedPos.x += d.x;
         impl_->minimizedPos.y += d.y;
 
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
             if (std::fabs(d.x) < 3.0f && std::fabs(d.y) < 3.0f) {
-                // نقرة قصيرة — استعادة
                 impl_->minimized = false;
                 if (impl_->lastFullSize.x > 100.0f) {
                     ImGui::SetNextWindowPos(impl_->lastFullPos,
@@ -437,26 +364,27 @@ void MainWindow::drawMinimized() {
     ImGui::PopStyleVar(3);
 }
 
-// نافذة overlay صغيرة — زر YG عائم فوق كل شيء
-
-
 void MainWindow::drawStatusBar() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x,
                                     vp->WorkPos.y + vp->WorkSize.y - 30.0f));
     ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, 30.0f));
+
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
-            | ImGuiWindowFlags_NoResize
-            | ImGuiWindowFlags_NoMove
-            | ImGuiWindowFlags_NoScrollbar
-            | ImGuiWindowFlags_NoSavedSettings
-            | ImGuiWindowFlags_NoBringToFrontOnFocus
-            | ImGuiWindowFlags_NoNavFocus
-            | ImGuiWindowFlags_NoBackground;
+        | ImGuiWindowFlags_NoResize
+        | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoScrollbar
+        | ImGuiWindowFlags_NoSavedSettings
+        | ImGuiWindowFlags_NoBringToFrontOnFocus
+        | ImGuiWindowFlags_NoNavFocus
+        | ImGuiWindowFlags_NoBackground;
+
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0.75f));
+
     if (ImGui::Begin("##StatusBar", nullptr, flags)) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text,
+            ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
         ImGui::Text("YAM-GG | scripts: %d | running: %d",
                     JSConsole::instance().scriptCount(),
                     JSConsole::instance().runningCount());
@@ -467,11 +395,15 @@ void MainWindow::drawStatusBar() {
     ImGui::PopStyleVar();
 }
 
+void MainWindow::drawMenuBar() {
+    // disabled per user request
+}
+
 void MainWindow::openFileBrowser() {
     FileBrowser::instance().setOnSelect(
-            [](const std::string& path) {
-                JSConsole::instance().loadScriptFromFile(path);
-            });
+        [](const std::string& path) {
+            JSConsole::instance().loadScriptFromFile(path);
+        });
     FileBrowser::instance().open("/storage/emulated/0/");
 }
 

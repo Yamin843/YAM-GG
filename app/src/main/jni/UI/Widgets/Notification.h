@@ -22,12 +22,14 @@ private:
     Notification& operator=(const Notification&) = delete;
 
     struct Item {
+        int         id;
         std::string msg;
         std::chrono::steady_clock::time_point created;
         float duration;
     };
 
     std::deque<Item> items_;
+    int next_id_{1};
 };
 
 #define YAMGG_NOTIFY(msg) yamgg::Notification::instance().push(msg)

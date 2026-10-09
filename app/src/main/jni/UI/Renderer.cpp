@@ -66,11 +66,29 @@ void Renderer::onSurfaceChanged(int width, int height) {
 }
 
 void Renderer::onDrawFrame(int width, int height) {
+    // Re-entrancy guard: GLSurfaceView may call onDrawFrame while
+    // onSurfaceChanged is still in flight on a different thread.
+    static thread_local bool inDraw = false;
+    if (inDraw) return;
+    inDraw = true;
+    struct Guard {
+        bool& flag;
+        ~Guard() { flag = false; }
+    } guard{inDraw};
+
     std::lock_guard<std::mutex> lk(mu_);
     if (!initialized_.load()) return;
 
     width_ = width;
     height_ = height;
+
+    // Skip render when window is hidden
+    if (!MainWindow::instance().visible()) {
+        glViewport(0, 0, width, height);
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        return;
+    }
 
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2((float)width, (float)height);

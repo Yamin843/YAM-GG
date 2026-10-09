@@ -11,9 +11,10 @@ Notification& Notification::instance() {
 
 void Notification::push(const std::string& msg, float duration) {
     Item it;
+    it.id = next_id_++;
     it.msg = msg;
     it.created = std::chrono::steady_clock::now();
-    it.duration = duration;
+    it.duration = duration > 0.0f ? duration : 3.0f;
     items_.push_back(std::move(it));
     if (items_.size() > 8) items_.pop_front();
 }
@@ -48,7 +49,7 @@ void Notification::draw() {
         ImGui::SetNextWindowBgAlpha(0.92f * alpha);
         ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
         char name[64];
-        snprintf(name, sizeof(name), "##notif_%p", (void*)&(*it));
+        snprintf(name, sizeof(name), "##notif_%d", it->id);
         ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
                 | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar
                 | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings

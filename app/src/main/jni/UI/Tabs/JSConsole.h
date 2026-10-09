@@ -44,7 +44,7 @@ private:
     mutable std::mutex mu_;
     int nextScriptId_{1};
     int activeSubTab_{0};
-    char codeBuffer_[16384]{0};
+    char codeBuffer_[65536]{0};
 };
 
 #define YAMGG_JSCONSOLE yamgg::JSConsole::instance()

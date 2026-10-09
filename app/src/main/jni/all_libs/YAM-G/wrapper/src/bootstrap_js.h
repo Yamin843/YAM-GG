@@ -84,7 +84,11 @@ static const char kBootstrapSrc[] = R"YAMJS(
         if ("kind" in v) {
             switch (v.kind) {
             case "int": case "short": case "byte": return v.value | 0;
-            case "long": return (typeof Int64 === "function") ? Int64(String(v.value)) : Number(v.value);
+            case "long":
+                if (typeof Int64 === "function") return Int64(String(v.value));
+                try { send({type:"log", level:"warn",
+                            message:"Int64 unavailable; long may lose precision"}); } catch (e) {}
+                return Number(v.value);
             case "float": case "double": return Number(v.value);
             case "boolean": return !!v.value;
             case "string":  return String(v.value);
@@ -100,6 +104,12 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 if (v.fields) for (var fi = 0; fi < v.fields.length; fi++)
                     inst[v.fields[fi].name] = mat(v.fields[fi].value);
                 return inst;
+            }
+            case "expr": {
+                try {
+                    var fn = new Function("Java", "return (" + v.expr + ");");
+                    return fn(Java);
+                } catch (e) { return null; }
             }
             default: return v.value;
             }
@@ -341,6 +351,87 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 fields: fields.length
             }));
         },
+        cpp_call_method: function (cmd) {
+            var m = get(cmd.methodHandle);
+            if (!m) throw new Error("no method handle");
+            var inst = cmd.instanceHandle ? get(cmd.instanceHandle) : null;
+            var args = (cmd.args || []).map(mat);
+            var r;
+            if (inst) r = m.apply(inst, args);
+            else      r = m.apply(null, args);
+            if (r === null || r === undefined) replyValue(cmd.id, null);
+            else if (typeof r === "object" && r.$className)
+                replyHandle(cmd.id, alloc(r));
+            else replyValue(cmd.id, r);
+        },
+        cpp_hook_method: function (cmd) {
+            var m = get(cmd.methodHandle);
+            if (!m) throw new Error("no method handle");
+            var cbId = cmd.callbackId;
+            if (m.__ygg_hook_cb === cbId) { replyVoid(cmd.id); return; }
+            if (m.__ygg_hook_orig === undefined) {
+                m.__ygg_hook_orig = m.implementation;
+            }
+            m.__ygg_hook_cb = cbId;
+            var orig = m.__ygg_hook_orig;
+            m.implementation = function () {
+                var a = Array.prototype.slice.call(arguments);
+                var ah = [];
+                for (var i = 0; i < a.length; i++) {
+                    try { ah.push(alloc(a[i])); }
+                    catch (e) { ah.push(0); }
+                }
+                var th = 0;
+                try { th = alloc(this); } catch (e) {}
+                try {
+                    send({type: "hook_cb", callbackId: cbId,
+                          argHandles: ah, thisHandle: th});
+                } catch (e) {}
+                return orig.apply(this, a);
+            };
+            replyVoid(cmd.id);
+        },
+        cpp_unhook_method: function (cmd) {
+            var m = get(cmd.methodHandle);
+            if (!m) { replyVoid(cmd.id); return; }
+            if (m.__ygg_hook_orig !== undefined) {
+                m.implementation = m.__ygg_hook_orig;
+                delete m.__ygg_hook_orig;
+                delete m.__ygg_hook_cb;
+            }
+            replyVoid(cmd.id);
+        },
+        cpp_get_field_instance: function (cmd) {
+            var inst = get(cmd.instanceHandle);
+            if (!inst) throw new Error("no instance");
+            var v = inst[cmd.fieldName];
+            if (v === null || v === undefined) { replyValue(cmd.id, null); return; }
+            if (typeof v === "object" && v.$className)
+                replyHandle(cmd.id, alloc(v));
+            else replyValue(cmd.id, v);
+        },
+        cpp_set_field_instance: function (cmd) {
+            var inst = get(cmd.instanceHandle);
+            if (!inst) throw new Error("no instance");
+            inst[cmd.fieldName] = mat(cmd.value);
+            replyVoid(cmd.id);
+        },
+        cpp_eval: function (cmd) {
+            var t0 = Date.now();
+            try {
+                var fn = new Function("return (" + (cmd.code || "null") + ");");
+                var r = fn();
+                var rs = describe(r);
+                send({type: "eval_result", id: cmd.id, ok: true,
+                      result: rs, durationMs: Date.now() - t0});
+                reply(cmd.id, true, "value", rs);
+            } catch (e) {
+                var es = "" + e;
+                send({type: "eval_result", id: cmd.id, ok: false,
+                      error: es, durationMs: Date.now() - t0});
+                replyError(cmd.id, e);
+            }
+        },
         cpp_noop: function (cmd) { replyVoid(cmd.id); },
         cpp_pong: function (cmd) { send({ type: "cpp_pong_received", id: cmd.id }); replyVoid(cmd.id); }
     };
@@ -363,11 +454,14 @@ static const char kBootstrapSrc[] = R"YAMJS(
         run_user_script: function (cmd) {
             var t0 = Date.now();
             var nm = cmd.name || "anon";
+            var code = cmd.code || "";
             try {
-                var fn = new Function(cmd.code || "");
-                fn();
+                Java.performNow(function () {
+                    var fn = new Function(code);
+                    fn();
+                });
                 send({type: "user_script_loaded", name: nm,
-                      size: (cmd.code || "").length, ok: true,
+                      size: code.length, ok: true,
                       durationMs: Date.now() - t0});
             } catch (e) {
                 send({type: "user_script_loaded", name: nm,
@@ -381,10 +475,13 @@ static const char kBootstrapSrc[] = R"YAMJS(
             var list = cmd.scripts || [];
             for (var i = 0; i < list.length; i++) {
                 try {
-                    (new Function(list[i].code || ""))();
+                    var code = list[i].code || "";
+                    Java.performNow(function () {
+                        (new Function(code))();
+                    });
                     ok++;
                     send({type: "user_script_loaded", name: list[i].name,
-                          ok: true, size: (list[i].code || "").length});
+                          ok: true, size: code.length});
                 } catch (e) {
                     fail++;
                     send({type: "script_failed", name: list[i].name, error: "" + e});
@@ -708,6 +805,31 @@ static const char kBootstrapSrc[] = R"YAMJS(
             });
         } catch (e) { send({type:"hook_outer_error", message: "" + e}); }
     }
+
+    // ═══════ RPC EXPORTS ═══════
+    try {
+        rpc.exports = {
+            ping: function () { return Date.now(); },
+            eval: function (code) {
+                try {
+                    var fn = new Function("return (" + code + ");");
+                    return { ok: true, result: describe(fn()) };
+                } catch (e) {
+                    return { ok: false, error: "" + e };
+                }
+            },
+            run_script: function (name, code) {
+                try {
+                    Java.performNow(function () {
+                        (new Function(code))();
+                    });
+                    return { ok: true };
+                } catch (e) {
+                    return { ok: false, error: "" + e };
+                }
+            }
+        };
+    } catch (e) {}
 
     // ═══════ READY + SCHEDULE ═══════
     try { send({ type: "cpp_ready" }); }       catch (e) {}

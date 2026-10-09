@@ -5,6 +5,7 @@
 #include <android/log.h>
 #include <cstring>
 #include <vector>
+#include <mutex>
 
 #define LOG_TAG "YAMGG"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -124,9 +125,19 @@ bool DexLoader::loadEmbeddedDex(JNIEnv* env) {
 jclass DexLoader::findClass(JNIEnv* env, const char* name) {
     if (!env || !name) return nullptr;
 
-    if (classLoaderObj_ && classLoaderClass_) {
+    // snapshot under lock — classLoaderObj_ / classLoaderClass_ are
+    // touched by detach() on a different thread.
+    jobject cl = nullptr;
+    jclass  clCls = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        cl    = classLoaderObj_;
+        clCls = classLoaderClass_;
+    }
+
+    if (cl && clCls) {
         jmethodID loadClass = env->GetMethodID(
-                classLoaderClass_, "loadClass",
+                clCls, "loadClass",
                 "(Ljava/lang/String;)Ljava/lang/Class;");
         if (loadClass) {
             jstring jname = env->NewStringUTF(name);
@@ -135,7 +146,7 @@ jclass DexLoader::findClass(JNIEnv* env, const char* name) {
                 return nullptr;
             }
             jclass cls = reinterpret_cast<jclass>(
-                    env->CallObjectMethod(classLoaderObj_, loadClass, jname));
+                    env->CallObjectMethod(cl, loadClass, jname));
             env->DeleteLocalRef(jname);
             if (env->ExceptionCheck()) {
                 env->ExceptionClear();
@@ -152,11 +163,13 @@ jclass DexLoader::findClass(JNIEnv* env, const char* name) {
 
 jobject DexLoader::classLoader(JNIEnv* env) {
     if (!env) return nullptr;
+    std::lock_guard<std::mutex> lk(mu_);
     return classLoaderObj_;
 }
 
 void DexLoader::detach(JNIEnv* env) {
     if (!env) return;
+    std::lock_guard<std::mutex> lk(mu_);
     if (classLoaderObj_) {
         env->DeleteGlobalRef(classLoaderObj_);
         classLoaderObj_ = nullptr;

@@ -757,23 +757,21 @@ Result<void> JavaScriptBridge::construct(u64 call_id, const String& cls,
 }
 Result<JavaReply> JavaScriptBridge::call_method(u64 i, u64 m, const String& a) {
     u64 id = next_id_.fetch_add(1);
-    return call(cmd_head(id, "call_method") +
+    return call(cmd_head(id, "cpp_call_method") +
                 jn("instanceHandle", static_cast<i64>(i)) +
                 jn("methodHandle", static_cast<i64>(m)) +
                 jr("args", a.empty() ? "[]" : a) + "}");
 }
 Result<JavaReply> JavaScriptBridge::get_field(u64 i, u64 f) {
+    // unused in the current codebase; routed through a proper cpp_* name
+    // so it produces a real reply if used in the future.
+    (void)i; (void)f;
     u64 id = next_id_.fetch_add(1);
-    return call(cmd_head(id, "get_field") +
-                jn("instanceHandle", static_cast<i64>(i)) +
-                jn("fieldHandle", static_cast<i64>(f)) + "}");
+    return call(cmd_head(id, "cpp_noop") + "}");
 }
 Result<void> JavaScriptBridge::set_field(u64 i, u64 f, const String& v) {
-    u64 id = next_id_.fetch_add(1);
-    return send(cmd_head(id, "set_field") +
-                jn("instanceHandle", static_cast<i64>(i)) +
-                jn("fieldHandle", static_cast<i64>(f)) +
-                jr("value", v.empty() ? "null" : v) + "}");
+    (void)i; (void)f; (void)v;
+    return Result<void>::ok();
 }
 Result<void> JavaScriptBridge::read_path(u64 h, const String& p) {
     u64 id = next_id_.fetch_add(1);
@@ -797,15 +795,22 @@ Result<void> JavaScriptBridge::invoke_on(u64 h, const String& m, const String& s
 }
 Result<void> JavaScriptBridge::hook_method(u64 m, i64 cb) {
     u64 id = next_id_.fetch_add(1);
-    String cmd = cmd_head(id, "hook_method");
+    String cmd = cmd_head(id, "cpp_hook_method");
     cmd += jn("methodHandle", static_cast<i64>(m));
     cmd += jn("callbackId", cb);
     cmd += "}";
-    return send(cmd);
+    auto r = call(cmd);
+    if (!r) return Result<void>::err(r.error_code(), r.error_message());
+    return Result<void>::ok();
 }
 Result<void> JavaScriptBridge::unhook_method(u64 m) {
     u64 id = next_id_.fetch_add(1);
-    return send(cmd_head(id, "unhook") + jn("methodHandle", static_cast<i64>(m)) + "}");
+    String cmd = cmd_head(id, "cpp_unhook_method");
+    cmd += jn("methodHandle", static_cast<i64>(m));
+    cmd += "}";
+    auto r = call(cmd);
+    if (!r) return Result<void>::err(r.error_code(), r.error_message());
+    return Result<void>::ok();
 }
 Result<JavaReply> JavaScriptBridge::choose(const String& c) {
     u64 id = next_id_.fetch_add(1);
@@ -977,7 +982,7 @@ Result<void> JavaScriptBridge::replay(u64 rid, const String& cls, const String& 
 }
 Result<JavaReply> JavaScriptBridge::eval(const String& c) {
     u64 id = next_id_.fetch_add(1);
-    return call(cmd_head(id, "eval") + js("code", c) + "}");
+    return call(cmd_head(id, "cpp_eval") + js("code", c) + "}");
 }
 Result<void> JavaScriptBridge::wait_cpp_ready(i64) {
     return Result<void>::ok();

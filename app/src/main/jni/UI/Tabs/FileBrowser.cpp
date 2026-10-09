@@ -103,45 +103,83 @@ void FileBrowser::draw() {
         return;
     }
 
-    // ─── Breadcrumb path ───
+    // ─── Search filter ───
+    {
+        ImGui::SetNextItemWidth(-200);
+        ImGui::InputTextWithHint("##filter", "filter...", filter_,
+                                  sizeof(filter_));
+        ImGui::SameLine();
+        if (ImGui::Button("Up", ImVec2(60, 0))) {
+            goUp();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Refresh", ImVec2(80, 0))) {
+            refresh();
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox("Hidden", &showHidden_);
+        if (ImGui::Button("Reload", ImVec2(80, 0))) {
+            refresh();
+        }
+    }
+
+    // ─── Breadcrumb path (built bottom-up, clickable) ───
     {
         ImGui::PushTextWrapPos(0.0f);
         std::string path = currentPath_;
-        std::vector<std::pair<std::string,std::string>> crumbs;
-        std::string acc;
-        for (size_t i = 0; i < path.size(); ++i) {
-            char c = path[i];
-            if (c == '/' && !acc.empty()) { crumbs.emplace_back(acc, acc); acc.clear(); }
-            else acc += c;
+        if (path.empty()) path = "/";
+        // مسح الـ "/" النهائي إن وُجد
+        if (path.size() > 1 && path.back() == '/') path.pop_back();
+
+        std::vector<std::string> crumbs;
+        size_t start = 0;
+        if (path[0] == '/') { crumbs.push_back("/"); start = 1; }
+
+        while (start < path.size()) {
+            size_t slash = path.find('/', start);
+            if (slash == std::string::npos) {
+                crumbs.push_back(path.substr(start));
+                break;
+            }
+            crumbs.push_back(path.substr(start, slash - start));
+            start = slash + 1;
         }
-        if (!acc.empty()) crumbs.emplace_back(acc, acc);
 
         std::string cumulative;
-        bool first = true;
-        for (auto& cr : crumbs) {
-            if (!first) {
+        for (size_t i = 0; i < crumbs.size(); ++i) {
+            if (i > 0 && !(i == 1 && crumbs[0] == "/")) {
                 ImGui::SameLine();
                 ImGui::TextUnformatted("/");
                 ImGui::SameLine();
             }
-            first = false;
-            if (ImGui::SmallButton(cr.first.c_str())) {
-                // Reconstruct path from beginning up to this crumb
-                cumulative += "/" + cr.first;
-                navigateTo(cumulative.empty() ? "/" : cumulative);
+            if (crumbs[i] == "/") {
+                if (ImGui::SmallButton("/")) navigateTo("/");
+                cumulative = "";
+            } else {
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::SmallButton(crumbs[i].c_str())) {
+                    if (cumulative.empty()) cumulative = "/";
+                    else if (cumulative.back() != '/') cumulative += "/";
+                    cumulative += crumbs[i];
+                    navigateTo(cumulative);
+                }
+                ImGui::PopID();
+                if (cumulative.empty()) cumulative = "/";
+                else if (cumulative.back() != '/') cumulative += "/";
+                cumulative += crumbs[i];
             }
         }
         ImGui::PopTextWrapPos();
     }
     ImGui::Separator();
 
-    ImGui::TextWrapped("%s", currentPath_.c_str());
-    ImGui::Separator();
-
     if (!error_.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
         ImGui::TextWrapped("%s", error_.c_str());
         ImGui::PopStyleColor();
+    }
+
+    if (!error_.empty()) {
         ImGui::End();
         return;
     }

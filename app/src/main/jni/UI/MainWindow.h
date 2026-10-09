@@ -1,3 +1,4 @@
+
 #ifndef YAMGG_UI_MAINWINDOW_H
 #define YAMGG_UI_MAINWINDOW_H
 
@@ -30,12 +31,11 @@ private:
     void drawMainWindow();
     void drawMenuBar();
     void drawStatusBar();
+    void drawMinimized();
 
     bool visible_{true};
     bool firstDraw_{true};
     bool collapsed_{false};
-
-    void drawMinimized();
 
     struct Impl;
     Impl* impl_;

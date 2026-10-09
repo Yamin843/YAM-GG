@@ -304,7 +304,12 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                             et.setTextColor(0);
                             et.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                                 | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-                            et.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN);
+                            et.setImeOptions(
+    android.view.inputmethod.EditorInfo.IME_ACTION_NONE
+    | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
+    | android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN
+    | android.view.inputmethod.EditorInfo.IME_FLAG_NO_ENTER_ACTION
+);
                             et.addTextChangedListener(new TextWatcher() {
                                 @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
                                 @Override public void onTextChanged(CharSequence s, int start, int before, int count) {

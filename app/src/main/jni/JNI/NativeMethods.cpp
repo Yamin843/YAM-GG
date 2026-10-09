@@ -73,7 +73,8 @@ static jstring JNICALL impl_nativeGetPendingCmd(JNIEnv* env, jclass clazz) {
     if (needed <= 0) return nullptr;
 
     int cap = needed + 16;
-    if (cap > (1 << 20)) cap = (1 << 20); // 1 MB سقف
+    // رفع السقف إلى 4 MB لدعم load_scripts_batch مع سكربتات كبيرة.
+    if (cap > (4 << 20)) cap = (4 << 20);
 
     std::vector<char> buf(cap);
     int n = yamgg_popPendingCmd(buf.data(), cap);

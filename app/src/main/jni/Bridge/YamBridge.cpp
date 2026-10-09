@@ -71,6 +71,11 @@ bool YamBridge::initialize() {
     yam::events::on("user_script_loaded", [](const yam::Event& ev) {
         std::string nm = ev.get_str("name");
         std::lock_guard<std::mutex> lk(g_scriptLoadMutex);
+        // حد أعلى حتى لا تنمو الخرائط بلا نهاية عند تسريب اسم
+        if (g_scriptLoadResult.size() > 64) {
+            g_scriptLoadResult.clear();
+            g_scriptLoadError.clear();
+        }
         g_scriptLoadResult[nm] = {true, ev.get_bool("ok", false)};
         g_scriptLoadError[nm]  = ev.get_str("error");
         g_scriptLoadCv.notify_all();
@@ -78,6 +83,10 @@ bool YamBridge::initialize() {
     yam::events::on("script_failed", [](const yam::Event& ev) {
         std::string nm = ev.get_str("name");
         std::lock_guard<std::mutex> lk(g_scriptLoadMutex);
+        if (g_scriptLoadResult.size() > 64) {
+            g_scriptLoadResult.clear();
+            g_scriptLoadError.clear();
+        }
         g_scriptLoadResult[nm] = {true, false};
         g_scriptLoadError[nm]  = ev.get_str("error");
         g_scriptLoadCv.notify_all();
@@ -95,6 +104,11 @@ void YamBridge::shutdown() {
     try {
         yam::YAM::shutdown();
     } catch (...) {}
+    {
+        std::lock_guard<std::mutex> lk2(g_scriptLoadMutex);
+        g_scriptLoadResult.clear();
+        g_scriptLoadError.clear();
+    }
     ready_.store(false);
     initialized_.store(false);
 }
@@ -135,7 +149,10 @@ void YamBridge::onEvalResult(unsigned long long id, bool ok,
     std::shared_ptr<EvalSync> sync;
     {
         std::lock_guard<std::mutex> lk(evalMu_);
-        sync = pendingEval_;
+        if (!pendingEvals_.empty()) {
+            sync = pendingEvals_.front();
+            pendingEvals_.pop_front();
+        }
     }
 
     if (sync) {
@@ -184,20 +201,22 @@ YamBridge::EvalResult YamBridge::evaluate(const std::string& code) {
     auto sync = std::make_shared<EvalSync>();
     {
         std::lock_guard<std::mutex> lk(evalMu_);
-        pendingEval_ = sync;
+        pendingEvals_.push_back(sync);
     }
 
     try {
         auto r = yam::JavaScriptBridge::instance().eval(code);
         if (!r) {
             std::lock_guard<std::mutex> lk(evalMu_);
-            pendingEval_.reset();
+            auto it = std::find(pendingEvals_.begin(), pendingEvals_.end(), sync);
+            if (it != pendingEvals_.end()) pendingEvals_.erase(it);
             out.error = r.error_message();
             return out;
         }
     } catch (const std::exception& e) {
         std::lock_guard<std::mutex> lk(evalMu_);
-        pendingEval_.reset();
+        auto it = std::find(pendingEvals_.begin(), pendingEvals_.end(), sync);
+        if (it != pendingEvals_.end()) pendingEvals_.erase(it);
         out.error = e.what();
         return out;
     }
@@ -210,7 +229,8 @@ YamBridge::EvalResult YamBridge::evaluate(const std::string& code) {
 
     {
         std::lock_guard<std::mutex> lk(evalMu_);
-        if (pendingEval_ == sync) pendingEval_.reset();
+        auto it = std::find(pendingEvals_.begin(), pendingEvals_.end(), sync);
+        if (it != pendingEvals_.end()) pendingEvals_.erase(it);
     }
 
     out.ok = sync->ok;

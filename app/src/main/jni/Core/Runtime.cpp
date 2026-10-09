@@ -24,17 +24,32 @@ Runtime& Runtime::instance() {
 static int readApiLevel() {
     char buf[PROP_VALUE_MAX] = {0};
     int len = __system_property_get("ro.build.version.sdk", buf);
-    if (len <= 0) return 0;
-    return atoi(buf);
+    if (len <= 0) {
+        // fallback: kernel version
+        char krel[PROP_VALUE_MAX] = {0};
+        if (__system_property_get("ro.build.version.release", krel) > 0) {
+            // لا يمكن استنتاج API level من الإصدار بدقة، لكن نُعيد 0
+        }
+        return 0;
+    }
+    int v = atoi(buf);
+    if (v < 0 || v > 100) return 0;   // sanity
+    return v;
 }
 
 static std::string readCmdline() {
     std::ifstream f("/proc/self/cmdline", std::ios::binary);
     if (!f) return "";
-    std::stringstream ss;
-    ss << f.rdbuf();
-    std::string s = ss.str();
+    // cap at 8KB — cmdline يجب ألا يكون أكبر
+    char buf[8192];
+    f.read(buf, sizeof(buf) - 1);
+    std::streamsize n = f.gcount();
+    if (n <= 0) return "";
+    buf[n] = 0;
+    std::string s(buf, static_cast<size_t>(n));
+    // trim trailing NULs
     while (!s.empty() && s.back() == '\0') s.pop_back();
+    // internal NULs → ':'
     for (char& c : s) if (c == '\0') c = ':';
     return s;
 }
@@ -42,9 +57,13 @@ static std::string readCmdline() {
 static std::string readPackageName() {
     std::string cmdline = readCmdline();
     if (cmdline.empty()) return "";
+    // الصيغة: pkg أو pkg:process
     size_t colon = cmdline.find(':');
-    if (colon == std::string::npos) return cmdline;
-    return cmdline.substr(0, colon);
+    std::string pkg = (colon == std::string::npos)
+        ? cmdline : cmdline.substr(0, colon);
+    // تحقق صحة: يجب أن يحتوي على نقطة واحدة على الأقل
+    if (pkg.find('.') == std::string::npos) return "";
+    return pkg;
 }
 
 bool Runtime::initialize(JavaVM* vm) {

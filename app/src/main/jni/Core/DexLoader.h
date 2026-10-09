@@ -3,6 +3,7 @@
 
 #include <jni.h>
 #include <string>
+#include <mutex>
 
 namespace yamgg {
 
@@ -25,6 +26,7 @@ private:
     bool loaded_{false};
     jclass classLoaderClass_{nullptr};
     jobject classLoaderObj_{nullptr};
+    mutable std::mutex mu_;
 };
 
 #define YAMGG_DEXLOADER yamgg::DexLoader::instance()

@@ -41,7 +41,7 @@ private:
     std::vector<Entry> entries_;
     std::function<void(const std::string&)> onSelect_;
     char filter_[128]{0};
-    bool showHidden_{false};
+    bool showHidden_{true};   // عرض الملفات المخفية افتراضياً
     std::string error_;
 };
 

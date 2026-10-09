@@ -5,6 +5,7 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
+#include <deque>
 #include <condition_variable>
 
 namespace yamgg {
@@ -63,7 +64,8 @@ private:
     std::atomic<bool> initialized_{false};
     mutable std::mutex mu_;
     std::vector<std::string> scriptNames_;
-    std::shared_ptr<EvalSync> pendingEval_;
+    // Multiple evals can be in flight; match replies by arrival order.
+    std::deque<std::shared_ptr<EvalSync>> pendingEvals_;
     std::mutex evalMu_;
     void (*outputSink_)(const std::string&){nullptr};
     void (*errorSink_)(const std::string&){nullptr};

@@ -151,16 +151,40 @@ void ClassBrowser::registerEvents() {
 }
 
 void ClassBrowser::triggerLoadClasses() {
-    if (filter_.empty()) filter_ = "com.";
+    // If filter is empty, default to common package prefixes so the user
+    // does not see 60k+ system classes on first click.
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (filter_.empty()) filter_ = "com.";
+    }
+
     loading_ = true;
-    { std::lock_guard<std::mutex> lk(mu_); classes_.clear(); }
-    std::string f = yam::JsonValue(filter_).stringify();
-    std::string js = "(function(){try{var all=Java.enumerateLoadedClassesSync();"
-        "var f=" + f + ";var out=[];"
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        classes_.clear();
+    }
+
+    std::string f;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        f = filter_;
+    }
+
+    std::string fjson = yam::JsonValue(f).stringify();
+    // Use enumerateLoadedClassesSync, filter in JS (bridge side effect is cheap)
+    std::string js =
+        "(function(){try{"
+        "var all=Java.enumerateLoadedClassesSync();"
+        "var f=" + fjson + ";"
+        "var out=[];"
         "for(var i=0;i<all.length&&out.length<1500;i++){"
-        "if(all[i].indexOf(f)>=0)out.push(all[i]);}"
-        "send({type:'classes_result',items:out});"
-        "}catch(e){send({type:'classes_error',message:''+e});}})();";
+        "if(all[i].indexOf(f)>=0)out.push(all[i]);"
+        "}"
+        "send({type:'classes_list',count:out.length,classes:out});"
+        "}catch(e){"
+        "send({type:'classes_list',count:0,classes:[],error:''+e});"
+        "}})();";
+
     sendJS(js);
 }
 
@@ -197,17 +221,23 @@ void ClassBrowser::triggerLoadMethods(const std::string& cls) {
 
 // (trace/call/findInstances omitted for brevity — same as before)
 void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
-    // same as before
     std::string cn = yam::JsonValue(cls).stringify();
     std::string mn = yam::JsonValue(m.name).stringify();
-    std::string js = "(function(){try{var C=Java.use(" + cn + ");var MM=C[" + mn + "];"
+    std::string js =
+        "(function(){try{var C=Java.use(" + cn + ");var MM=C[" + mn + "];"
         "if(!MM||!MM.overloads)throw new Error('no overloads');"
-        "for(var i=0;i<MM.overloads.length;i++){(function(ov){var o=ov.implementation;ov.__ygg=o;"
-        "ov.implementation=function(){var a=Array.prototype.slice.call(arguments);"
+        "for(var i=0;i<MM.overloads.length;i++){(function(ov){"
+        // idempotent: only hook once
+        "if(ov.__ygg!==undefined)return;"
+        "ov.__ygg=ov.implementation||null;"
+        "ov.implementation=function(){"
+        "var a=Array.prototype.slice.call(arguments);"
         "var s=[];for(var k=0;k<a.length;k++)s.push(describe(a[k]));"
         "send({type:'console',level:'log',line:'[trace] " + cls + "." + m.name + " ('+s.join(', ')+')'});"
-        "var r=ov.call(this,...a);return r;};})(MM.overloads[i]);}"
-        "send({type:'trace_on_ok'});}catch(e){send({type:'trace_err',message:''+e});}})();";
+        "return ov.__ygg ? ov.__ygg.apply(this,a) : null;"
+        "};})(MM.overloads[i]);}"
+        "send({type:'trace_on_ok'});"
+        "}catch(e){send({type:'trace_err',message:''+e});}})();";
     sendJS(js);
     m.tracing = true;
 }
@@ -404,21 +434,21 @@ void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
         if (!m.isStatic) drawInstancePicker(cls, m);
         if (ImGui::Button(m.tracing ? "Stop" : "Trace", ImVec2(110, 38))) {
             if (m.tracing) {
-                // off: restore original implementations
                 std::string cn = yam::JsonValue(cls).stringify();
                 std::string mn = yam::JsonValue(m.name).stringify();
-                std::string js = "(function(){try{var C=Java.use(" + cn + ");"
+                std::string js =
+                    "(function(){try{var C=Java.use(" + cn + ");"
                     "var MM=C[" + mn + "];"
                     "if(MM&&MM.overloads)for(var i=0;i<MM.overloads.length;i++){"
                     "var ov=MM.overloads[i];"
-                    "if(ov.__ygg!==undefined){ov.implementation=ov.__ygg;delete ov.__ygg;}"
-                    "else{ov.implementation=null;}}"
+                    "if(ov.__ygg!==undefined){"
+                    "ov.implementation=ov.__ygg;delete ov.__ygg;}"
+                    "}"
                     "send({type:'trace_off_ok'});}catch(e){}})();";
                 sendJS(js);
                 m.tracing = false;
             } else {
                 triggerTrace(cls, m);
-                m.tracing = true;
             }
         }
         ImGui::SameLine();

@@ -191,10 +191,33 @@ extern "C" int yamgg_peekPendingCmdSize(void) {
     return (int)g_cmdQueue.front().size();
 }
 
+namespace {
+std::atomic<std::uint64_t> g_droppedCmds{0};
+std::atomic<std::int64_t>  g_lastDropLogMs{0};
+}
+
 extern "C" void yamgg_postCommand(const char* json) {
     if (!json) return;
     std::lock_guard<std::mutex> lk(g_cmdMutex);
-    if (g_cmdQueue.size() > 1000) g_cmdQueue.pop();  // drop oldest
+
+    const size_t kMaxQueue = 4096;
+    if (g_cmdQueue.size() >= kMaxQueue) {
+        // طَرْح أقدم أمر — نسجّل ذلك بدل الصمت
+        g_cmdQueue.pop();
+        uint64_t n = g_droppedCmds.fetch_add(1) + 1;
+
+        // لا نُغرق اللوغ: كل 5 ثوانٍ على الأكثر
+        int64_t now = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        int64_t last = g_lastDropLogMs.load();
+        if (now - last > 5000) {
+            g_lastDropLogMs.store(now);
+            __android_log_print(ANDROID_LOG_WARN, "YAMGG",
+                "cmd queue overflow: dropped %llu commands so far (size=%zu)",
+                (unsigned long long)n, g_cmdQueue.size());
+        }
+    }
     g_cmdQueue.push(std::string(json));
 }
 

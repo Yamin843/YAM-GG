@@ -6,6 +6,7 @@
 #include "imgui.h"
 #include <android/log.h>
 #include <cstring>
+#include <cctype>
 #include <fstream>
 #include <sstream>
 
@@ -41,27 +42,67 @@ void JSConsole::evaluate(const std::string& code) {
 }
 
 void JSConsole::loadScriptFromFile(const std::string& path) {
+    if (path.empty()) { pushOutput("[error] empty path"); return; }
+
+    // validate .js extension
+    size_t dot = path.find_last_of('.');
+    if (dot == std::string::npos) {
+        pushOutput("[error] not a .js file: " + path);
+        return;
+    }
+    std::string ext = path.substr(dot + 1);
+    for (auto& c : ext) c = static_cast<char>(std::tolower(c));
+    if (ext != "js") {
+        pushOutput("[error] not a .js file: " + path);
+        return;
+    }
+
     std::ifstream f(path, std::ios::binary);
     if (!f) { pushOutput("[error] cannot open: " + path); return; }
     std::stringstream ss; ss << f.rdbuf();
     std::string code = ss.str();
+    if (code.empty()) {
+        pushOutput("[error] empty script: " + path);
+        return;
+    }
+
     size_t slash = path.find_last_of('/');
     std::string name = (slash == std::string::npos) ? path : path.substr(slash + 1);
+
+    // إذا كان موجوداً، حدّث الكود
+    for (auto& s : scripts_) {
+        if (s.name == name) {
+            s.code = code;
+            s.path = path;
+            s.selected = true;
+            pushOutput("[updated] " + name +
+                       " (" + std::to_string(code.size()) + " bytes)");
+            return;
+        }
+    }
 
     ScriptEntry e;
     e.name = name; e.path = path; e.code = code;
     e.selected = true; e.id = nextScriptId_++;
     scripts_.push_back(e);
-    pushOutput("[loaded] " + name + " (" + std::to_string(code.size()) + " bytes)");
+    pushOutput("[loaded] " + name +
+               " (" + std::to_string(code.size()) + " bytes)");
 }
 
 void JSConsole::loadSelected() {
     YamBridge& b = YamBridge::instance();
     for (auto& s : scripts_) {
         if (!s.selected || s.running) continue;
-        auto r = b.loadScript(s.name, s.code);
-        if (r.ok) { s.running = true; pushOutput("[injected] " + s.name); }
-        else pushOutput("[error] " + s.name + ": " + r.error);
+        // Use sync variant with 5s timeout — we only mark as "running"
+        // if the JS side confirmed success.
+        auto r = b.loadScriptSync(s.name, s.code, 5000);
+        if (r.ok) {
+            s.running = true;
+            pushOutput("[injected] " + s.name);
+        } else {
+            pushOutput("[error] " + s.name + ": " +
+                       (r.error.empty() ? "unknown" : r.error));
+        }
     }
 }
 
@@ -69,8 +110,10 @@ void JSConsole::unloadSelected() {
     YamBridge& b = YamBridge::instance();
     for (auto& s : scripts_) {
         if (!s.selected || !s.running) continue;
-        b.unloadScript(s.name); s.running = false;
-        pushOutput("[unloaded] " + s.name);
+        bool ok = b.unloadScript(s.name);
+        s.running = false;
+        pushOutput(ok ? ("[unloaded] " + s.name)
+                      : ("[warn] " + s.name + ": unload may be partial"));
     }
 }
 void JSConsole::unloadAll() {
@@ -144,7 +187,14 @@ void JSConsole::drawConsoleTab() {
             const char* cb = ImGui::GetClipboardText();
             if (cb && *cb) {
                 size_t cur = std::strlen(codeBuffer_);
-                std::strncat(codeBuffer_, cb, sizeof(codeBuffer_) - cur - 1);
+                size_t cap = sizeof(codeBuffer_) - 1;
+                if (cur < cap) {
+                    size_t room = cap - cur;
+                    size_t n = std::strlen(cb);
+                    size_t take = (n < room) ? n : room;
+                    std::memcpy(codeBuffer_ + cur, cb, take);
+                    codeBuffer_[cur + take] = 0;
+                }
             }
         }
     }
