@@ -153,16 +153,26 @@ void FileBrowser::draw() {
                 ImGui::SameLine();
             }
             if (crumbs[i] == "/") {
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                    ImVec4(0.10f, 0.10f, 0.12f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                    ImVec4(0.20f, 0.16f, 0.06f, 1.0f));
                 if (ImGui::SmallButton("/")) navigateTo("/");
+                ImGui::PopStyleColor(2);
                 cumulative = "";
             } else {
                 ImGui::PushID(static_cast<int>(i));
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                    ImVec4(0.10f, 0.10f, 0.12f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                    ImVec4(0.20f, 0.16f, 0.06f, 1.0f));
                 if (ImGui::SmallButton(crumbs[i].c_str())) {
                     if (cumulative.empty()) cumulative = "/";
                     else if (cumulative.back() != '/') cumulative += "/";
                     cumulative += crumbs[i];
                     navigateTo(cumulative);
                 }
+                ImGui::PopStyleColor(2);
                 ImGui::PopID();
                 if (cumulative.empty()) cumulative = "/";
                 else if (cumulative.back() != '/') cumulative += "/";
@@ -195,16 +205,25 @@ void FileBrowser::draw() {
                 if (lower.find(f) == std::string::npos) continue;
             }
 
+            ImGui::PushID(e.fullPath.c_str());
             if (e.isDir) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.75f, 0.1f, 1.0f));
-                char label[512];
-                snprintf(label, sizeof(label), "[DIR]  %s", e.name.c_str());
-                if (ImGui::Selectable(label, false)) {
+                // Folder: gold icon + name
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                    ImVec4(0.95f, 0.78f, 0.20f, 1.0f));
+                ImGui::TextUnformatted("▸");
+                ImGui::PopStyleColor();
+                ImGui::SameLine(0, 10);
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                    ImVec4(0.96f, 0.96f, 0.98f, 1.0f));
+                ImGui::PushTextWrapPos(0.0f);
+                bool clicked = ImGui::Selectable(e.name.c_str(), false);
+                ImGui::PopTextWrapPos();
+                ImGui::PopStyleColor();
+                if (clicked) {
+                    ImGui::PopID();
                     navigateTo(e.fullPath);
-                    ImGui::PopStyleColor();
                     break;
                 }
-                ImGui::PopStyleColor();
             } else {
                 bool isJs = false;
                 if (e.name.size() > 3) {
@@ -212,26 +231,53 @@ void FileBrowser::draw() {
                     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
                     isJs = (ext == ".js");
                 }
+                // File: small icon char
                 if (isJs) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 1.0f, 0.6f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        ImVec4(0.55f, 0.85f, 0.55f, 1.0f));
+                    ImGui::TextUnformatted("•");
+                    ImGui::PopStyleColor();
                 } else {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.75f, 0.75f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        ImVec4(0.40f, 0.40f, 0.45f, 1.0f));
+                    ImGui::TextUnformatted("·");
+                    ImGui::PopStyleColor();
                 }
-                char label[512];
-                snprintf(label, sizeof(label), "      %s  (%lld bytes)",
-                         e.name.c_str(), (long long)e.size);
-                if (ImGui::Selectable(label, false)) {
-                    if (onSelect_) {
-                        std::string path = e.fullPath;
-                        ImGui::PopStyleColor();
-                        onSelect_(path);
-                        ImGui::EndChild();
-                        ImGui::End();
-                        return;
-                    }
+                ImGui::SameLine(0, 10);
+                char disp[640];
+                snprintf(disp, sizeof(disp), "%s", e.name.c_str());
+                if (isJs) {
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        ImVec4(0.88f, 0.88f, 0.92f, 1.0f));
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        ImVec4(0.68f, 0.68f, 0.72f, 1.0f));
                 }
+                ImGui::PushTextWrapPos(0.0f);
+                bool clicked = ImGui::Selectable(disp, false);
+                ImGui::PopTextWrapPos();
                 ImGui::PopStyleColor();
+
+                // Size on the right
+                ImGui::SameLine();
+                char sizeBuf[64];
+                snprintf(sizeBuf, sizeof(sizeBuf), "%lld B",
+                         (long long)e.size);
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                    ImVec4(0.45f, 0.45f, 0.50f, 1.0f));
+                ImGui::TextUnformatted(sizeBuf);
+                ImGui::PopStyleColor();
+
+                if (clicked && onSelect_) {
+                    std::string path = e.fullPath;
+                    ImGui::PopID();
+                    onSelect_(path);
+                    ImGui::EndChild();
+                    ImGui::End();
+                    return;
+                }
             }
+            ImGui::PopID();
         }
     }
     ImGui::EndChild();

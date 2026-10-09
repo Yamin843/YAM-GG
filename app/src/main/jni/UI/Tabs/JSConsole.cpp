@@ -157,10 +157,31 @@ void JSConsole::drawLogTab() {
         std::lock_guard<std::mutex> lk(mu_);
         ImGui::PushTextWrapPos(0.0f);
         for (auto& line : output_) {
-            ImVec4 col(1, 1, 1, 1);
-            if (line.rfind("[error]", 0) == 0) col = ImVec4(1, 0.45f, 0.45f, 1);
-            else if (line.rfind("[warn]", 0) == 0) col = ImVec4(1, 0.85f, 0.3f, 1);
-            else if (!line.empty() && line[0] == '>') col = ImVec4(1, 0.85f, 0.2f, 1);
+            ImVec4 col(0.92f, 0.92f, 0.94f, 1.0f);
+            const char* prefix = nullptr;
+            ImVec4 prefixCol = col;
+
+            if (line.rfind("[error]", 0) == 0) {
+                col = ImVec4(0.94f, 0.33f, 0.31f, 1.0f);
+                prefix = "ERR";
+                prefixCol = col;
+            } else if (line.rfind("[warn]", 0) == 0) {
+                col = ImVec4(1.00f, 0.65f, 0.15f, 1.0f);
+                prefix = "WRN";
+                prefixCol = col;
+            } else if (!line.empty() && line[0] == '>') {
+                col = ImVec4(1.00f, 0.83f, 0.30f, 1.0f);
+                prefix = ">>";
+                prefixCol = col;
+            }
+
+            if (prefix) {
+                ImGui::PushStyleColor(ImGuiCol_Text, prefixCol);
+                ImGui::TextUnformatted(prefix);
+                ImGui::PopStyleColor();
+                ImGui::SameLine(0, 8);
+            }
+
             ImGui::PushStyleColor(ImGuiCol_Text, col);
             ImGui::TextWrapped("%s", line.c_str());
             ImGui::PopStyleColor();
@@ -210,12 +231,14 @@ void JSConsole::drawConsoleTab() {
     ImGui::Separator();
 
     // Editor
-    ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextWrapped("Script editor");
-    ImGui::PopTextWrapPos();
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.62f, 0.68f, 1.0f));
+        ImGui::TextUnformatted("SCRIPT EDITOR");
+        ImGui::PopStyleColor();
+    }
 
     ImGui::InputTextMultiline("##code", codeBuffer_, sizeof(codeBuffer_),
-                              ImVec2(-1, 180), ImGuiInputTextFlags_AllowTabInput);
+                              ImVec2(-1, 220), ImGuiInputTextFlags_AllowTabInput);
 
     {
         ImVec2 bs = autoBtn("Run");
@@ -229,9 +252,21 @@ void JSConsole::drawConsoleTab() {
     ImGui::Separator();
 
     // Scripts list with checkboxes
-    ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextWrapped("Scripts: %d  |  Running: %d", scriptCount(), runningCount());
-    ImGui::PopTextWrapPos();
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.62f, 0.68f, 1.0f));
+        ImGui::TextUnformatted("SCRIPTS");
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0, 12);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.85f, 0.88f, 1.0f));
+        ImGui::Text("%d loaded", scriptCount());
+        ImGui::PopStyleColor();
+        if (runningCount() > 0) {
+            ImGui::SameLine(0, 12);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.40f, 0.75f, 0.42f, 1.0f));
+            ImGui::Text("%d running", runningCount());
+            ImGui::PopStyleColor();
+        }
+    }
     ImGui::BeginChild("##ScriptsList", ImVec2(0, 0), true);
     if (scripts_.empty()) {
         ImGui::PushTextWrapPos(0.0f);
@@ -243,11 +278,24 @@ void JSConsole::drawConsoleTab() {
         ImGui::PushID((int)i);
         ImGui::Checkbox("##sel", &s.selected);
         ImGui::SameLine();
-        ImVec4 col = s.running ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
-                               : ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+        // نقطة حالة ملوّنة
+        {
+            ImVec2 p = ImGui::GetCursorScreenPos();
+            float lineH = ImGui::GetTextLineHeight();
+            ImU32 dotCol = s.running
+                ? IM_COL32(0x66, 0xBB, 0x6A, 255)
+                : IM_COL32(0x62, 0x62, 0x68, 200);
+            ImGui::GetWindowDrawList()->AddCircleFilled(
+                ImVec2(p.x + 5.0f, p.y + lineH * 0.5f), 4.0f, dotCol);
+            ImGui::Dummy(ImVec2(16.0f, 0.0f));
+            ImGui::SameLine(0, 0);
+        }
+        ImVec4 col = s.running
+            ? ImVec4(0.85f, 0.98f, 0.85f, 1.0f)
+            : ImVec4(0.80f, 0.80f, 0.84f, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Text, col);
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextWrapped("%s %s", s.running ? "[RUN]" : "[OFF]", s.name.c_str());
+        ImGui::TextWrapped("%s", s.name.c_str());
         ImGui::PopTextWrapPos();
         ImGui::PopStyleColor();
         ImGui::SameLine(ImGui::GetWindowWidth() - 100);

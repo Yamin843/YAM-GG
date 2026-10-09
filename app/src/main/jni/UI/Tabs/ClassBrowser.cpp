@@ -387,12 +387,21 @@ void ClassBrowser::drawPackageGroup(const std::string& pkg, std::vector<std::str
     for (auto& full : members) {
         size_t dot = full.find_last_of('.');
         std::string simple = (dot == std::string::npos) ? full : full.substr(dot + 1);
-        ImGuiTreeNodeFlags cf = ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+        ImGuiTreeNodeFlags cf = ImGuiTreeNodeFlags_SpanAvailWidth
+            | ImGuiTreeNodeFlags_OpenOnDoubleClick;
         if (selectedClass_ == full) cf |= ImGuiTreeNodeFlags_Selected;
         ImGui::PushID(full.c_str());
+        if (selectedClass_ == full) {
+            ImGui::PushStyleColor(ImGuiCol_Text,
+                ImVec4(1.00f, 0.86f, 0.35f, 1.0f));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text,
+                ImVec4(0.88f, 0.88f, 0.90f, 1.0f));
+        }
         ImGui::PushTextWrapPos(0.0f);
         bool cOpen = ImGui::TreeNodeEx(simple.c_str(), cf);
         ImGui::PopTextWrapPos();
+        ImGui::PopStyleColor();
         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
             if (selectedClass_ != full) triggerLoadMethods(full);
         }
@@ -435,17 +444,52 @@ void ClassBrowser::drawClassNode(const std::string& cls) {
 
 void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
     ImGui::PushID(&m);
-    char label[512];
-    std::snprintf(label, sizeof(label), "%s %s(%zu)%s",
-        m.ret.c_str(), m.name.c_str(), m.args.size(), m.tracing ? " [T]" : "");
+
+    // مؤشر trace ملوّن (دائرة) قبل اسم الـ method
+    {
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        float lineH = ImGui::GetTextLineHeight();
+        ImU32 dotColor = m.tracing
+            ? IM_COL32(0x66, 0xBB, 0x6A, 255)   // success green
+            : IM_COL32(0x62, 0x62, 0x68, 200);  // faint grey
+        ImGui::GetWindowDrawList()->AddCircleFilled(
+            ImVec2(p.x + 6.0f, p.y + lineH * 0.5f), 4.0f, dotColor);
+        ImGui::Dummy(ImVec2(18.0f, 0.0f));
+        ImGui::SameLine(0, 0);
+    }
+
+    char label[1024];
+    std::snprintf(label, sizeof(label), "%s  %s(%zu)",
+        m.ret.c_str(), m.name.c_str(), m.args.size());
+
+    ImGui::PushStyleColor(ImGuiCol_Text,
+        m.tracing
+            ? ImVec4(0.92f, 0.92f, 0.94f, 1.0f)
+            : ImVec4(0.82f, 0.82f, 0.85f, 1.0f));
     ImGui::PushTextWrapPos(0.0f);
     bool open = ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_SpanAvailWidth);
     ImGui::PopTextWrapPos();
+    ImGui::PopStyleColor();
     if (open) {
         for (size_t i = 0; i < m.args.size(); ++i) drawParamWidget(cls, m, m.args[i], (int)i);
         ImGui::Separator();
         if (!m.isStatic) drawInstancePicker(cls, m);
-        if (ImGui::Button(m.tracing ? "Stop" : "Trace", ImVec2(110, 38))) {
+        // زر Trace — أخضر عند التشغيل، ذهبي عند الإيقاف
+        if (m.tracing) {
+            ImGui::PushStyleColor(ImGuiCol_Button,
+                ImVec4(0.15f, 0.32f, 0.16f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                ImVec4(0.20f, 0.42f, 0.22f, 1.0f));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button,
+                ImVec4(0.20f, 0.16f, 0.04f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                ImVec4(0.28f, 0.22f, 0.06f, 1.0f));
+        }
+        bool traceBtn = ImGui::Button(m.tracing ? "STOP" : "TRACE",
+                                       ImVec2(110, 40));
+        ImGui::PopStyleColor(2);
+        if (traceBtn) {
             if (m.tracing) {
                 std::string cn = yam::JsonValue(cls).stringify();
                 std::string mn = yam::JsonValue(m.name).stringify();
@@ -469,7 +513,15 @@ void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("Call", ImVec2(110, 38))) triggerCall(cls, m);
+        ImGui::PushStyleColor(ImGuiCol_Button,
+            ImVec4(0.20f, 0.16f, 0.04f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+            ImVec4(0.30f, 0.24f, 0.08f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text,
+            ImVec4(0.98f, 0.86f, 0.42f, 1.0f));
+        bool callBtn = ImGui::Button("CALL", ImVec2(110, 40));
+        ImGui::PopStyleColor(3);
+        if (callBtn) triggerCall(cls, m);
         ImGui::TreePop();
     }
     ImGui::PopID();

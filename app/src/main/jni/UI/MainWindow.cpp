@@ -163,23 +163,43 @@ void MainWindow::drawMainWindow() {
 
     // ─── Sidebar ───
     const float sidebarW = 110.0f;
-    ImGui::BeginChild("##Sidebar", ImVec2(sidebarW, 0), true);
+    ImGui::BeginChild("##Sidebar", ImVec2(sidebarW, 0), false);
     {
         auto tabBtn = [&](const char* label, int id) {
             bool sel = (impl_->currentTab == id);
-            ImVec2 btnSz(sidebarW - 12.0f, 60.0f);
-            ImVec4 bg = sel ? ImVec4(0.45f, 0.35f, 0.00f, 1.0f)
-                            : ImVec4(0.10f, 0.08f, 0.00f, 1.0f);
-            ImGui::PushStyleColor(ImGuiCol_Button, bg);
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                ImVec4(0.55f, 0.42f, 0.05f, 1.0f));
+            const float btnH = 72.0f;
+            ImVec2 btnSz(sidebarW - 20.0f, btnH);
+
+            ImVec4 bg, hov, act, txt;
+            if (sel) {
+                bg  = ImVec4(0.18f, 0.14f, 0.04f, 1.0f);
+                hov = bg;
+                act = bg;
+                txt = ImVec4(1.00f, 0.83f, 0.30f, 1.0f);
+            } else {
+                bg  = ImVec4(0.08f, 0.08f, 0.09f, 1.0f);
+                hov = ImVec4(0.14f, 0.12f, 0.06f, 1.0f);
+                act = ImVec4(0.20f, 0.16f, 0.05f, 1.0f);
+                txt = ImVec4(0.72f, 0.72f, 0.74f, 1.0f);
+            }
+
+            ImGui::PushStyleColor(ImGuiCol_Button,        bg);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hov);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  act);
+            ImGui::PushStyleColor(ImGuiCol_Text,          txt);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, btnH * 0.28f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign,
                 ImVec2(0.5f, 0.5f));
+            ImGui::PushID(label);
             if (ImGui::Button(label, btnSz)) impl_->currentTab = id;
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor(2);
-            ImGui::Spacing();
+            ImGui::PopID();
+            ImGui::PopStyleVar(3);
+            ImGui::PopStyleColor(4);
+            ImGui::Dummy(ImVec2(0, 6));
         };
+
+        ImGui::Dummy(ImVec2(0, 6));
         tabBtn("JV", 0);
         tabBtn("JS", 1);
     }
@@ -380,15 +400,36 @@ void MainWindow::drawStatusBar() {
         | ImGuiWindowFlags_NoBackground;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0.75f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.02f, 0.03f, 0.85f));
 
     if (ImGui::Begin("##StatusBar", nullptr, flags)) {
-        ImGui::PushStyleColor(ImGuiCol_Text,
-            ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
-        ImGui::Text("YAM-GG | scripts: %d | running: %d",
-                    JSConsole::instance().scriptCount(),
-                    JSConsole::instance().runningCount());
+        int sc = JSConsole::instance().scriptCount();
+        int rc = JSConsole::instance().runningCount();
+
+        // Brand mark
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.72f, 0.25f, 1.0f));
+        ImGui::TextUnformatted("YAM-GG");
         ImGui::PopStyleColor();
+
+        // Separator dot
+        ImGui::SameLine(0, 10);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.35f, 0.38f, 1.0f));
+        ImGui::TextUnformatted("·");
+        ImGui::PopStyleColor();
+
+        // Scripts count
+        ImGui::SameLine(0, 10);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.72f, 0.72f, 0.74f, 1.0f));
+        ImGui::Text("%d scripts", sc);
+        ImGui::PopStyleColor();
+
+        // Running count with color indication
+        if (rc > 0) {
+            ImGui::SameLine(0, 10);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.40f, 0.75f, 0.42f, 1.0f));
+            ImGui::Text("· %d running", rc);
+            ImGui::PopStyleColor();
+        }
     }
     ImGui::End();
     ImGui::PopStyleColor();
