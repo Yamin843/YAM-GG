@@ -768,47 +768,6 @@ Result<void> Script::load(Cancellable& c) {
 
 Result<void> Script::unload() { Cancellable c; return unload(c); }
 
-void Script::post(const String& msg) {
-    if (!handle_) {
-        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-            "Script::post: handle_ NULL");
-        return;
-    }
-
-    // Parse envelope {"type":"cmd","payload":{...}}
-    auto parsed = JsonValue::parse(msg);
-    if (!parsed || !parsed.value().is_obj()) {
-        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-            "Script::post: not JSON object");
-        return;
-    }
-
-    auto* tv = parsed.value().get("type");
-    auto* pv = parsed.value().get("payload");
-    if (!tv) {
-        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-            "Script::post: no type");
-        return;
-    }
-
-    String type    = tv->as_str();
-    String payload = pv ? (pv->is_str() ? pv->as_str() : pv->stringify()) : "{}";
-
-    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-        "Script::post: chan=%s payload=%s", type.c_str(), payload.c_str());
-
-    // g_bytes_new -> _yamfl_g_bytes_new (via YAMJS.h #define)
-    GBytes* bytes = g_bytes_new(payload.data(), payload.size());
-    if (!bytes) {
-        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-            "Script::post: g_bytes_new failed");
-        return;
-    }
-
-    yam_script_post(static_cast<YamScript*>(handle_), type.c_str(), bytes);
-    g_bytes_unref(bytes);
-}
-
 Result<void> Script::unload(Cancellable& c) {
     if (!loaded_ || !handle_) return Result<void>::err(ErrorCode::NotInitialized, "");
     yam_script_unload_sync(static_cast<YamScript*>(handle_),
@@ -824,6 +783,11 @@ void Script::set_message_handler(MessageCallback cb) {
 void Script::clear_message_handler() {
     std::lock_guard<std::mutex> lk(cb_mu_);
     cb_ = nullptr;
+}
+void Script::post(const String& msg) {
+    // C→JS via ModView.sPendingCmd (poll-based).
+    // Do NOT use yam_script_post: needs GBytes which isn't exported.
+    ::yamgg_postCommand(msg.c_str());
 }
 void Script::post(const String& msg, const ByteVector& /* data */) {
     // Note: yam_script_post_with_data does not exist in the library. We fall
