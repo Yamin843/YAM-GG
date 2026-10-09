@@ -22,52 +22,59 @@ YamBridge& YamBridge::instance() {
 }
 
 bool YamBridge::initialize() {
+    #define DBG(...) __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG", __VA_ARGS__)
+
+    DBG(">>> [1] entered");
     std::lock_guard<std::mutex> lk(mu_);
-    if (initialized_.load()) return true;
-    if (!Runtime::instance().isInitialized()) {
-        LOGE("YamBridge: Runtime not initialized");
-        return false;
-    }
+    DBG(">>> [2] mutex");
+
+    if (initialized_.load()) { DBG(">>> [3] already"); return true; }
+    if (!Runtime::instance().isInitialized()) { DBG(">>> [3b] no runtime"); return false; }
+    DBG(">>> [4] runtime ok");
 
     yam::EntryOptions opts;
-    opts.log_level = yam::LogLevel::Info;
+    opts.log_level = yam::LogLevel::Debug;
     opts.enable_java = true;
     opts.enable_console = false;
     opts.enable_debugger = false;
     opts.worker_threads = 0;
     opts.script_name = "yamgg_bridge";
     opts.backend = yam::BackendKind::QJS;
+    DBG(">>> [5] calling YAM::init");
 
     auto r = yam::YAM::init(opts);
-    if (!r) {
-        LOGE("YamBridge: YAM::init failed: %s", r.error_message().c_str());
-        return false;
-    }
+    DBG(">>> [6] YAM::init returned ok=%d", (int)r.has_value());
+    if (!r) { DBG(">>> [6b] %s", r.error_message().c_str()); return false; }
 
+    DBG(">>> [7] getting bridge");
     auto& bridge = yam::JavaScriptBridge::instance();
+    DBG(">>> [8] got bridge");
 
-    bridge.set_console_callback([this](const yam::String& level, const yam::String& line) {
-        onConsole(level, line);
+    bridge.set_console_callback([this](const yam::String& l, const yam::String& s) {
+        onConsole(l, s);
     });
+    DBG(">>> [9] console cb");
 
     bridge.set_eval_callback([this](yam::u64 id, bool ok,
-                                     const yam::String& result,
-                                     const yam::String& error) {
-        onEvalResult(id, ok, result, error);
+                                     const yam::String& res,
+                                     const yam::String& err) {
+        onEvalResult(id, ok, res, err);
     });
+    DBG(">>> [10] eval cb");
 
+    DBG(">>> [11] calling bridge.initialize");
     auto br = bridge.initialize();
-    if (!br) {
-        LOGE("YamBridge: bridge init failed: %s", br.error_message().c_str());
-        yam::YAM::shutdown();
-        return false;
-    }
+    DBG(">>> [12] bridge.init ok=%d", (int)br.has_value());
+    if (!br) { DBG(">>> [12b] %s", br.error_message().c_str()); yam::YAM::shutdown(); return false; }
 
+    DBG(">>> [13] installEventRouter");
     installEventRouter();
+    DBG(">>> [14] router installed");
 
     ready_.store(true);
     initialized_.store(true);
-    LOGI("YamBridge: ready");
+    DBG(">>> [15] READY");
+    #undef DBG
     return true;
 }
 
