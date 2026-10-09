@@ -730,19 +730,30 @@ Result<void> Script::load(Cancellable& c) {
     __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
         "after yam_script_load_sync");
 
-    // Pump the thread-default GMainContext so queued JS messages
-    // (from send()) are actually delivered to our message handler.
+    // Pump until no more messages for 100ms, max 3s.
+    // Uses thread_default first (matches the script backend scheduler).
     GMainContext* ctx = g_main_context_get_thread_default();
     if (!ctx) ctx = g_main_context_default();
     if (ctx) {
         __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-            "pumping GMainContext");
-        for (int i = 0; i < 300; ++i) {
-            while (g_main_context_iteration(ctx, FALSE)) {}
+            "pumping GMainContext (ctx=%p)", (void*)ctx);
+
+        auto start = std::chrono::steady_clock::now();
+        auto last_msg = start;
+        bool any = false;
+        for (;;) {
+            int n = 0;
+            while (g_main_context_iteration(ctx, FALSE)) { n++; }
+            if (n > 0) { any = true; last_msg = std::chrono::steady_clock::now(); }
+            auto now = std::chrono::steady_clock::now();
+            auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_msg).count();
+            auto total = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+            if (any && idle >= 100) break;
+            if (total >= 3000) break;
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
         __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
-            "pump finished");
+            "pump finished (any=%d)", any ? 1 : 0);
     } else {
         __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
             "NO GMainContext available");
