@@ -781,6 +781,16 @@ Protection protection_from_posix(int r) {
     return static_cast<Protection>(p);
 }
 } // namespace
+// ===========================================================================
+// SECTION 11 — Allocation
+// ===========================================================================
+
+Allocation& Allocation::operator=(Allocation&& o) noexcept {
+    if (this != &o) {
+        if (ptr_) Memory::free(ptr_);
+        ptr_ = o.ptr_; size_ = o.size_;
+        o.ptr_ = nullptr; o.size_ = 0;
+    }
     return *this;
 }
 void* Allocation::release() noexcept {
