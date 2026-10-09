@@ -156,38 +156,47 @@ void JSConsole::drawLogTab() {
                        ImGuiWindowFlags_HorizontalScrollbar);
     {
         std::lock_guard<std::mutex> lk(mu_);
-        ImGui::PushTextWrapPos(0.0f);
-        for (auto& line : output_) {
-            ImVec4 col(0.92f, 0.92f, 0.94f, 1.0f);
-            const char* prefix = nullptr;
-            ImVec4 prefixCol = col;
 
-            if (line.rfind("[error]", 0) == 0) {
-                col = ImVec4(0.94f, 0.33f, 0.31f, 1.0f);
-                prefix = "ERR";
-                prefixCol = col;
-            } else if (line.rfind("[warn]", 0) == 0) {
-                col = ImVec4(1.00f, 0.65f, 0.15f, 1.0f);
-                prefix = "WRN";
-                prefixCol = col;
-            } else if (!line.empty() && line[0] == '>') {
-                col = ImVec4(1.00f, 0.83f, 0.30f, 1.0f);
-                prefix = ">>";
-                prefixCol = col;
-            }
+        // Virtualize via clipper: only visible rows are rendered.
+        // Requires uniform row height → use TextUnformatted (no wrap).
+        // Horizontal scrolling is enabled via the outer BeginChild flag.
+        const int total = static_cast<int>(output_.size());
+        ImGuiListClipper clipper;
+        clipper.Begin(total);
+        while (clipper.Step()) {
+            for (int idx = clipper.DisplayStart; idx < clipper.DisplayEnd; idx++) {
+                const std::string& line = output_[static_cast<size_t>(idx)];
 
-            if (prefix) {
-                ImGui::PushStyleColor(ImGuiCol_Text, prefixCol);
-                ImGui::TextUnformatted(prefix);
+                ImVec4 col(0.92f, 0.92f, 0.94f, 1.0f);
+                const char* prefix = nullptr;
+                ImVec4 prefixCol = col;
+
+                if (line.rfind("[error]", 0) == 0) {
+                    col = ImVec4(0.94f, 0.33f, 0.31f, 1.0f);
+                    prefix = "ERR";
+                } else if (line.rfind("[warn]", 0) == 0) {
+                    col = ImVec4(1.00f, 0.65f, 0.15f, 1.0f);
+                    prefix = "WRN";
+                } else if (!line.empty() && line[0] == '>') {
+                    col = ImVec4(1.00f, 0.83f, 0.30f, 1.0f);
+                    prefix = ">>";
+                }
+                prefixCol = col;
+
+                if (prefix) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, prefixCol);
+                    ImGui::TextUnformatted(prefix);
+                    ImGui::PopStyleColor();
+                    ImGui::SameLine(0, 10);
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Text, col);
+                ImGui::TextUnformatted(line.c_str());
                 ImGui::PopStyleColor();
-                ImGui::SameLine(0, 8);
             }
-
-            ImGui::PushStyleColor(ImGuiCol_Text, col);
-            ImGui::TextWrapped("%s", line.c_str());
-            ImGui::PopStyleColor();
         }
-        ImGui::PopTextWrapPos();
+        clipper.End();
+
         if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f)
             ImGui::SetScrollHereY(1.0f);
     }

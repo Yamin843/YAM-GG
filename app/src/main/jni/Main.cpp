@@ -34,6 +34,10 @@ static std::atomic<bool> g_pump_running{true};
 static std::mutex         g_cmdMutex;
 static std::queue<std::string> g_cmdQueue;
 
+// Forward declaration at namespace scope (extern "C" linkage specifications
+// are only valid at namespace scope — not inside functions/lambdas).
+extern "C" void yamgg_postCommand(const char* json);
+
 // ===========================================================================
 // init_thread
 // ===========================================================================
@@ -98,11 +102,6 @@ static void* init_thread(void*) {
             using namespace std::chrono;
             const auto interval = milliseconds(50);
             auto next = steady_clock::now();
-
-            // Local linkage declaration — matches the extern "C" definition
-            // later in this file. `extern "C"` is REQUIRED: without it, the
-            // compiler picks up C++ linkage and the definition fails.
-            extern "C" void yamgg_postCommand(const char*);
 
             while (g_pump_running.load(std::memory_order_acquire)) {
                 {

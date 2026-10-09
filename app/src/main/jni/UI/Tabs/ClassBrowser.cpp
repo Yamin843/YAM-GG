@@ -67,6 +67,13 @@ void ClassBrowser::registerEvents() {
             std::string key = cls + "::" + mi.name;
             if (tracedMethods_.count(key)) mi.tracing = true;
         }
+
+        // ترتيب أبجدي — reflection يرجع عشوائياً
+        std::sort(ml.begin(), ml.end(),
+            [](const MethodInfo& a, const MethodInfo& b) {
+                return a.name < b.name;
+            });
+
         methods_[cls] = std::move(ml);
         // fields
         std::vector<FieldInfo> fl;
@@ -80,6 +87,10 @@ void ClassBrowser::registerEvents() {
                 fl.push_back(std::move(fi));
             }
         }
+        std::sort(fl.begin(), fl.end(),
+            [](const FieldInfo& a, const FieldInfo& b) {
+                return a.name < b.name;
+            });
         fields_[cls] = std::move(fl);
         selectedClass_ = cls;
         loading_ = false;
@@ -117,6 +128,10 @@ void ClassBrowser::registerEvents() {
             std::string key = cls + "::" + mi.name;
             if (tracedMethods_.count(key)) mi.tracing = true;
         }
+        std::sort(ml.begin(), ml.end(),
+            [](const MethodInfo& a, const MethodInfo& b) {
+                return a.name < b.name;
+            });
         methods_[cls] = std::move(ml);
         std::vector<FieldInfo> fl;
         auto* fs = ev.data.get("fields");

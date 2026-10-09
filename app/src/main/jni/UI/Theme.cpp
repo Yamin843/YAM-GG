@@ -27,14 +27,14 @@ inline ImVec4 rgba(int r, int g, int b, float a = 1.0f) {
 static const ImVec4 kBgDeep      = rgba(0x08, 0x08, 0x0A);
 static const ImVec4 kBgWindow    = rgba(0x0E, 0x0E, 0x10);
 static const ImVec4 kBgChild     = rgba(0x0B, 0x0B, 0x0D);
-static const ImVec4 kBgCard      = rgba(0x15, 0x15, 0x18);
-static const ImVec4 kBgCardHover = rgba(0x1E, 0x1E, 0x22);
-static const ImVec4 kBgCardAct   = rgba(0x28, 0x28, 0x2E);
+static const ImVec4 kBgCard      = rgba(0x1A, 0x1A, 0x1F);
+static const ImVec4 kBgCardHover = rgba(0x24, 0x24, 0x2A);
+static const ImVec4 kBgCardAct   = rgba(0x2E, 0x2E, 0x36);
 
 // Gold accent family — muted, contemporary
 static const ImVec4 kGoldBase    = rgba(0xD4, 0xA0, 0x17);
 static const ImVec4 kGoldBright  = rgba(0xF0, 0xBE, 0x3C);
-static const ImVec4 kGoldMuted   = rgba(0x8A, 0x68, 0x10);
+static const ImVec4 kGoldMuted   = rgba(0xA8, 0x80, 0x1A);
 static const ImVec4 kGoldSoft    = rgba(0xD4, 0xA0, 0x17, 0.35f);
 static const ImVec4 kGoldDeep    = rgba(0x40, 0x2E, 0x08);
 
@@ -58,30 +58,30 @@ void Theme::apply() {
     ImVec4* colors = style.Colors;
 
     // ─── Rounding: generous, modern ───
-    style.WindowRounding     = 18.0f;
-    style.ChildRounding      = 12.0f;
-    style.FrameRounding      = 10.0f;
-    style.PopupRounding      = 14.0f;
-    style.TabRounding        = 10.0f;
-    style.GrabRounding       = 10.0f;
-    style.ScrollbarRounding  = 10.0f;
+    style.WindowRounding     = 20.0f;
+    style.ChildRounding      = 14.0f;
+    style.FrameRounding      = 12.0f;
+    style.PopupRounding      = 16.0f;
+    style.TabRounding        = 12.0f;
+    style.GrabRounding       = 12.0f;
+    style.ScrollbarRounding  = 12.0f;
 
     // ─── Borders: thin & subtle (was 5px — way too heavy) ───
-    style.WindowBorderSize   = 1.5f;
-    style.ChildBorderSize    = 0.0f;   // cards have no border
-    style.FrameBorderSize    = 0.0f;   // frames are flat
-    style.PopupBorderSize    = 2.0f;
-    style.TabBorderSize      = 0.0f;
+    style.WindowBorderSize   = 2.5f;
+    style.ChildBorderSize    = 1.0f;
+    style.FrameBorderSize    = 1.0f;
+    style.PopupBorderSize    = 3.0f;
+    style.TabBorderSize      = 1.0f;
 
     // ─── Spacing: breathable ───
-    style.WindowPadding      = ImVec2(16.0f, 14.0f);
-    style.FramePadding       = ImVec2(14.0f, 10.0f);
-    style.CellPadding        = ImVec2(10.0f, 8.0f);
-    style.ItemSpacing        = ImVec2(10.0f, 10.0f);
-    style.ItemInnerSpacing   = ImVec2(8.0f, 6.0f);
-    style.IndentSpacing      = 20.0f;
-    style.ScrollbarSize      = 12.0f;   // thin modern (was 24)
-    style.GrabMinSize        = 22.0f;
+    style.WindowPadding      = ImVec2(18.0f, 16.0f);
+    style.FramePadding       = ImVec2(16.0f, 12.0f);
+    style.CellPadding        = ImVec2(12.0f, 10.0f);
+    style.ItemSpacing        = ImVec2(12.0f, 12.0f);
+    style.ItemInnerSpacing   = ImVec2(10.0f, 8.0f);
+    style.IndentSpacing      = 22.0f;
+    style.ScrollbarSize      = 18.0f;   // balanced (was 12)
+    style.GrabMinSize        = 28.0f;
 
     // ─── Text alignment ───
     style.WindowTitleAlign        = ImVec2(0.5f, 0.5f);
@@ -126,7 +126,7 @@ void Theme::apply() {
 
     // Scrollbar — thin, mostly invisible
     colors[ImGuiCol_ScrollbarBg]           = ImVec4(0, 0, 0, 0);
-    colors[ImGuiCol_ScrollbarGrab]         = rgba(0xFF, 0xFF, 0xFF, 0.14f);
+    colors[ImGuiCol_ScrollbarGrab]         = rgba(0xFF, 0xFF, 0xFF, 0.22f);
     colors[ImGuiCol_ScrollbarGrabHovered]  = kGoldSoft;
     colors[ImGuiCol_ScrollbarGrabActive]   = kGoldBase;
 

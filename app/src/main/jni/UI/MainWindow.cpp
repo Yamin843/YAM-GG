@@ -150,8 +150,8 @@ void MainWindow::drawMainWindow() {
     {
         ImVec2 wpos  = ImGui::GetWindowPos();
         ImVec2 wsize = ImGui::GetWindowSize();
-        const float sz = 40.0f;
-        const float mg = 10.0f;
+        const float sz = 48.0f;
+        const float mg = 12.0f;
 
         ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.85f, 0.65f, 0.00f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.00f, 0.80f, 0.15f, 1.0f));
@@ -427,8 +427,8 @@ void MainWindow::drawMinimized() {
 void MainWindow::drawStatusBar() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x,
-                                    vp->WorkPos.y + vp->WorkSize.y - 30.0f));
-    ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, 30.0f));
+                                    vp->WorkPos.y + vp->WorkSize.y - 44.0f));
+    ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, 44.0f));
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
         | ImGuiWindowFlags_NoResize
@@ -440,7 +440,8 @@ void MainWindow::drawStatusBar() {
         | ImGuiWindowFlags_NoBackground;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.02f, 0.03f, 0.85f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 10.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.02f, 0.03f, 0.92f));
 
     if (ImGui::Begin("##StatusBar", nullptr, flags)) {
         int sc = JSConsole::instance().scriptCount();
@@ -473,7 +474,7 @@ void MainWindow::drawStatusBar() {
     }
     ImGui::End();
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
 }
 
 void MainWindow::drawMenuBar() {
