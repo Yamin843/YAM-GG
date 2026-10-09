@@ -1,7 +1,6 @@
 // ===========================================================================
 // Main.cpp — YAM-GG entry point
 // ===========================================================================
-
 #include <jni.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -11,8 +10,6 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
-
-// glib access goes through the wrapper (yamgg_pump_once).
 
 #include "Core/Runtime.h"
 #include "Core/DexLoader.h"
@@ -24,22 +21,15 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
+using namespace yamgg;
+
+extern "C" void yamgg_pump_once();
+
 static JavaVM* g_vm = nullptr;
-static jclass g_modViewClass = nullptr;
+static jclass  g_modViewClass = nullptr;
 static std::atomic<bool> g_initialized{false};
 static std::atomic<bool> g_pump_running{true};
 
-using namespace yamgg;
-
-// ── Wrapper-provided helper (see yam_core.cpp) ──
-extern "C" void yamgg_pump_once();
-
-// ===========================================================================
-// Activity.onResume hook + current-activity attach
-// ===========================================================================
-// ===========================================================================
-// AppsFlyer trackEvent hook
-// ===========================================================================
 // ===========================================================================
 // init_thread
 // ===========================================================================
@@ -61,7 +51,7 @@ static void* init_thread(void*) {
 
     jclass modViewClass = DexLoader::instance().findClass(env, "com.yamgg.modview.ModView");
     if (!modViewClass) {
-        LOGE("init_thread: ModView class not found in dex");
+        LOGE("init_thread: ModView class not found");
         if (attached) Runtime::instance().detachCurrentThread();
         return nullptr;
     }
@@ -70,7 +60,7 @@ static void* init_thread(void*) {
     env->DeleteLocalRef(modViewClass);
 
     if (!jni::registerNativeMethods(env, g_modViewClass)) {
-        LOGE("init_thread: failed to register native methods");
+        LOGE("init_thread: RegisterNatives failed");
     } else {
         LOGI("init_thread: native methods registered");
     }
@@ -91,10 +81,11 @@ static void* init_thread(void*) {
         LOGE("init_thread: YamBridge init failed");
     } else {
         LOGI("init_thread: YamBridge ready");
+        // All JS hooks are now embedded inside the bootstrap (see bootstrap_js.h).
+        // They run automatically via setTimeout after cpp_ready.
+    }
 
     LOGI("init_thread: complete — entering GMainContext pump loop");
-
-    // ── Pump loop — keeps JS scheduler alive ──
     {
         LOGI("init_thread: pump loop starting");
         while (g_pump_running.load(std::memory_order_acquire)) {
