@@ -29,6 +29,6 @@ LOCAL_CPPFLAGS := \
 LOCAL_CPP_FEATURES := exceptions rtti
 
 LOCAL_STATIC_LIBRARIES := yamgjs
-LOCAL_LDLIBS := -llog -ldl -lm -lz -lc++_shared -lunwind
+LOCAL_LDLIBS := -llog -ldl -lm -lz -lc++_static -lunwind
 
 include $(BUILD_STATIC_LIBRARY)
