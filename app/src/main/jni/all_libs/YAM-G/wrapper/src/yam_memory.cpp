@@ -476,4 +476,188 @@ ByteVector parse_hex_code(const String& hex) {
     return out;
 }
 
+// ===========================================================================
+// Module
+// ===========================================================================
+
+gboolean Module::visit_module(YamModule* m, gpointer user) {
+    auto* out = static_cast<std::vector<Module>*>(user);
+    if (!m || !out) return 0;
+    Module mod;
+    const gchar* nm = yam_module_get_name(m);
+    const gchar* pt = yam_module_get_path(m);
+    mod.name_ = nm ? nm : "";
+    mod.path_ = pt ? pt : "";
+    YamMemoryRange range{};
+    if (yam_module_get_range(m, &range)) {
+        mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range.base_address));
+        mod.size_ = range.size;
+    }
+    out->push_back(std::move(mod));
+    return 1;
+}
+
+std::vector<Module> Module::enumerate() {
+    std::vector<Module> out;
+    YamModuleRegistry* reg = yam_module_registry_obtain();
+    if (!reg) return out;
+    yam_module_registry_enumerate_modules(reg, Module::visit_module, &out);
+    return out;
+}
+
+Result<Module> Module::find(const String& name) {
+    YamModule* m = yam_process_find_module_by_name(name.c_str());
+    if (!m) return Result<Module>::err(ErrorCode::ModuleNotFound, name);
+    Module mod;
+    const gchar* nm = yam_module_get_name(m);
+    const gchar* pt = yam_module_get_path(m);
+    mod.name_ = nm ? nm : name;
+    mod.path_ = pt ? pt : "";
+    YamMemoryRange range{};
+    if (yam_module_get_range(m, &range)) {
+        mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range.base_address));
+        mod.size_ = range.size;
+    }
+    return Result<Module>::ok(std::move(mod));
+}
+
+Result<Module> Module::find_by_address(void* addr) {
+    YamModule* m = yam_process_find_module_by_address(
+        static_cast<YamAddress>(reinterpret_cast<uintptr_t>(addr)));
+    if (!m) return Result<Module>::err(ErrorCode::ModuleNotFound, "addr");
+    Module mod;
+    const gchar* nm = yam_module_get_name(m);
+    const gchar* pt = yam_module_get_path(m);
+    mod.name_ = nm ? nm : "";
+    mod.path_ = pt ? pt : "";
+    YamMemoryRange range{};
+    if (yam_module_get_range(m, &range)) {
+        mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range.base_address));
+        mod.size_ = range.size;
+    }
+    return Result<Module>::ok(std::move(mod));
+}
+
+Module Module::main() {
+    YamModule* m = yam_process_get_main_module();
+    Module mod;
+    if (m) {
+        const gchar* nm = yam_module_get_name(m);
+        const gchar* pt = yam_module_get_path(m);
+        mod.name_ = nm ? nm : "";
+        mod.path_ = pt ? pt : "";
+        YamMemoryRange range{};
+        if (yam_module_get_range(m, &range)) {
+            mod.base_ = reinterpret_cast<void*>(static_cast<uintptr_t>(range.base_address));
+            mod.size_ = range.size;
+        }
+    }
+    return mod;
+}
+
+void* Module::find_export(const String& name) const {
+    if (name.empty()) return nullptr;
+    YamModule* m = yam_process_find_module_by_name(name_.c_str());
+    if (!m) return nullptr;
+    return yam_module_find_export_by_name(m, name.c_str());
+}
+
+void* Module::find_symbol(const String& name) const {
+    if (name.empty()) return nullptr;
+    YamModule* m = yam_process_find_module_by_name(name_.c_str());
+    if (!m) return nullptr;
+    return yam_module_find_symbol_by_name(m, name.c_str());
+}
+
+void* Module::find_global_export(const String& name) {
+    if (name.empty()) return nullptr;
+    return yam_module_find_global_export_by_name(name.c_str());
+}
+
+namespace {
+struct ExportCtx { std::vector<ExportSymbol>* out; };
+gboolean export_visitor(const YamExportDetails* d, gpointer user) {
+    auto* ctx = static_cast<ExportCtx*>(user);
+    if (!d || !ctx || !ctx->out) return 0;
+    ExportSymbol e;
+    e.name = d->name ? d->name : "";
+    e.address = d->address;
+    e.type = d->type ? d->type : "";
+    ctx->out->push_back(std::move(e));
+    return 1;
+}
+}
+
+std::vector<ExportSymbol> Module::exports() const {
+    std::vector<ExportSymbol> out;
+    YamModule* m = yam_process_find_module_by_name(name_.c_str());
+    if (!m) return out;
+    ExportCtx ctx{ &out };
+    yam_module_enumerate_exports(m, export_visitor, &ctx);
+    return out;
+}
+
+std::vector<ImportSymbol> Module::imports() const { return {}; }
+
+std::vector<ModuleRange> Module::ranges() const {
+    std::vector<ModuleRange> out;
+    auto maps = detail::ProcMaps::read();
+    auto b = reinterpret_cast<u64>(base_);
+    for (auto& m : maps) {
+        if (m.start >= b && m.end <= b + size_) {
+            ModuleRange r;
+            r.base = reinterpret_cast<void*>(static_cast<uintptr_t>(m.start));
+            r.size = m.end - m.start;
+            r.protection = m.prot;
+            r.file = m.path;
+            out.push_back(std::move(r));
+        }
+    }
+    return out;
+}
+
+// ===========================================================================
+// Symbol
+// ===========================================================================
+
+void* Symbol::resolve(const String& name) {
+    if (name.empty()) return nullptr;
+    return yam_find_function(name.c_str());
+}
+
+void* Symbol::resolve_in(const String& mod, const String& name) {
+    auto m = Module::find(mod);
+    if (!m) return nullptr;
+    return m.value().find_export(name);
+}
+
+std::vector<void*> Symbol::resolve_matching(const String& pattern) {
+    std::vector<void*> out;
+    if (pattern.empty()) return out;
+    YamPtrArray* arr = yam_find_functions_matching(pattern.c_str());
+    if (!arr) return out;
+    for (guint i = 0; i < arr->len; ++i)
+        out.push_back(arr->pdata[i]);
+    return out;
+}
+
+String Symbol::demangle(const String& mangled) {
+    int status = 0;
+    char* out = abi::__cxa_demangle(mangled.c_str(), nullptr, nullptr, &status);
+    if (status != 0 || !out) return mangled;
+    String s(out);
+    std::free(out);
+    return s;
+}
+
+String Symbol::to_string(void* addr) {
+    YamReturnAddressDetails d{};
+    if (yam_return_address_details_from_address(addr, &d)) {
+        if (d.function_name[0]) return demangle(d.function_name);
+    }
+    Dl_info info{};
+    if (dladdr(addr, &info) && info.dli_sname) return demangle(info.dli_sname);
+    return {};
+}
+
 } // namespace yam

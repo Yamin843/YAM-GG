@@ -788,6 +788,7 @@ public:
     static Module main();
     static void* find_global_export(const String& name);
 private:
+    static gboolean visit_module(YamModule* m, gpointer user);
     String name_;
     String path_;
     void*  base_{nullptr};

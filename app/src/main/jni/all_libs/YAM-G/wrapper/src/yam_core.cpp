@@ -1180,4 +1180,122 @@ Result<ByteVector> HexPattern::compile(const String& pattern) {
 }
 
 } // namespace detail
+// ===========================================================================
+// ObjectRegistry
+// ===========================================================================
+
+ObjectRegistry& ObjectRegistry::instance() {
+    static ObjectRegistry inst;
+    return inst;
+}
+
+ObjectRegistry::ObjectRegistry() = default;
+ObjectRegistry::~ObjectRegistry() { clear(); }
+
+HandleId ObjectRegistry::register_entry(RegistryKind kind, const String& cls,
+                                         void* native, void* extra) {
+    std::lock_guard<std::mutex> lk(mu_);
+    HandleId id = next_id_++;
+    auto e = std::make_shared<RegistryEntry>();
+    e->id = id;
+    e->kind = kind;
+    e->class_name = cls;
+    e->native_handle = native;
+    e->extra = extra;
+    e->created_ms = time_util::now_ms();
+    e->last_used_ms = e->created_ms;
+    entries_[id] = e;
+    total_bytes_.fetch_add(sizeof(RegistryEntry), std::memory_order_relaxed);
+    return id;
+}
+
+Ptr<RegistryEntry> ObjectRegistry::lookup(HandleId id) const {
+    std::lock_guard<std::mutex> lk(mu_);
+    auto it = entries_.find(id);
+    if (it == entries_.end()) return nullptr;
+    it->second->last_used_ms = time_util::now_ms();
+    return it->second;
+}
+
+bool ObjectRegistry::release(HandleId id) {
+    std::lock_guard<std::mutex> lk(mu_);
+    auto it = entries_.find(id);
+    if (it == entries_.end()) return false;
+    entries_.erase(it);
+    total_bytes_.fetch_sub(sizeof(RegistryEntry), std::memory_order_relaxed);
+    return true;
+}
+
+void ObjectRegistry::retain(HandleId id) {
+    std::lock_guard<std::mutex> lk(mu_);
+    auto it = entries_.find(id);
+    if (it != entries_.end()) it->second->ref_count.fetch_add(1);
+}
+
+void ObjectRegistry::release_ref(HandleId id) {
+    std::lock_guard<std::mutex> lk(mu_);
+    auto it = entries_.find(id);
+    if (it == entries_.end()) return;
+    u32 r = it->second->ref_count.fetch_sub(1);
+    if (r <= 1) entries_.erase(it);
+}
+
+usize ObjectRegistry::size() const {
+    std::lock_guard<std::mutex> lk(mu_);
+    return entries_.size();
+}
+
+usize ObjectRegistry::total_bytes() const {
+    return total_bytes_.load(std::memory_order_relaxed);
+}
+
+void ObjectRegistry::clear() {
+    std::lock_guard<std::mutex> lk(mu_);
+    entries_.clear();
+    total_bytes_.store(0, std::memory_order_relaxed);
+}
+
+std::vector<Ptr<RegistryEntry>> ObjectRegistry::snapshot() const {
+    std::lock_guard<std::mutex> lk(mu_);
+    std::vector<Ptr<RegistryEntry>> out;
+    out.reserve(entries_.size());
+    for (auto& p : entries_) out.push_back(p.second);
+    return out;
+}
+
+// ===========================================================================
+// Gc
+// ===========================================================================
+
+void Gc::collect() {
+    auto& r = registry();
+    auto snap = r.snapshot();
+    for (auto& e : snap) {
+        if (!e) continue;
+        if (e->ref_count.load(std::memory_order_acquire) == 0) {
+            r.release(e->id);
+        }
+    }
+}
+
+void Gc::sweep(i64 max_age_ms) {
+    auto& r = registry();
+    i64 now = time_util::now_ms();
+    auto snap = r.snapshot();
+    for (auto& e : snap) {
+        if (!e) continue;
+        if (e->ref_count.load() == 0 && (now - e->last_used_ms) > max_age_ms) {
+            r.release(e->id);
+        }
+    }
+}
+
+usize Gc::live_entries() {
+    return registry().size();
+}
+
+usize Gc::live_bytes() {
+    return registry().total_bytes();
+}
+
 } // namespace yam
