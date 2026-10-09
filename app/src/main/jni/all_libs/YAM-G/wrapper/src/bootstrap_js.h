@@ -336,6 +336,14 @@ static const char kBootstrapSrc[] = R"YAMJS(
 
     // ═══════ cpp_* HANDLERS ═══════
     var handlers = {
+        yamgg_tick: function (cmd) {
+            // Called from C++ every 50ms. Must be first for low latency.
+            try { onTick(); } catch (e) {}
+        },
+        yamgg_attach_now: function (cmd) {
+            try { tryAttachOnce(); } catch (e) {}
+            replyVoid(cmd.id);
+        },
         cpp_use_class: function (cmd) { replyHandle(cmd.id, alloc(Java.use(cmd.className))); },
         cpp_get_method: function (cmd) {
             var c = get(cmd.classHandle); if (!c) throw new Error("no class handle");
@@ -993,12 +1001,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
             if (attachAttempts % 5 === 0) tryJavaChoose();
         });
     }
-    function loopAttach() {
-        if (attachDone) return;
-        try { tryAttachOnce(); }
-        catch (e) { send({type:"attach_outer_err", message:"" + e}); }
-        setTimeout(loopAttach, 1000);
-    }
+
 
     // ═══════ COMMAND POLLER ═══════
     var pollInstalled = false;
@@ -1007,80 +1010,95 @@ static const char kBootstrapSrc[] = R"YAMJS(
     var POLL_INTERVAL_MS = 150;   // 6.7 ticks/sec
     var ALIVE_EVERY_MS  = 30000;  // 1 alive log / 30s
 
+    // ═══════ POLLER (one-shot; invoked by C++ tick) ═══════
+    // No setInterval — QuickJS has no timer scheduler in this build.
+    // C++ pushes {"action":"yamgg_tick"} via the command queue and this
+    // function is dispatched from the recv handler below.
+    var pollInstalled = false;
+    var pollCount = 0;
+    var lastAliveAt = 0;
+    var ALIVE_EVERY_MS = 30000;
+
+    function pollerOnce() {
+        Java.performNow(function () {
+            var MV;
+            try { MV = Java.use("com.yamgg.modview.ModView"); }
+            catch (e) { return; }
+
+            var drained = 0;
+            var lastRaw = null;
+            var sameCount = 0;
+
+            for (;;) {
+                var raw;
+                try { raw = MV.nativeGetPendingCmd(); }
+                catch (e) {
+                    send({type: "poller_err", message: "" + e});
+                    break;
+                }
+                if (!raw) break;
+
+                if (raw === lastRaw) {
+                    sameCount++;
+                    if (sameCount > 100) {
+                        send({type: "poller_loop_detected",
+                              raw: raw.substring(0, 200)});
+                        break;
+                    }
+                } else {
+                    sameCount = 0;
+                    lastRaw = raw;
+                }
+                drained++;
+
+                var obj = null;
+                try { obj = JSON.parse(raw); }
+                catch (e) {
+                    send({type: "poller_parse_err", message: "" + e});
+                    continue;
+                }
+                if (!obj) continue;
+
+                var cmd = (obj.payload && obj.payload.action)
+                    ? obj.payload
+                    : obj;
+                if (!cmd || !cmd.action) {
+                    send({type: "poller_no_action",
+                          raw: raw.substring(0, 200)});
+                    continue;
+                }
+                try { dispatchCmd(cmd); }
+                catch (e) {
+                    try { replyError(cmd.id, e); } catch (e2) {}
+                }
+            }
+
+            // One-shot every pollerOnce call — throttled by time only
+            var now = Date.now();
+            if (drained === 0 && (now - lastAliveAt) >= ALIVE_EVERY_MS) {
+                lastAliveAt = now;
+                send({type: "poller_alive", count: pollCount});
+            }
+            pollCount++;
+
+            // Attach attempt on every tick (cheap when already done)
+            if (!attachDone) {
+                try { tryAttachOnce(); }
+                catch (e) { send({type:"attach_tick_err", message:"" + e}); }
+            }
+        });
+    }
+
     function installPoller() {
         if (pollInstalled) return;
         pollInstalled = true;
-        send({type: "poller_started", interval: POLL_INTERVAL_MS});
+        send({type: "poller_started", mode: "tick-driven"});
+    }
 
-        setInterval(function () {
-            pollCount++;
-            Java.performNow(function () {
-                var MV;
-                try { MV = Java.use("com.yamgg.modview.ModView"); }
-                catch (e) { return; }
-
-                // ─────────────────────────────────────────────────────
-                // بلا حد صناعي. نُفرّغ الطابور بالكامل في كل دورة.
-                // الحماية الوحيدة: كشف حلقة منطقية (نفس الأمر يعود).
-                // ─────────────────────────────────────────────────────
-                var drained = 0;
-                var lastRaw = null;
-                var sameCount = 0;
-
-                for (;;) {
-                    var raw;
-                    try { raw = MV.nativeGetPendingCmd(); }
-                    catch (e) {
-                        send({type: "poller_err", message: "" + e});
-                        break;
-                    }
-                    if (!raw) break;
-
-                    if (raw === lastRaw) {
-                        sameCount++;
-                        if (sameCount > 100) {
-                            send({type: "poller_loop_detected",
-                                  raw: raw.substring(0, 200)});
-                            break;
-                        }
-                    } else {
-                        sameCount = 0;
-                        lastRaw = raw;
-                    }
-                    drained++;
-
-                    var obj = null;
-                    try { obj = JSON.parse(raw); }
-                    catch (e) {
-                        send({type: "poller_parse_err", message: "" + e});
-                        continue;
-                    }
-                    if (!obj) continue;
-
-                    var cmd = (obj.payload && obj.payload.action)
-                        ? obj.payload
-                        : obj;
-                    if (!cmd || !cmd.action) {
-                        send({type: "poller_no_action",
-                              raw: raw.substring(0, 200)});
-                        continue;
-                    }
-                    try { dispatchCmd(cmd); }
-                    catch (e) {
-                        try { replyError(cmd.id, e); } catch (e2) {}
-                    }
-                }
-
-                // alive log فقط عندما لا يحدث أي شيء لـ ALIVE_EVERY_MS
-                if (drained === 0) {
-                    var now = Date.now();
-                    if (now - lastAliveAt >= ALIVE_EVERY_MS) {
-                        lastAliveAt = now;
-                        send({type: "poller_alive", count: pollCount});
-                    }
-                }
-            });
-        }, POLL_INTERVAL_MS);
+    // Called by C++ tick (queue-driven)
+    function onTick() {
+        try { pollerOnce(); }
+        catch (e) { send({type:"tick_err", message:"" + e}); }
     }
 
     // ═══════ HOOKS ═══════
@@ -1125,18 +1143,19 @@ static const char kBootstrapSrc[] = R"YAMJS(
         };
     } catch (e) {}
 
-    // ═══════ READY + SCHEDULE ═══════
+    // ═══════ READY + IMMEDIATE SETUP ═══════
+    // No setTimeout/setInterval: QuickJS in this build has no timer
+    // scheduler. C++ drives us via yamgg_tick from the queue.
     try { send({ type: "cpp_ready" }); }       catch (e) {}
     try { send({ type: "cpp_ready_final" }); } catch (e) {}
 
-    setTimeout(function () {
-        try { installAllHooks(); }
-        catch (e) { send({type:"install_err", message: "" + e}); }
-        try { loopAttach(); }
-        catch (e) { send({type:"attach_start_err", message: "" + e}); }
-        try { installPoller(); }
-        catch (e) { send({type:"poller_err", message: "" + e}); }
-    }, 800);
+    // Immediate (synchronous) one-time setup.
+    try { installAllHooks(); }
+    catch (e) { send({type:"install_err", message: "" + e}); }
+    try { installPoller(); }
+    catch (e) { send({type:"poller_err", message: "" + e}); }
+    try { tryAttachOnce(); }
+    catch (e) { send({type:"attach_start_err", message: "" + e}); }
 })();
 )YAMJS";
 

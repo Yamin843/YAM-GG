@@ -19,6 +19,13 @@ public:
 
     void setOnSelect(std::function<void(const std::string&)> cb) { onSelect_ = std::move(cb); }
 
+    // Returns true if (x,y) is inside the FileBrowser window currently
+    // being drawn (only when open).
+    bool hitTest(float x, float y) const;
+
+    // Returns the window rect if open & valid.
+    bool getRect(float& rx, float& ry, float& rw, float& rh) const;
+
 private:
     FileBrowser() = default;
     ~FileBrowser() = default;
@@ -41,8 +48,12 @@ private:
     std::vector<Entry> entries_;
     std::function<void(const std::string&)> onSelect_;
     char filter_[128]{0};
-    bool showHidden_{true};   // عرض الملفات المخفية افتراضياً
+    bool showHidden_{true};
     std::string error_;
+
+    // rect captured during draw() for hitTest() queries from JNI
+    float rectX_{0.0f}, rectY_{0.0f}, rectW_{0.0f}, rectH_{0.0f};
+    bool  rectValid_{false};
 };
 
 #define YAMGG_FILEBROWSER yamgg::FileBrowser::instance()

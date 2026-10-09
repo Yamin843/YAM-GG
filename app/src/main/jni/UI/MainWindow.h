@@ -26,6 +26,7 @@ public:
     // Used by ModView to decide whether to claim a touch gesture
     // (blocks the underlying app) or pass it through.
     bool hitTest(float x, float y) const;
+    bool getRect(float& x, float& y, float& w, float& h) const;
 
 private:
     MainWindow();

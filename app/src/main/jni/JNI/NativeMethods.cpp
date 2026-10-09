@@ -2,6 +2,7 @@
 #include "../Core/Runtime.h"
 #include "../UI/Renderer.h"
 #include "../UI/MainWindow.h"
+#include "../UI/Tabs/FileBrowser.h"
 
 #include <android/log.h>
 #include <vector>
@@ -39,8 +40,15 @@ static void JNICALL impl_nativeOnTouch(JNIEnv* env, jclass clazz,
 static jboolean JNICALL impl_nativeHitTest(JNIEnv* env, jclass clazz,
                                              jfloat x, jfloat y) {
     (void)env; (void)clazz;
-    return MainWindow::instance().hitTest((float)x, (float)y) ? JNI_TRUE
-                                                               : JNI_FALSE;
+    float fx = (float)x;
+    float fy = (float)y;
+
+    // Priority: FileBrowser (on top) → MainWindow (or minimized chip).
+    // Every top-level window registers its rect during draw().
+    if (FileBrowser::instance().hitTest(fx, fy)) return JNI_TRUE;
+    if (MainWindow::instance().hitTest(fx, fy)) return JNI_TRUE;
+
+    return JNI_FALSE;
 }
 
 static jboolean JNICALL impl_nativeWantCaptureMouse(JNIEnv* env, jclass clazz) {

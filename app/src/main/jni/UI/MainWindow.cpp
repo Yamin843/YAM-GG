@@ -500,13 +500,20 @@ void MainWindow::notify(const std::string& msg, float duration) {
     Notification::instance().push(msg, duration);
 }
 
-bool MainWindow::hitTest(float x, float y) const {
+bool MainWindow::getRect(float& x, float& y, float& w, float& h) const {
     if (!impl_->currentWindowValid) return false;
     ImVec2 p = impl_->currentWindowPos;
     ImVec2 s = impl_->currentWindowSize;
     if (s.x <= 0.0f || s.y <= 0.0f) return false;
-    return x >= p.x && x <= p.x + s.x &&
-           y >= p.y && y <= p.y + s.y;
+    x = p.x; y = p.y; w = s.x; h = s.y;
+    return true;
+}
+
+bool MainWindow::hitTest(float x, float y) const {
+    float rx, ry, rw, rh;
+    if (!getRect(rx, ry, rw, rh)) return false;
+    return x >= rx && x <= rx + rw &&
+           y >= ry && y <= ry + rh;
 }
 
 } // namespace yamgg

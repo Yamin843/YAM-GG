@@ -89,6 +89,27 @@ static void* init_thread(void*) {
         // They run automatically via setTimeout after cpp_ready.
     }
 
+    // ─── Drive the JS poller from C++ (no setTimeout in QuickJS) ───
+    // This thread pushes a yamgg_tick every 50ms. JavaScript receives it
+    // via the recv() handler and calls onTick() → pollerOnce().
+    {
+        std::thread ticker([]() {
+            using namespace std::chrono;
+            const auto interval = milliseconds(50);
+            auto next = steady_clock::now();
+            while (g_pump_running.load(std::memory_order_acquire)) {
+                extern void yamgg_postCommand(const char*);
+                yamgg_postCommand("{\"type\":\"yamgg_cmd\","
+                                  "\"payload\":{\"action\":\"yamgg_tick\","
+                                  "\"id\":0}}");
+                next += interval;
+                std::this_thread::sleep_until(next);
+            }
+        });
+        ticker.detach();
+        LOGI("init_thread: tick driver started (50ms)");
+    }
+
     LOGI("init_thread: complete — entering GMainContext pump loop");
     {
         LOGI("init_thread: pump loop starting");

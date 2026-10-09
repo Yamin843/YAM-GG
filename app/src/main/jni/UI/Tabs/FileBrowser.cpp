@@ -27,6 +27,7 @@ void FileBrowser::open(const std::string& initial) {
 
 void FileBrowser::close() {
     open_ = false;
+    rectValid_ = false;
 }
 
 void FileBrowser::navigateTo(const std::string& path) {
@@ -100,7 +101,17 @@ void FileBrowser::draw() {
                                 ImGuiWindowFlags_NoCollapse);
     if (!opened) {
         ImGui::End();
+        rectValid_ = false;
         return;
+    }
+
+    // capture rect for hitTest()
+    {
+        ImVec2 wp = ImGui::GetWindowPos();
+        ImVec2 ws = ImGui::GetWindowSize();
+        rectX_ = wp.x; rectY_ = wp.y;
+        rectW_ = ws.x; rectH_ = ws.y;
+        rectValid_ = true;
     }
 
     // ─── Search filter ───
@@ -287,6 +298,20 @@ void FileBrowser::draw() {
     }
 
     ImGui::End();
+}
+
+bool FileBrowser::getRect(float& rx, float& ry, float& rw, float& rh) const {
+    if (!open_ || !rectValid_) return false;
+    if (rectW_ <= 0.0f || rectH_ <= 0.0f) return false;
+    rx = rectX_; ry = rectY_; rw = rectW_; rh = rectH_;
+    return true;
+}
+
+bool FileBrowser::hitTest(float x, float y) const {
+    float rx, ry, rw, rh;
+    if (!getRect(rx, ry, rw, rh)) return false;
+    return x >= rx && x <= rx + rw &&
+           y >= ry && y <= ry + rh;
 }
 
 } // namespace yamgg
