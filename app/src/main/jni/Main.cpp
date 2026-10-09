@@ -90,24 +90,39 @@ static void* init_thread(void*) {
     }
 
     // ─── Drive the JS poller from C++ (no setTimeout in QuickJS) ───
-    // This thread pushes a yamgg_tick every 50ms. JavaScript receives it
-    // via the recv() handler and calls onTick() → pollerOnce().
+    // This thread pushes a yamgg_tick every 50ms, BUT only when the
+    // command queue is empty. This prevents unbounded growth if JS
+    // poller is dead — ticks naturally throttle to JS consumption rate.
     {
         std::thread ticker([]() {
             using namespace std::chrono;
             const auto interval = milliseconds(50);
             auto next = steady_clock::now();
+
+            // Local linkage declaration — matches the extern "C" definition
+            // later in this file. `extern "C"` is REQUIRED: without it, the
+            // compiler picks up C++ linkage and the definition fails.
+            extern "C" void yamgg_postCommand(const char*);
+
             while (g_pump_running.load(std::memory_order_acquire)) {
-                extern void yamgg_postCommand(const char*);
-                yamgg_postCommand("{\"type\":\"yamgg_cmd\","
-                                  "\"payload\":{\"action\":\"yamgg_tick\","
-                                  "\"id\":0}}");
+                {
+                    std::lock_guard<std::mutex> lk(g_cmdMutex);
+                    // Only enqueue a tick if the queue is empty. If JS is
+                    // backlogged, we skip — the JS will still process the
+                    // real commands already pending.
+                    if (g_cmdQueue.empty()) {
+                        g_cmdQueue.push(
+                            "{\"type\":\"yamgg_cmd\","
+                            "\"payload\":{\"action\":\"yamgg_tick\","
+                            "\"id\":0}}");
+                    }
+                }
                 next += interval;
                 std::this_thread::sleep_until(next);
             }
         });
         ticker.detach();
-        LOGI("init_thread: tick driver started (50ms)");
+        LOGI("init_thread: tick driver started (50ms, throttled)");
     }
 
     LOGI("init_thread: complete — entering GMainContext pump loop");

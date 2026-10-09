@@ -26,6 +26,8 @@ public:
     // Returns the window rect if open & valid.
     bool getRect(float& rx, float& ry, float& rw, float& rh) const;
 
+    void invalidateRect() { rectValid_ = false; }
+
 private:
     FileBrowser() = default;
     ~FileBrowser() = default;

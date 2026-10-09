@@ -93,6 +93,12 @@ void FileBrowser::refresh() {
 void FileBrowser::draw() {
     if (!open_) return;
 
+    // ESC closes the dialog
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+        close();
+        return;
+    }
+
     ImGui::SetNextWindowSize(ImVec2(700, 520), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
                             ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));

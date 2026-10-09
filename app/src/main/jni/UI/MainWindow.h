@@ -28,6 +28,11 @@ public:
     bool hitTest(float x, float y) const;
     bool getRect(float& x, float& y, float& w, float& h) const;
 
+    // Mark the cached rect as stale. Called at the start of each frame
+    // before any window draws itself, so hitTest() returns false for
+    // windows that are no longer rendered.
+    void invalidateRect();
+
 private:
     MainWindow();
     ~MainWindow();

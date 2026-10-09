@@ -1,6 +1,7 @@
 #include "Renderer.h"
 #include "Theme.h"
 #include "MainWindow.h"
+#include "Tabs/FileBrowser.h"
 
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -130,6 +131,12 @@ void Renderer::onDrawFrame(int width, int height) {
             scrollVelY_ = 0.0f;
         }
     }
+
+    // Reset all cached window rects. Any window that draws this frame
+    // will re-register its rect. Windows that stay hidden remain invalid,
+    // so hitTest() will correctly return false for them.
+    MainWindow::instance().invalidateRect();
+    FileBrowser::instance().invalidateRect();
 
     ImGui::NewFrame();
 

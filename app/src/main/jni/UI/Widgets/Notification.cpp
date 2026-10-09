@@ -50,10 +50,16 @@ void Notification::draw() {
         ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
         char name[64];
         snprintf(name, sizeof(name), "##notif_%d", it->id);
-        ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
-                | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar
-                | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings
-                | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
+                | ImGuiWindowFlags_NoResize
+                | ImGuiWindowFlags_NoMove
+                | ImGuiWindowFlags_NoScrollbar
+                | ImGuiWindowFlags_AlwaysAutoResize
+                | ImGuiWindowFlags_NoSavedSettings
+                | ImGuiWindowFlags_NoFocusOnAppearing
+                | ImGuiWindowFlags_NoBringToFrontOnFocus
+                | ImGuiWindowFlags_NoInputs
+                | ImGuiWindowFlags_NoNav;
         if (ImGui::Begin(name, nullptr, flags)) {
             ImGui::TextWrapped("%s", it->msg.c_str());
         }

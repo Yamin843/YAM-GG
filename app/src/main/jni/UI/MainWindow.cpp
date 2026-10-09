@@ -500,6 +500,10 @@ void MainWindow::notify(const std::string& msg, float duration) {
     Notification::instance().push(msg, duration);
 }
 
+void MainWindow::invalidateRect() {
+    if (impl_) impl_->currentWindowValid = false;
+}
+
 bool MainWindow::getRect(float& x, float& y, float& w, float& h) const {
     if (!impl_->currentWindowValid) return false;
     ImVec2 p = impl_->currentWindowPos;
