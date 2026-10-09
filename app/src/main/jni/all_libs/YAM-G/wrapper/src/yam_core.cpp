@@ -743,23 +743,34 @@ void Script::post(const String& msg, const ByteVector& /* data */) {
 }
 
 void Script::dispatch_message(const String& raw, const ByteVector& bytes) {
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "dispatch_message: raw=%s", raw.substr(0, 200).c_str());
+
     MessageCallback cb;
     {
         std::lock_guard<std::mutex> lk(cb_mu_);
         cb = cb_;
     }
-    if (!cb) return;
+    if (!cb) {
+        __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+            "dispatch_message: cb_ is null");
+        return;
+    }
+
     Message m;
     if (!MessageParser::parse(raw, m)) {
         m.type = "raw";
         m.payload = raw;
     } else if (m.payload.empty()) {
-        // The JS side sent a bare event {type:"x", ...} without a payload
-        // wrapper. Keep the full raw JSON so on_message can parse it.
         m.payload = raw;
     }
     m.data = bytes;
     m.timestamp = time_util::now_ms();
+
+    __android_log_print(ANDROID_LOG_ERROR, "YAMGG-DBG",
+        "dispatch_message: type=%s payload=%s",
+        m.type.c_str(), m.payload.substr(0, 200).c_str());
+
     try { cb(m); }
     catch (const std::exception& e) { YAM_LOG_ERROR() << "msg cb: " << e.what(); }
     catch (...) { YAM_LOG_ERROR() << "msg cb: unknown"; }
