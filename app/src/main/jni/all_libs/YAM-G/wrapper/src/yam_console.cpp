@@ -3,6 +3,7 @@
 // ===========================================================================
 
 #include "yam.hpp"
+#include <algorithm>
 #include "yam_internal.hpp"
 #include "yam_c_api.hpp"
 #include "yam_stalker.hpp"

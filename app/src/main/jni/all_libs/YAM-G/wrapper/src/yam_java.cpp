@@ -1053,48 +1053,17 @@ Result<Handle> JavaFacade::use(const String& cls) {
     return Result<Handle>::ok(Handle(id));
 }
 Result<std::vector<String>> JavaFacade::enumerate_classes() {
-    // The bridge sends classes_list as an event. We register a temporary
-    // listener and wait for it.
-    std::mutex mu;
-    std::condition_variable cv;
-    std::vector<String> result;
-    bool got = false;
-    events::on("classes_list", [&](const Event& ev) {
-        std::lock_guard<std::mutex> lk(mu);
-        if (auto* v = ev.get("classes")) {
-            if (v->is_arr())
-                for (auto& e : v->arr_val) result.push_back(e.as_str());
-        }
-        got = true;
-        cv.notify_all();
-    });
+    // This function is called from the UI thread. It must not block on
+    // a CV — the JS reply arrives asynchronously. Instead, we just kick
+    // off the enumeration. Results flow through events::on("classes_list"),
+    // which ClassBrowser subscribes to.
     JavaScriptBridge::instance().enumerate_classes();
-    {
-        std::unique_lock<std::mutex> lk(mu);
-        cv.wait_for(lk, std::chrono::milliseconds(3000), [&]{ return got; });
-    }
-    return Result<std::vector<String>>::ok(std::move(result));
+    return Result<std::vector<String>>::ok({});
 }
 Result<std::vector<String>> JavaFacade::enumerate_loaders() {
-    std::mutex mu;
-    std::condition_variable cv;
-    std::vector<String> result;
-    bool got = false;
-    events::on("loaders_list", [&](const Event& ev) {
-        std::lock_guard<std::mutex> lk(mu);
-        if (auto* v = ev.get("loaders")) {
-            if (v->is_arr())
-                for (auto& e : v->arr_val) result.push_back(e.as_str());
-        }
-        got = true;
-        cv.notify_all();
-    });
+    // Async: results arrive via events::on("loaders_list").
     JavaScriptBridge::instance().enumerate_loaders();
-    {
-        std::unique_lock<std::mutex> lk(mu);
-        cv.wait_for(lk, std::chrono::milliseconds(3000), [&]{ return got; });
-    }
-    return Result<std::vector<String>>::ok(std::move(result));
+    return Result<std::vector<String>>::ok({});
 }
 Result<u64> JavaFacade::method(u64 cls, const String& n, const String& s) {
     auto r = JavaScriptBridge::instance().get_method(cls, n, s);
@@ -1198,10 +1167,10 @@ Result<usize> JavaFacade::choose(const String& cls, std::function<int(Handle)> o
     });
     auto r = JavaScriptBridge::instance().choose(cls);
     if (!r) return Result<usize>::err(r.error_code(), r.error_message());
-    {
-        std::unique_lock<std::mutex> lk(mu);
-        cv.wait_for(lk, std::chrono::milliseconds(3000), [&]{ return got; });
-    }
+    // Async: choose() results are delivered as "choose_result" events.
+    // Return 0 immediately; callers that need the count should subscribe
+    // to the event.
+    (void)got;
     usize count = 0;
     for (u64 h : handles) {
         HandleId hid = registry().register_entry(RegistryKind::JavaObject, cls,

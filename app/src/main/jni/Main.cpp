@@ -106,10 +106,15 @@ static void* init_thread(void*) {
             while (g_pump_running.load(std::memory_order_acquire)) {
                 {
                     std::lock_guard<std::mutex> lk(g_cmdMutex);
-                    // Only enqueue a tick if the queue is empty. If JS is
-                    // backlogged, we skip — the JS will still process the
-                    // real commands already pending.
-                    if (g_cmdQueue.empty()) {
+                    // Enqueue a tick whenever the queue has room. This
+                    // guarantees JS is woken up regularly when it is alive.
+                    //
+                    // If JS is unresponsive (dead or paused), the queue will
+                    // grow to the cap and ticks stop — bounded memory.
+                    // 100 pending commands is more than enough headroom for
+                    // any legitimate burst.
+                    constexpr size_t kTickCap = 100;
+                    if (g_cmdQueue.size() < kTickCap) {
                         g_cmdQueue.push(
                             "{\"type\":\"yamgg_cmd\","
                             "\"payload\":{\"action\":\"yamgg_tick\","
