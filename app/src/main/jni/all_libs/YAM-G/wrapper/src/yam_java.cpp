@@ -46,6 +46,25 @@ const char* const kBootstrapSrc = R"YAMJS(
 (function () {
     "use strict";
 
+    // ── الخطوة 1: إرسال cpp_ready فوراً ──────────────────────
+    // هذا يُثبت أن قناة send() تعمل قبل أي شيء آخر.
+    try { send({ type: "cpp_ready" }); } catch (e) {}
+
+    // ── الخطوة 2: إرسال تشخيصي ─────────────────────────────
+    try {
+        send({ type: "bootstrap_debug",
+               hasAgent: typeof globalThis.Agent !== "undefined",
+               hasSend: typeof send === "function",
+               hasJava: typeof Java !== "undefined" });
+    } catch (e) {}
+
+    // ── الخطوة 3: التحقق من Agent ─────────────────────────
+    if (!globalThis.Agent || typeof globalThis.Agent.registerCommand !== "function") {
+        try { send({ type: "cpp_error",
+                     message: "Agent.registerCommand unavailable" }); } catch (e) {}
+        return;
+    }
+
     // The embedded java-bridge has already installed:
     //   - globalThis.Java (frida-java-bridge)
     //   - globalThis.Agent (extensions API)
