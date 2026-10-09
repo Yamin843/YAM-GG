@@ -16,6 +16,7 @@ public:
     void onTouch(int action, float x, float y, int pointerId);
 
     bool isReady() const { return ready_.load(); }
+    bool wantCaptureMouse() const { return wantCaptureMouse_.load(); }
     int width() const { return width_; }
     int height() const { return height_; }
 
@@ -34,6 +35,7 @@ private:
     int height_{0};
     double lastFrameTime_{0.0};
     bool backendInit_{false};
+    std::atomic<bool> wantCaptureMouse_{false};
 };
 
 #define YAMGG_RENDERER yamgg::Renderer::instance()

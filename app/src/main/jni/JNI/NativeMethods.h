@@ -12,6 +12,7 @@ void onSurfaceChanged(JNIEnv* env, jclass clazz, jint width, jint height);
 void onDrawFrame(JNIEnv* env, jclass clazz, jint width, jint height);
 void onTouch(JNIEnv* env, jclass clazz, jint action, jfloat x, jfloat y, jint pointerId);
 void onKey(JNIEnv* env, jclass clazz, jint keyCode, jint action);
+jboolean wantCaptureMouse(JNIEnv* env, jclass clazz);
 
 } // namespace jni
 } // namespace yamgg

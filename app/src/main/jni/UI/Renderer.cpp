@@ -88,6 +88,14 @@ void Renderer::onDrawFrame(int width, int height) {
 
     MainWindow::instance().draw();
 
+    // Capture whether ImGui is currently consuming mouse events
+    // (cursor over a window). This drives ModView.dispatchTouchEvent.
+    {
+        ImGuiIO& io2 = ImGui::GetIO();
+        bool capture = io2.WantCaptureMouse || io2.WantCaptureMouseUnlessPopupClose;
+        wantCaptureMouse_.store(capture, std::memory_order_relaxed);
+    }
+
     ImGui::Render();
 
     glViewport(0, 0, width, height);

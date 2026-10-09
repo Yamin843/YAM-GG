@@ -39,6 +39,7 @@ static const JNINativeMethod g_methods[] = {
     {"nativeOnSurfaceChanged", "(II)V", (void*)impl_nativeOnSurfaceChanged},
     {"nativeOnDrawFrame", "(II)V", (void*)impl_nativeOnDrawFrame},
     {"nativeOnTouch", "(IFFI)V", (void*)impl_nativeOnTouch},
+    {"nativeWantCaptureMouse", "()Z", (void*)impl_nativeWantCaptureMouse},
 };
 
 bool registerNativeMethods(JNIEnv* env, jclass modViewClass) {
@@ -58,6 +59,7 @@ void onSurfaceChanged(JNIEnv* env, jclass clazz, jint w, jint h) { impl_nativeOn
 void onDrawFrame(JNIEnv* env, jclass clazz, jint w, jint h) { impl_nativeOnDrawFrame(env, clazz, w, h); }
 void onTouch(JNIEnv* env, jclass clazz, jint a, jfloat x, jfloat y, jint p) { impl_nativeOnTouch(env, clazz, a, x, y, p); }
 void onKey(JNIEnv* env, jclass clazz, jint k, jint a) { (void)env; (void)clazz; (void)k; (void)a; }
+jboolean wantCaptureMouse(JNIEnv* env, jclass clazz) { return impl_nativeWantCaptureMouse(env, clazz); }
 
 } // namespace jni
 } // namespace yamgg

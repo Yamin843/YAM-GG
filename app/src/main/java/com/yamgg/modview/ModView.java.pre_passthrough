@@ -21,7 +21,6 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
     private static native void nativeOnSurfaceChanged(int width, int height);
     private static native void nativeOnDrawFrame(int width, int height);
     private static native void nativeOnTouch(int action, float x, float y, int pointerId);
-    private static native boolean nativeWantCaptureMouse();
     private static native void nativeOnKey(int keyCode, int action);
 
     private static volatile ModView sInstance = null;
@@ -79,9 +78,7 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
     }
 
     @Override
-    public boolean dispatchTouchEvent(MotionEvent event) {
-        // Always feed ImGui with the event, so it can update its internal
-        // mouse position and WantCaptureMouse state.
+    public boolean onTouchEvent(MotionEvent event) {
         try {
             int action = event.getActionMasked();
             int pointerIndex = event.getActionIndex();
@@ -89,24 +86,11 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
             float x = event.getX(pointerIndex);
             float y = event.getY(pointerIndex);
             nativeOnTouch(action, x, y, pointerId);
-        } catch (Throwable t) {
-            Log.e(TAG, "dispatchTouchEvent failed", t);
-        }
-
-        // If ImGui wants the mouse (cursor over a window), we capture.
-        // Otherwise, return false to let the event pass through to the
-        // underlying views (e.g. Unity's GLSurfaceView).
-        try {
-            return nativeWantCaptureMouse();
-        } catch (Throwable t) {
             return true;
+        } catch (Throwable t) {
+            Log.e(TAG, "onTouchEvent failed", t);
+            return false;
         }
-    }
-
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        // Fallback — should not be called because we override dispatch.
-        return true;
     }
 
     @Override
