@@ -8,17 +8,14 @@ static const char kBootstrapSrc[] = R"YAMJS(
 (function () {
     "use strict";
 
-    // ═══════ HANDLE REGISTRY ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 1 — HANDLE REGISTRY (FinalizationRegistry = no leaks)
+    // ═══════════════════════════════════════════════════════════════
     var table = Object.create(null);
     var nextHandle = 1;
-
-    // لا حدود ثابتة. الحذف تلقائي عندما يجمع JS الـ handle object.
-    // FinalizationRegistry متاح في QuickJS 2020+ و V8 8+.
     var registry = (typeof FinalizationRegistry === "function")
         ? new FinalizationRegistry(function (id) {
-            if (Object.prototype.hasOwnProperty.call(table, id)) {
-                delete table[id];
-            }
+            if (Object.prototype.hasOwnProperty.call(table, id)) delete table[id];
         })
         : null;
 
@@ -30,7 +27,9 @@ static const char kBootstrapSrc[] = R"YAMJS(
         }
         return id;
     }
-
+    function get(id) {
+        return Object.prototype.hasOwnProperty.call(table, id) ? table[id] : null;
+    }
     function drop(id) {
         if (Object.prototype.hasOwnProperty.call(table, id)) {
             var o = table[id];
@@ -40,14 +39,17 @@ static const char kBootstrapSrc[] = R"YAMJS(
             delete table[id];
         }
     }
-    function get(id) { return Object.prototype.hasOwnProperty.call(table, id) ? table[id] : null; }
-    function drop(id) { if (Object.prototype.hasOwnProperty.call(table, id)) delete table[id]; }
-    function dropAll() { table = Object.create(null); nextHandle = 1; }
+    function dropAll() {
+        table = Object.create(null);
+        nextHandle = 1;
+    }
 
     var LB = "\u005B";
     var RB = "\u005D";
 
-    // ═══════ REPLY ENVELOPE ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 2 — REPLY ENVELOPE
+    // ═══════════════════════════════════════════════════════════════
     function reply(id, ok, kind, value, handle, error) {
         var m = { id: id, ok: !!ok };
         if (kind)   m.kind = kind;
@@ -56,12 +58,17 @@ static const char kBootstrapSrc[] = R"YAMJS(
         if (error)  m.error = String(error);
         try { send({ type: "reply", payload: JSON.stringify(m) }); } catch (e) {}
     }
-    function replyHandle(id, h) { reply(id, true, "handle", null, h); }
-    function replyValue(id, v)  { reply(id, true, "value", v, null); }
-    function replyVoid(id)      { reply(id, true, "void", null, null); }
-    function replyError(id, e)  { reply(id, false, "error", null, null, (e && e.message) ? e.message : String(e)); }
+    function replyHandle(id, h) { reply(id, true,  "handle", null, h); }
+    function replyValue(id, v)  { reply(id, true,  "value",  v,    null); }
+    function replyVoid(id)      { reply(id, true,  "void",   null, null); }
+    function replyError(id, e)  {
+        reply(id, false, "error", null, null,
+              (e && e.message) ? e.message : String(e));
+    }
 
-    // ═══════ JNI SIG PARSER ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 3 — JNI SIGNATURE PARSER
+    // ═══════════════════════════════════════════════════════════════
     function prim(c) {
         switch (c) {
         case "Z": return "boolean"; case "B": return "byte";
@@ -104,28 +111,22 @@ static const char kBootstrapSrc[] = R"YAMJS(
         return out;
     }
 
-    // ═══════ MATERIALIZER (complex Java types) ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 4 — MATERIALIZER (JSON → Java object)
+    // ═══════════════════════════════════════════════════════════════
     function mat(v) {
         if (v === null || v === undefined) return v;
         if (typeof v !== "object") return v;
-
-        // Handle reference
         if (typeof v.handle === "number") return get(v.handle);
-
         if (!("kind" in v)) {
             if ("value" in v) return v.value;
             return v;
         }
-
         switch (v.kind) {
         case "int": case "short": case "byte": return v.value | 0;
-
         case "long":
             if (typeof Int64 === "function") return Int64(String(v.value));
-            try { send({type:"log", level:"warn",
-                        message:"Int64 unavailable; long may lose precision"}); } catch (e) {}
             return Number(v.value);
-
         case "float": case "double": return Number(v.value);
         case "boolean": return !!v.value;
         case "string":  return String(v.value);
@@ -133,87 +134,46 @@ static const char kBootstrapSrc[] = R"YAMJS(
             var sv = String(v.value);
             return sv.length > 0 ? sv.charAt(0) : String.fromCharCode(0);
         }
-
         case "null":      return null;
         case "undefined": return undefined;
-
-        case "enum": {
-            var ec = Java.use(v.className);
-            return ec.valueOf(v.enumName);
-        }
-
+        case "enum":      return Java.use(v.className).valueOf(v.enumName);
         case "array": {
             var elType = v.elementType || "java.lang.Object";
             var elems = (v.elements || []).map(mat);
             return Java.array(elType, elems);
         }
-
-        // Array where every element is a Java handle (already-instantiated)
         case "handle_array": {
             var hElType = v.elementType || "java.lang.Object";
             var hElems = (v.handles || []).map(function (h) { return get(h); });
             return Java.array(hElType, hElems);
         }
-
-        // Nested array (arbitrary dimensions): [[int, int], [int, int]]
-        case "nested_array": {
-            var nElType = v.elementType || "java.lang.Object";
-            var dims = v.dimensions || 1;
-            // Build Java type name: [[Ljava.lang.Object; for dims=2
-            var javaType = nElType;
-            for (var d = 0; d < dims; d++) javaType = "[" + javaType;
-            var nElems = (v.elements || []).map(function (e) {
-                // If sub-element is already a nested_array spec, recurse.
-                if (e && typeof e === "object" && e.kind === "nested_array") {
-                    return mat(e);
-                }
-                return mat(e);
-            });
-            return Java.array(javaType, nElems);
-        }
-
         case "list": {
             var listType = v.className || "java.util.ArrayList";
-            var ArrayList = Java.use(listType);
-            var lst = ArrayList.$new();
-            var items = v.items || [];
-            for (var li = 0; li < items.length; li++) {
-                lst.add(mat(items[li]));
-            }
+            var L = Java.use(listType);
+            var lst = L.$new();
+            var litems = v.items || [];
+            for (var li = 0; li < litems.length; li++) lst.add(mat(litems[li]));
             return lst;
         }
-
         case "set": {
             var setType = v.className || "java.util.HashSet";
-            var HashSet = Java.use(setType);
-            var st = HashSet.$new();
+            var S = Java.use(setType);
+            var st = S.$new();
             var sitems = v.items || [];
-            for (var si = 0; si < sitems.length; si++) {
-                st.add(mat(sitems[si]));
-            }
+            for (var si = 0; si < sitems.length; si++) st.add(mat(sitems[si]));
             return st;
         }
-
         case "map": {
             var mapType = v.className || "java.util.HashMap";
-            var HashMap = Java.use(mapType);
-            var mp = HashMap.$new();
+            var M = Java.use(mapType);
+            var mp = M.$new();
             var entries = v.entries || [];
             for (var ei = 0; ei < entries.length; ei++) {
                 var e = entries[ei];
-                var mk = ("k" in e) ? mat(e.k) : null;
-                var mv = ("v" in e) ? mat(e.v) : null;
-                if (e.k != null && typeof e.k === "object" && e.k.kind === "string") {
-                    mk = Java.use("java.lang.String").$new(e.k.value);
-                }
-                if (e.v != null && typeof e.v === "object" && e.v.kind === "string") {
-                    mv = Java.use("java.lang.String").$new(e.v.value);
-                }
-                mp.put(mk, mv);
+                mp.put(mat(e.k), mat(e.v));
             }
             return mp;
         }
-
         case "construct": {
             var cc = Java.use(v.className);
             var args = (v.args || []).map(mat);
@@ -221,7 +181,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
             if (v.ctorSig) {
                 inst = cc.$alloc();
                 cc.$init.overload.apply(cc.$init, parseSig(v.ctorSig))
-                           .call(inst, ...args);
+                    .call(inst, ...args);
             } else {
                 inst = cc.$new.apply(cc, args);
             }
@@ -232,26 +192,23 @@ static const char kBootstrapSrc[] = R"YAMJS(
             }
             return inst;
         }
-
         case "expr": {
             try {
                 var fn = new Function("Java", "return (" + v.expr + ");");
                 return fn(Java);
             } catch (e) { return null; }
         }
-
         default: return v.value;
         }
     }
 
-    // ═══════ DESCRIBE (unbounded, cycle-safe) ═══════
-    // لا حدود على عدد العناصر أو عمق الكائنات. نستخدم WeakSet لتتبع
-    // الدورات (cycles) لتفادي infinite recursion فقط.
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 5 — DESCRIBE (unbounded, cycle-safe)
+    // ═══════════════════════════════════════════════════════════════
     function describe(v) {
         var seen = new WeakSet();
         return describeRec(v, seen, 0);
     }
-
     function describeRec(v, seen, depth) {
         if (v === null) return "null";
         if (v === undefined) return "undefined";
@@ -260,33 +217,21 @@ static const char kBootstrapSrc[] = R"YAMJS(
         if (t === "string") return JSON.stringify(v);
         if (t === "function") return "<fn " + (v.name || "anon") + ">";
         if (t !== "object") return String(v);
-
-        // cycle check
         if (typeof seen.add === "function") {
             if (seen.has(v)) return "<circular>";
             try { seen.add(v); } catch (e) {}
         }
-
         try {
             var cn = v.$className ? String(v.$className) : "";
-            if (!cn) {
-                // plain JS object — لا نتعمق
-                return JSON.stringify(v);
-            }
-
+            if (!cn) return JSON.stringify(v);
             if (cn === "java.lang.String") return JSON.stringify(String(v));
-
-            // الأغلفة البدائية
             if (cn === "java.lang.Integer" || cn === "java.lang.Long" ||
                 cn === "java.lang.Short" || cn === "java.lang.Byte" ||
                 cn === "java.lang.Float" || cn === "java.lang.Double" ||
                 cn === "java.lang.Boolean" || cn === "java.lang.Character")
                 return String(v);
-
-            // المصفوفات — بلا حدود
             if (cn.charAt(0) === LB) {
-                var out = [];
-                var n = 0;
+                var out = [], n = 0;
                 try { n = Number(v.length) || 0; } catch (e) { n = 0; }
                 for (var i = 0; i < n; i++) {
                     var el;
@@ -295,86 +240,106 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 }
                 return "(" + cn + ")" + LB + out.join(",") + RB;
             }
-
-            // Map
             if (cn.indexOf("Map") >= 0) {
                 var mp = [];
                 try {
                     var it = v.entrySet().iterator();
                     while (it.hasNext()) {
                         var e = it.next();
-                        var k = e.getKey();
-                        var val = e.getValue();
-                        mp.push(describeRec(k, seen, depth + 1) + ":" +
-                                describeRec(val, seen, depth + 1));
+                        mp.push(describeRec(e.getKey(), seen, depth + 1) + ":" +
+                                describeRec(e.getValue(), seen, depth + 1));
                     }
                 } catch (e) { return "<" + cn + ">"; }
                 return "(" + cn + "){" + mp.join(",") + "}";
             }
-
-            // List / Set / Collection
-            if (cn.indexOf("List") >= 0 ||
-                cn.indexOf("Set") >= 0 ||
-                cn.indexOf("Collection") >= 0 ||
-                cn.indexOf("Queue") >= 0 ||
-                cn.indexOf("Deque") >= 0) {
+            if (cn.indexOf("List") >= 0 || cn.indexOf("Set") >= 0 ||
+                cn.indexOf("Collection") >= 0) {
                 var li = [];
                 try {
                     var it2 = v.iterator();
-                    while (it2.hasNext()) {
+                    while (it2.hasNext())
                         li.push(describeRec(it2.next(), seen, depth + 1));
-                    }
                 } catch (e) { return "<" + cn + ">"; }
                 return "(" + cn + ")" + LB + li.join(",") + RB;
             }
-
             return "<" + cn + " " + String(v) + ">";
-        } catch (e) {
-            return "<err:" + e + ">";
-        }
+        } catch (e) { return "<err:" + e + ">"; }
     }
 
-    // ═══════ cpp_* HANDLERS ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 6 — CHUNKED SENDER (any payload > 256 KB)
+    // ═══════════════════════════════════════════════════════════════
+    var _nextChunkSession = 1;
+    var CHUNK_THRESHOLD = 256 * 1024;
+    var CHUNK_SIZE      = 256 * 1024;
+
+    function sendMaybeChunked(obj) {
+        var json;
+        try { json = JSON.stringify(obj); } catch (e) { json = ""; }
+        if (json.length <= CHUNK_THRESHOLD) {
+            try { send(obj); } catch (e) {}
+            return;
+        }
+        var kind = obj && obj.type ? String(obj.type) : "chunked";
+        var sid = _nextChunkSession++;
+        var total = Math.max(1, Math.ceil(json.length / CHUNK_SIZE));
+        try {
+            send({type:"chunk_begin", sessionId:sid, kind:kind,
+                  totalChunks:total, totalBytes:json.length});
+        } catch (e) {}
+        for (var i = 0; i < total; i++) {
+            try {
+                send({type:"chunk_data", sessionId:sid, index:i,
+                      totalChunks:total,
+                      data:json.substring(i*CHUNK_SIZE, (i+1)*CHUNK_SIZE)});
+            } catch (e) {}
+        }
+        try { send({type:"chunk_end", sessionId:sid, kind:kind}); } catch (e) {}
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 7 — cpp_* HANDLERS
+    // ═══════════════════════════════════════════════════════════════
     var handlers = {
-        yamgg_tick: function (cmd) {
-            // Called from C++ every 50ms. Must be first for low latency.
-            try { onTick(); } catch (e) {}
+        cpp_use_class: function (cmd) {
+            replyHandle(cmd.id, alloc(Java.use(cmd.className)));
         },
-        yamgg_attach_now: function (cmd) {
-            try { tryAttachOnce(); } catch (e) {}
-            replyVoid(cmd.id);
-        },
-        cpp_use_class: function (cmd) { replyHandle(cmd.id, alloc(Java.use(cmd.className))); },
         cpp_get_method: function (cmd) {
-            var c = get(cmd.classHandle); if (!c) throw new Error("no class handle");
-            var m = c[cmd.methodName]; if (!m) throw new Error("no method: " + cmd.methodName);
-            var method = cmd.signature ? m.overload.apply(m, parseSig(cmd.signature))
-                                       : ((m.overloads && m.overloads.length > 0) ? m.overloads[0] : m);
+            var c = get(cmd.classHandle);
+            if (!c) throw new Error("no class handle");
+            var m = c[cmd.methodName];
+            if (!m) throw new Error("no method: " + cmd.methodName);
+            var method = cmd.signature
+                ? m.overload.apply(m, parseSig(cmd.signature))
+                : ((m.overloads && m.overloads.length > 0)
+                    ? m.overloads[0] : m);
             replyHandle(cmd.id, alloc(method));
         },
         cpp_cast: function (cmd) {
-            var cls = get(cmd.classHandle); var obj = get(cmd.objectHandle);
+            var cls = get(cmd.classHandle);
+            var obj = get(cmd.objectHandle);
             if (!cls || !obj) throw new Error("cast: missing handle");
             replyHandle(cmd.id, alloc(Java.cast(obj, cls)));
         },
-        cpp_create_string: function (cmd) { replyHandle(cmd.id, alloc(Java.use("java.lang.String").$new(cmd.value))); },
+        cpp_create_string: function (cmd) {
+            replyHandle(cmd.id,
+                alloc(Java.use("java.lang.String").$new(cmd.value)));
+        },
         cpp_new_instance: function (cmd) {
-            var cls = get(cmd.classHandle); if (!cls) throw new Error("no class handle");
+            var cls = get(cmd.classHandle);
+            if (!cls) throw new Error("no class handle");
             var args = (cmd.args || []).map(mat);
             var inst;
             if (cmd.ctorSig && cmd.ctorSig.length > 0) {
                 inst = cls.$alloc();
-                var ctor = cls.$init.overload.apply(cls.$init,
-                                                     parseSig(cmd.ctorSig));
-                ctor.call(inst, ...args);
+                cls.$init.overload.apply(cls.$init, parseSig(cmd.ctorSig))
+                    .call(inst, ...args);
             } else {
                 inst = cls.$new.apply(cls, args);
             }
             if (cmd.fields) {
                 for (var i = 0; i < cmd.fields.length; i++) {
-                    var fname = cmd.fields[i].name;
-                    var fval = mat(cmd.fields[i].value);
-                    inst[fname] = fval;
+                    inst[cmd.fields[i].name] = mat(cmd.fields[i].value);
                 }
             }
             replyHandle(cmd.id, alloc(inst));
@@ -384,16 +349,23 @@ static const char kBootstrapSrc[] = R"YAMJS(
             var elems = (cmd.elements || []).map(mat);
             replyHandle(cmd.id, alloc(Java.array(elType, elems)));
         },
-        cpp_array_length: function (cmd) { var arr = get(cmd.handle); replyValue(cmd.id, arr ? Number(arr.length) : 0); },
+        cpp_array_length: function (cmd) {
+            var arr = get(cmd.handle);
+            replyValue(cmd.id, arr ? Number(arr.length) : 0);
+        },
         cpp_array_get: function (cmd) {
-            var arr = get(cmd.handle); var el = arr ? arr[cmd.index] : null;
+            var arr = get(cmd.handle);
+            var el = arr ? arr[cmd.index] : null;
             if (el === null || el === undefined) { replyValue(cmd.id, null); return; }
-            if (typeof el === "object" && el.$className) replyHandle(cmd.id, alloc(el));
+            if (typeof el === "object" && el.$className)
+                replyHandle(cmd.id, alloc(el));
             else replyValue(cmd.id, el);
         },
         cpp_array_set: function (cmd) {
-            var arr = get(cmd.handle); if (!arr) throw new Error("no array");
-            arr[cmd.index] = mat(cmd.value); replyVoid(cmd.id);
+            var arr = get(cmd.handle);
+            if (!arr) throw new Error("no array");
+            arr[cmd.index] = mat(cmd.value);
+            replyVoid(cmd.id);
         },
         cpp_release_handle: function (cmd) { drop(cmd.handle); replyVoid(cmd.id); },
         cpp_list_handles: function (cmd) {
@@ -401,11 +373,22 @@ static const char kBootstrapSrc[] = R"YAMJS(
             for (var k in table) {
                 if (!Object.prototype.hasOwnProperty.call(table, k)) continue;
                 var o = table[k];
-                list.push({ id: Number(k), kind: "java", className: (o && o.$className) || "" });
+                list.push({id:Number(k), kind:"java",
+                           className:(o && o.$className) || ""});
             }
             replyValue(cmd.id, list);
         },
         cpp_clear_handles: function (cmd) { dropAll(); replyVoid(cmd.id); },
+        cpp_inspect_handle: function (cmd) {
+            var obj = get(cmd.handleId);
+            if (!obj) throw new Error("no handle");
+            replyValue(cmd.id, {
+                className: obj.$className || "unknown",
+                stringValue: describe(obj)
+            });
+        },
+
+        // ─── Fields ───
         cpp_get_field: function (cmd) {
             var cls = Java.use(cmd.className);
             var f = cls[cmd.fieldName];
@@ -420,13 +403,9 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     }
                 }
             } catch (e) {}
-            replyValue(cmd.id, JSON.stringify({ static: isStatic, handle: alloc(f) }));
+            replyValue(cmd.id,
+                JSON.stringify({static:isStatic, handle:alloc(f)}));
         },
-        cpp_inspect_handle: function (cmd) {
-            var obj = get(cmd.handleId); if (!obj) throw new Error("no handle");
-            replyValue(cmd.id, { className: obj.$className || "unknown", stringValue: describe(obj) });
-        },
-
         cpp_read_static: function (cmd) {
             var cls = Java.use(cmd.className);
             var f = cls[cmd.fieldName];
@@ -443,8 +422,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
         cpp_read_field: function (cmd) {
             var inst = get(cmd.handleId);
             if (!inst) throw new Error("no instance");
-            var v = inst[cmd.fieldName];
-            replyValue(cmd.id, describe(v));
+            replyValue(cmd.id, describe(inst[cmd.fieldName]));
         },
         cpp_write_field: function (cmd) {
             var inst = get(cmd.handleId);
@@ -452,6 +430,23 @@ static const char kBootstrapSrc[] = R"YAMJS(
             inst[cmd.fieldName] = mat(cmd.value);
             replyVoid(cmd.id);
         },
+        cpp_get_field_instance: function (cmd) {
+            var inst = get(cmd.instanceHandle);
+            if (!inst) throw new Error("no instance");
+            var v = inst[cmd.fieldName];
+            if (v === null || v === undefined) { replyValue(cmd.id, null); return; }
+            if (typeof v === "object" && v.$className)
+                replyHandle(cmd.id, alloc(v));
+            else replyValue(cmd.id, v);
+        },
+        cpp_set_field_instance: function (cmd) {
+            var inst = get(cmd.instanceHandle);
+            if (!inst) throw new Error("no instance");
+            inst[cmd.fieldName] = mat(cmd.value);
+            replyVoid(cmd.id);
+        },
+
+        // ─── Introspection ───
         cpp_list_own: function (cmd) {
             var c = Java.use(cmd.className);
             var props = Object.getOwnPropertyNames(c);
@@ -463,9 +458,8 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 if (k === "class" || k === "valueOf") continue;
                 out.push(k);
             }
-            sendMaybeChunked({type: "list_own_result",
-                              className: cmd.className,
-                              items: out});
+            sendMaybeChunked({type:"list_own_result",
+                              className:cmd.className, items:out});
             replyValue(cmd.id, JSON.stringify(out));
         },
         cpp_list_overloads: function (cmd) {
@@ -477,16 +471,17 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 for (var i = 0; i < m.overloads.length; i++) {
                     var ov = m.overloads[i];
                     var args = ov.argumentTypes
-                        ? ov.argumentTypes.map(function(t){return t.className;}).join(", ")
+                        ? ov.argumentTypes.map(function(t){return t.className;})
+                                          .join(", ")
                         : "";
                     var ret = ov.returnType ? ov.returnType.className : "?";
                     out.push("(" + args + ") -> " + ret);
                 }
             }
-            sendMaybeChunked({type: "list_overloads_result",
-                              className: cmd.className,
-                              methodName: cmd.methodName,
-                              items: out});
+            sendMaybeChunked({type:"list_overloads_result",
+                              className:cmd.className,
+                              methodName:cmd.methodName,
+                              items:out});
             replyValue(cmd.id, JSON.stringify(out));
         },
         cpp_list_static_fields: function (cmd) {
@@ -506,6 +501,8 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 } catch (e) { val = "<err>"; }
                 out.push(name + " : " + type + " = " + val);
             }
+            sendMaybeChunked({type:"list_static_fields_result",
+                              className:cmd.className, items:out});
             replyValue(cmd.id, JSON.stringify(out));
         },
         cpp_probe_class: function (cmd) {
@@ -517,11 +514,12 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 var pts = ms[i].getParameterTypes();
                 var args = [];
                 for (var j = 0; j < pts.length; j++) {
-                    args.push({name: "arg" + j, typeName: String(pts[j].getName())});
+                    args.push({name:"arg"+j,
+                               typeName:String(pts[j].getName())});
                 }
                 methods.push({
                     name: String(ms[i].getName()),
-                    ret: String(ms[i].getReturnType().getName()),
+                    ret:  String(ms[i].getReturnType().getName()),
                     isStatic: (Number(ms[i].getModifiers()) & 8) !== 0,
                     args: args
                 });
@@ -542,94 +540,79 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     var ptypes = cs[q].getParameterTypes();
                     var cargs = [];
                     for (var w = 0; w < ptypes.length; w++) {
-                        cargs.push({name: "arg" + w, typeName: String(ptypes[w].getName())});
+                        cargs.push({name:"arg"+w,
+                                    typeName:String(ptypes[w].getName())});
                     }
-                    ctors.push({params: cargs});
+                    ctors.push({params:cargs});
                 }
             } catch (e3) {}
-            sendMaybeChunked({type: "class_probe", className: cmd.className,
-                               methods: methods, fields: fields,
-                               constructors: ctors});
+            sendMaybeChunked({type:"class_probe", className:cmd.className,
+                              methods:methods, fields:fields,
+                              constructors:ctors});
             replyValue(cmd.id, JSON.stringify({
-                methods: methods.length,
-                fields: fields.length
+                methods: methods.length, fields: fields.length
             }));
         },
+
+        // ─── Method invocation ───
         cpp_call_method: function (cmd) {
             var m = get(cmd.methodHandle);
             if (!m) throw new Error("no method handle");
             var inst = cmd.instanceHandle ? get(cmd.instanceHandle) : null;
             var args = (cmd.args || []).map(mat);
-            var r;
-            if (inst) r = m.apply(inst, args);
-            else      r = m.apply(null, args);
+            var r = inst ? m.apply(inst, args) : m.apply(null, args);
             if (r === null || r === undefined) replyValue(cmd.id, null);
             else if (typeof r === "object" && r.$className)
                 replyHandle(cmd.id, alloc(r));
             else replyValue(cmd.id, r);
         },
+
+        // ─── Method hooks (enter/leave/exception) ───
         cpp_hook_method: function (cmd) {
             var m = get(cmd.methodHandle);
             if (!m) throw new Error("no method handle");
             var cbId = cmd.callbackId;
-
             if (m.__ygg_hook_cb === cbId) { replyVoid(cmd.id); return; }
-            if (m.__ygg_hook_orig === undefined) {
+            if (m.__ygg_hook_orig === undefined)
                 m.__ygg_hook_orig = m.implementation;
-            }
             m.__ygg_hook_cb = cbId;
             var orig = m.__ygg_hook_orig;
-            // captureReturn: يمنع تسريب handle على كل return إذا لم يطلبه C++.
-            // الافتراضي false — الـ callback 2-arg لا يرى return أصلاً.
             var captureReturn = (cmd.captureReturn === true);
+            var captureThis   = (cmd.captureThis   === true);
 
             m.implementation = function () {
                 var a = Array.prototype.slice.call(arguments);
-
-                // ─── ON ENTER ───
                 var ah = [];
                 for (var i = 0; i < a.length; i++) {
-                    try { ah.push(alloc(a[i])); }
-                    catch (e) { ah.push(0); }
+                    try { ah.push(alloc(a[i])); } catch (e) { ah.push(0); }
                 }
-                // thisHandle: يُخصَّص فقط عند الطلب (كثيف في hook)
                 var th = 0;
-                if (cmd.captureThis === true) {
-                    try { th = alloc(this); } catch (e) {}
-                }
+                if (captureThis) { try { th = alloc(this); } catch (e) {} }
                 try {
-                    send({type: "hook_cb", callbackId: cbId, phase: "enter",
-                          argHandles: ah, thisHandle: th});
+                    send({type:"hook_cb", callbackId:cbId, phase:"enter",
+                          argHandles:ah, thisHandle:th});
                 } catch (e) {}
 
-                // ─── CALL ORIGINAL ───
                 var r, threw = false, exMsg = "";
-                try {
-                    r = orig.apply(this, a);
-                } catch (e) {
-                    threw = true;
-                    exMsg = "" + e;
-                    // ─── ON EXCEPTION ───
+                try { r = orig.apply(this, a); }
+                catch (e) {
+                    threw = true; exMsg = "" + e;
                     try {
-                        send({type: "hook_cb", callbackId: cbId,
-                              phase: "exception",
-                              exceptionMessage: exMsg});
+                        send({type:"hook_cb", callbackId:cbId,
+                              phase:"exception",
+                              exceptionMessage:exMsg});
                     } catch (e2) {}
-                    // إعادة الرمي بعد إشعار
                     throw e;
                 }
 
-                // ─── ON LEAVE ───
                 var rh = 0;
                 if (captureReturn && r !== null && r !== undefined) {
                     try { rh = alloc(r); } catch (e) {}
                 }
                 try {
-                    send({type: "hook_cb", callbackId: cbId, phase: "leave",
-                          returnHandle: rh,
-                          isVoid: (r === undefined)});
+                    send({type:"hook_cb", callbackId:cbId, phase:"leave",
+                          returnHandle:rh, isVoid:(r === undefined)});
                 } catch (e) {}
-
                 return r;
             };
             replyVoid(cmd.id);
@@ -644,73 +627,61 @@ static const char kBootstrapSrc[] = R"YAMJS(
             }
             replyVoid(cmd.id);
         },
-        cpp_get_field_instance: function (cmd) {
-            var inst = get(cmd.instanceHandle);
-            if (!inst) throw new Error("no instance");
-            var v = inst[cmd.fieldName];
-            if (v === null || v === undefined) { replyValue(cmd.id, null); return; }
-            if (typeof v === "object" && v.$className)
-                replyHandle(cmd.id, alloc(v));
-            else replyValue(cmd.id, v);
-        },
-        cpp_set_field_instance: function (cmd) {
-            var inst = get(cmd.instanceHandle);
-            if (!inst) throw new Error("no instance");
-            inst[cmd.fieldName] = mat(cmd.value);
-            replyVoid(cmd.id);
-        },
+
+        // ─── Eval ───
         cpp_eval: function (cmd) {
             var t0 = Date.now();
             try {
-                var fn = new Function("return (" + (cmd.code || "null") + ");");
+                var fn = new Function("return (" +
+                    (cmd.code || "null") + ");");
                 var r = fn();
                 var rs = describe(r);
-                send({type: "eval_result", id: cmd.id, ok: true,
-                      result: rs, durationMs: Date.now() - t0});
+                send({type:"eval_result", id:cmd.id, ok:true,
+                      result:rs, durationMs:Date.now()-t0});
                 reply(cmd.id, true, "value", rs);
             } catch (e) {
                 var es = "" + e;
-                send({type: "eval_result", id: cmd.id, ok: false,
-                      error: es, durationMs: Date.now() - t0});
+                send({type:"eval_result", id:cmd.id, ok:false,
+                      error:es, durationMs:Date.now()-t0});
                 replyError(cmd.id, e);
             }
         },
+
         cpp_noop: function (cmd) { replyVoid(cmd.id); },
-        cpp_pong: function (cmd) { send({ type: "cpp_pong_received", id: cmd.id }); replyVoid(cmd.id); }
+        cpp_pong: function (cmd) {
+            send({type:"cpp_pong_received", id:cmd.id});
+            replyVoid(cmd.id);
+        }
     };
 
-    // ═══════ NATIVE HANDLERS ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 8 — NATIVE HANDLERS (also usable via poller queue)
+    // ═══════════════════════════════════════════════════════════════
     var nativeHandlers = {
         eval: function (cmd) {
-            var id = cmd.id;
-            var t0 = Date.now();
+            var id = cmd.id, t0 = Date.now();
             try {
-                var fn = new Function("return (" + (cmd.code || "null") + ");");
+                var fn = new Function("return (" +
+                    (cmd.code || "null") + ");");
                 var r = fn();
-                send({type: "eval_result", id: id, ok: true,
-                      result: describe(r), durationMs: Date.now() - t0});
+                send({type:"eval_result", id:id, ok:true,
+                      result:describe(r), durationMs:Date.now()-t0});
             } catch (e) {
-                send({type: "eval_result", id: id, ok: false,
-                      error: "" + e, durationMs: Date.now() - t0});
+                send({type:"eval_result", id:id, ok:false,
+                      error:""+e, durationMs:Date.now()-t0});
             }
         },
         run_user_script: function (cmd) {
-            var t0 = Date.now();
-            var nm = cmd.name || "anon";
+            var t0 = Date.now(), nm = cmd.name || "anon";
             var code = cmd.code || "";
             try {
-                Java.performNow(function () {
-                    var fn = new Function(code);
-                    fn();
-                });
-                send({type: "user_script_loaded", name: nm,
-                      size: code.length, ok: true,
-                      durationMs: Date.now() - t0});
+                Java.performNow(function () { (new Function(code))(); });
+                send({type:"user_script_loaded", name:nm,
+                      size:code.length, ok:true, durationMs:Date.now()-t0});
             } catch (e) {
-                send({type: "user_script_loaded", name: nm,
-                      ok: false, error: "" + e,
-                      durationMs: Date.now() - t0});
-                send({type: "script_failed", name: nm, error: "" + e});
+                send({type:"user_script_loaded", name:nm,
+                      ok:false, error:""+e, durationMs:Date.now()-t0});
+                send({type:"script_failed", name:nm, error:""+e});
             }
         },
         load_scripts_batch: function (cmd) {
@@ -719,28 +690,26 @@ static const char kBootstrapSrc[] = R"YAMJS(
             for (var i = 0; i < list.length; i++) {
                 try {
                     var code = list[i].code || "";
-                    Java.performNow(function () {
-                        (new Function(code))();
-                    });
+                    Java.performNow(function () { (new Function(code))(); });
                     ok++;
-                    send({type: "user_script_loaded", name: list[i].name,
-                          ok: true, size: code.length});
+                    send({type:"user_script_loaded", name:list[i].name,
+                          ok:true, size:code.length});
                 } catch (e) {
                     fail++;
-                    send({type: "script_failed", name: list[i].name, error: "" + e});
+                    send({type:"script_failed", name:list[i].name,
+                          error:""+e});
                 }
             }
-            send({type: "scripts_batch_done", ok: ok, fail: fail});
+            send({type:"scripts_batch_done", ok:ok, fail:fail});
         },
         enumerate_classes: function (cmd) {
             try {
                 var all = Java.enumerateLoadedClassesSync();
-                sendMaybeChunked({type: "classes_list",
-                                   count: all.length,
-                                   classes: all});
+                sendMaybeChunked({type:"classes_list",
+                                  count:all.length, classes:all});
             } catch (e) {
-                send({type: "classes_list", count: 0, classes: [],
-                      error: "" + e});
+                send({type:"classes_list", count:0, classes:[],
+                      error:""+e});
             }
         },
         enumerate_loaders: function (cmd) {
@@ -750,15 +719,16 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 for (var i = 0; i < ls.length; i++) {
                     try { out.push(String(ls[i])); } catch (e) {}
                 }
-                sendMaybeChunked({type: "loaders_list", count: out.length, loaders: out});
+                sendMaybeChunked({type:"loaders_list",
+                                  count:out.length, loaders:out});
             } catch (e) {
-                send({type: "loaders_list", count: 0, loaders: []});
+                send({type:"loaders_list", count:0, loaders:[]});
             }
         },
         backtrace: function (cmd) {
             try {
                 var limit = cmd.limit || 8;
-                var bt = Java.backtrace({limit: limit});
+                var bt = Java.backtrace({limit:limit});
                 var frames = [];
                 if (bt && bt.frames) {
                     for (var i = 0; i < bt.frames.length; i++) {
@@ -767,58 +737,26 @@ static const char kBootstrapSrc[] = R"YAMJS(
                             (f.className + "." + f.methodName)));
                     }
                 }
-                sendMaybeChunked({type: "backtrace_result", frames: frames});
+                sendMaybeChunked({type:"backtrace_result", frames:frames});
             } catch (e) {
-                send({type: "backtrace_result", frames: []});
+                send({type:"backtrace_result", frames:[]});
             }
         }
     };
 
-    // ═══════ CHUNKED SENDER ═══════
-    // For any payload whose JSON representation exceeds 200 KB, split it
-    // into 60 KB chunks. The C++ events layer reassembles them (see
-    // yam_events.cpp::chunks::).
-    var _nextChunkSession = 1;
-    // Threshold at which we switch to chunked delivery. Below this, one
-    // event is sent; above, it splits. No cap on total — user requires
-    // ALL classes even at 500 000+ entries.
-    var CHUNK_THRESHOLD = 256 * 1024;    // 256 KB — single event limit
-    var CHUNK_SIZE      = 256 * 1024;    // 256 KB per chunk (fewer events)
-
-    function sendMaybeChunked(obj) {
-        var json;
-        try { json = JSON.stringify(obj); }
-        catch (e) { json = ""; }
-        if (json.length <= CHUNK_THRESHOLD) {
-            send(obj);
-            return;
-        }
-        var kind = obj && obj.type ? String(obj.type) : "chunked";
-        var sid = _nextChunkSession++;
-        var total = Math.max(1, Math.ceil(json.length / CHUNK_SIZE));
-
-        send({type: "chunk_begin", sessionId: sid, kind: kind,
-              totalChunks: total, totalBytes: json.length});
-        for (var i = 0; i < total; i++) {
-            send({type: "chunk_data", sessionId: sid, index: i,
-                  totalChunks: total,
-                  data: json.substring(i * CHUNK_SIZE,
-                                        (i + 1) * CHUNK_SIZE)});
-        }
-        send({type: "chunk_end", sessionId: sid, kind: kind});
-    }
-
-    // ═══════ COMMAND DISPATCHER ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 9 — COMMAND DISPATCHER
+    // ═══════════════════════════════════════════════════════════════
     function unwrapCmd(msg) {
         if (!msg) return null;
         if (typeof msg === "string") {
             try { return JSON.parse(msg); } catch (e) { return null; }
         }
-        if (msg.payload !== undefined && msg.payload !== null) return msg.payload;
+        if (msg.payload !== undefined && msg.payload !== null)
+            return msg.payload;
         if (msg.action) return msg;
         return null;
     }
-
     function dispatchCmd(cmd) {
         if (!cmd || !cmd.action) return;
         var h = handlers[cmd.action];
@@ -833,15 +771,24 @@ static const char kBootstrapSrc[] = R"YAMJS(
             catch (e) { try { replyError(cmd.id, e); } catch (e2) {} }
             return;
         }
-        try { replyError(cmd.id, new Error("unknown: " + cmd.action)); } catch (e) {}
+        // Silent no-op for C++ internal ticks / boots
+        if (cmd.action === "yamgg_tick" || cmd.action === "yamgg_boot")
+            return;
+        try {
+            replyError(cmd.id, new Error("unknown: " + cmd.action));
+        } catch (e) {}
     }
 
-    // ═══════ RECEIVER (recv channel) ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 10 — RECEIVER (recv channel)
+    // ═══════════════════════════════════════════════════════════════
     recv("yamgg_cmd", function (msg) {
         dispatchCmd(unwrapCmd(msg));
     });
 
-    // ═══════ CLASS LOADER RESOLVER ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 11 — CLASS LOADER RESOLVER
+    // ═══════════════════════════════════════════════════════════════
     var g_targetLoader = null;
     var g_modViewClass = null;
     function resolveLoader() {
@@ -854,16 +801,18 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     if (cn.indexOf("InMemoryDexClassLoader") < 0 &&
                         cn.indexOf("DexClassLoader") < 0 &&
                         cn.indexOf("PathClassLoader") < 0) continue;
-                    var cls = loaders[i].loadClass("com.yamgg.modview.ModView");
+                    var cls = loaders[i].loadClass(
+                        "com.yamgg.modview.ModView");
                     if (cls) {
                         g_targetLoader = loaders[i];
                         Java.classFactory.loader = g_targetLoader;
-                        send({ type: "loader_resolved", index: i, total: loaders.length });
+                        send({type:"loader_resolved",
+                              index:i, total:loaders.length});
                         return g_targetLoader;
                     }
                 } catch (e) {}
             }
-        } catch (e) { send({type:"loader_scan_err", message:"" + e}); }
+        } catch (e) { send({type:"loader_scan_err", message:""+e}); }
         return null;
     }
     function getModViewClass() {
@@ -872,15 +821,17 @@ static const char kBootstrapSrc[] = R"YAMJS(
         if (!ldr) return null;
         try {
             g_modViewClass = Java.use("com.yamgg.modview.ModView");
-            send({ type: "modview_class_ok" });
+            send({type:"modview_class_ok"});
         } catch (e) {
-            send({type:"modview_class_err", message:"" + e});
+            send({type:"modview_class_err", message:""+e});
             return null;
         }
         return g_modViewClass;
     }
 
-    // ═══════ ATTACH ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 12 — ACTIVITY DISCOVERY + ATTACH
+    // ═══════════════════════════════════════════════════════════════
     var attachDone = false;
     var attachAttempts = 0;
 
@@ -919,12 +870,12 @@ static const char kBootstrapSrc[] = R"YAMJS(
         try {
             Mv.attach(act);
             attachDone = true;
-            send({ type: "attach_ok", strategy: tag,
-                   className: "" + act.getClass().getName(),
-                   attempts: attachAttempts });
+            send({type:"attach_ok", strategy:tag,
+                  className:""+act.getClass().getName(),
+                  attempts:attachAttempts});
             return true;
         } catch (e) {
-            send({ type: "attach_try_err", strategy: tag, message: "" + e });
+            send({type:"attach_try_err", strategy:tag, message:""+e});
             return false;
         }
     }
@@ -973,7 +924,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     var ctx = view.getContext();
                     try {
                         var act = Java.cast(ctx, ActCls);
-                        if (act && tryOne("WManager" + j, act)) return true;
+                        if (act && tryOne("WManager"+j, act)) return true;
                     } catch (e) {}
                 } catch (e) {}
             }
@@ -987,13 +938,17 @@ static const char kBootstrapSrc[] = R"YAMJS(
             Java.choose("android.app.Activity", {
                 onMatch: function (a) {
                     if (found || attachDone) return "stop";
-                    if (tryOne("Java.choose", a)) { found = true; return "stop"; }
+                    if (tryOne("Java.choose", a)) {
+                        found = true;
+                        return "stop";
+                    }
                 },
                 onComplete: function () {}
             });
         } catch (e) {}
         return found;
     }
+
     function tryAttachOnce() {
         attachAttempts++;
         Java.performNow(function () {
@@ -1005,22 +960,21 @@ static const char kBootstrapSrc[] = R"YAMJS(
         });
     }
 
+    function loopAttach() {
+        if (attachDone) return;
+        try { tryAttachOnce(); }
+        catch (e) { send({type:"attach_outer_err", message:""+e}); }
+        setTimeout(loopAttach, 1000);
+    }
 
-    // ═══════ COMMAND POLLER ═══════
-    var pollInstalled = false;
-    var pollCount = 0;
-    var lastAliveAt = 0;
-    var POLL_INTERVAL_MS = 150;   // 6.7 ticks/sec
-    var ALIVE_EVERY_MS  = 30000;  // 1 alive log / 30s
-
-    // ═══════ POLLER (one-shot; invoked by C++ tick) ═══════
-    // No setInterval — QuickJS has no timer scheduler in this build.
-    // C++ pushes {"action":"yamgg_tick"} via the command queue and this
-    // function is dispatched from the recv handler below.
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 13 — POLLER (setInterval + yamgg_tick co-exist)
+    // ═══════════════════════════════════════════════════════════════
     var pollInstalled = false;
     var pollCount = 0;
     var lastAliveAt = 0;
     var ALIVE_EVERY_MS = 30000;
+    var POLL_INTERVAL_MS = 100;
 
     function pollerOnce() {
         Java.performNow(function () {
@@ -1029,29 +983,23 @@ static const char kBootstrapSrc[] = R"YAMJS(
             catch (e) { return; }
 
             var drained = 0;
-            var lastRaw = null;
-            var sameCount = 0;
-            var totalInCall = 0;
+            var lastRaw = null, sameCount = 0;
 
             for (;;) {
                 var raw;
                 try { raw = MV.nativeGetPendingCmd(); }
                 catch (e) {
-                    send({type: "poller_err", message: "" + e});
+                    send({type:"poller_err", message:""+e});
                     break;
                 }
                 if (!raw) break;
 
-                totalInCall++;
-                // Loop detection: same raw payload repeating MANY times
-                // in one poller call. Only count non-tick commands —
-                // identical ticks are normal and legitimate.
                 var isTick = raw.indexOf("yamgg_tick") !== -1;
                 if (!isTick && raw === lastRaw) {
                     sameCount++;
                     if (sameCount > 1000) {
-                        send({type: "poller_loop_detected",
-                              raw: raw.substring(0, 200)});
+                        send({type:"poller_loop_detected",
+                              raw:raw.substring(0,200)});
                         break;
                     }
                 } else {
@@ -1063,37 +1011,26 @@ static const char kBootstrapSrc[] = R"YAMJS(
                 var obj = null;
                 try { obj = JSON.parse(raw); }
                 catch (e) {
-                    send({type: "poller_parse_err", message: "" + e});
+                    send({type:"poller_parse_err", message:""+e});
                     continue;
                 }
                 if (!obj) continue;
 
                 var cmd = (obj.payload && obj.payload.action)
-                    ? obj.payload
-                    : obj;
+                    ? obj.payload : obj;
                 if (!cmd || !cmd.action) {
-                    send({type: "poller_no_action",
-                          raw: raw.substring(0, 200)});
+                    send({type:"poller_no_action",
+                          raw:raw.substring(0,200)});
                     continue;
                 }
-                try { dispatchCmd(cmd); }
-                catch (e) {
-                    try { replyError(cmd.id, e); } catch (e2) {}
-                }
+                dispatchCmd(cmd);
             }
 
-            // One-shot every pollerOnce call — throttled by time only
+            pollCount++;
             var now = Date.now();
             if (drained === 0 && (now - lastAliveAt) >= ALIVE_EVERY_MS) {
                 lastAliveAt = now;
-                send({type: "poller_alive", count: pollCount});
-            }
-            pollCount++;
-
-            // Attach attempt on every tick (cheap when already done)
-            if (!attachDone) {
-                try { tryAttachOnce(); }
-                catch (e) { send({type:"attach_tick_err", message:"" + e}); }
+                send({type:"poller_alive", count:pollCount});
             }
         });
     }
@@ -1101,27 +1038,17 @@ static const char kBootstrapSrc[] = R"YAMJS(
     function installPoller() {
         if (pollInstalled) return;
         pollInstalled = true;
-        send({type: "poller_started", mode: "tick-driven"});
+        send({type:"poller_started",
+              mode:"setInterval", interval:POLL_INTERVAL_MS});
+        setInterval(function () {
+            try { pollerOnce(); }
+            catch (e) { send({type:"tick_err", message:""+e}); }
+        }, POLL_INTERVAL_MS);
     }
 
-    // Called by C++ tick (queue-driven)
-    var lastTickWarnAt = 0;
-    function onTick() {
-        if (lastTickWarnAt === 0) {
-            try { send({type: "tick_first_received"}); } catch (e) {}
-        }
-        lastTickWarnAt = Date.now();
-
-        try { pollerOnce(); }
-        catch (e) { send({type: "tick_err", message: "" + e}); }
-
-        if (!attachDone) {
-            try { tryAttachOnce(); }
-            catch (e) { send({type: "attach_tick_err", message: "" + e}); }
-        }
-    }
-
-    // ═══════ HOOKS ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 14 — ACTIVITY.ONRESUME HOOK
+    // ═══════════════════════════════════════════════════════════════
     function installAllHooks() {
         try {
             Java.performNow(function () {
@@ -1130,24 +1057,30 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     var origOnResume = Activity.onResume;
                     Activity.onResume.implementation = function () {
                         try { origOnResume.call(this); } catch (e) {}
-                        if (!attachDone) { try { tryOne("onResume", this); } catch (e) {} }
+                        if (!attachDone) {
+                            try { tryOne("onResume", this); } catch (e) {}
+                        }
                     };
                     send({type:"hook_installed"});
-                } catch (e) { send({type:"hook_error", message: "install: " + e}); }
+                } catch (e) {
+                    send({type:"hook_error", message:"install: " + e});
+                }
             });
-        } catch (e) { send({type:"hook_outer_error", message: "" + e}); }
+        } catch (e) { send({type:"hook_outer_error", message:""+e}); }
     }
 
-    // ═══════ RPC EXPORTS ═══════
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 15 — RPC EXPORTS
+    // ═══════════════════════════════════════════════════════════════
     try {
         rpc.exports = {
             ping: function () { return Date.now(); },
             eval: function (code) {
                 try {
                     var fn = new Function("return (" + code + ");");
-                    return { ok: true, result: describe(fn()) };
+                    return {ok:true, result:describe(fn())};
                 } catch (e) {
-                    return { ok: false, error: "" + e };
+                    return {ok:false, error:""+e};
                 }
             },
             run_script: function (name, code) {
@@ -1155,27 +1088,37 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     Java.performNow(function () {
                         (new Function(code))();
                     });
-                    return { ok: true };
+                    return {ok:true};
                 } catch (e) {
-                    return { ok: false, error: "" + e };
+                    return {ok:false, error:""+e};
                 }
             }
         };
     } catch (e) {}
 
-    // ═══════ READY + IMMEDIATE SETUP ═══════
-    // No setTimeout/setInterval: QuickJS in this build has no timer
-    // scheduler. C++ drives us via yamgg_tick from the queue.
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 16 — READY + BOOT (deferred via setTimeout, the working pattern)
+    // ═══════════════════════════════════════════════════════════════
     try { send({ type: "cpp_ready" }); }       catch (e) {}
     try { send({ type: "cpp_ready_final" }); } catch (e) {}
 
-    // Immediate (synchronous) one-time setup.
-    try { installAllHooks(); }
-    catch (e) { send({type:"install_err", message: "" + e}); }
-    try { installPoller(); }
-    catch (e) { send({type:"poller_err", message: "" + e}); }
-    try { tryAttachOnce(); }
-    catch (e) { send({type:"attach_start_err", message: "" + e}); }
+    setTimeout(function () {
+        try { send({type:"boot_running"}); } catch (e) {}
+
+        try { installAllHooks(); }
+        catch (e) { send({type:"install_err", message: "" + e}); }
+
+        try { installPoller(); }
+        catch (e) { send({type:"poller_err", message: "" + e}); }
+
+        try { tryAttachOnce(); }
+        catch (e) { send({type:"attach_start_err", message: "" + e}); }
+
+        try { loopAttach(); }
+        catch (e) { send({type:"loop_attach_err", message: "" + e}); }
+
+        try { send({ type: "boot_done" }); } catch (e) {}
+    }, 800);
 })();
 )YAMJS";
 
