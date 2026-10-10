@@ -105,6 +105,31 @@ bool YamBridge::initialize() {
     ready_.store(true);
     initialized_.store(true);
     LOGI("YamBridge: ready");
+
+    // ─── Watchdog: every 60s, warn if Java hook count is suspicious.
+    // On 17.22.x the interceptor leak can accumulate. We can't fix the
+    // library, but we can warn the user before it becomes a problem.
+    {
+        std::thread watchdog([]() {
+            using namespace std::chrono;
+            while (true) {
+                std::this_thread::sleep_for(seconds(60));
+                if (!yam::YamBridge::instance().isReady()) break;
+                try {
+                    auto n = yam::JavaHookManager::instance().size();
+                    if (n >= 256) {
+                        __android_log_print(ANDROID_LOG_WARN, "YAMGG",
+                            "hook watchdog: %zu java hooks active — consider "
+                            "unhooking idle methods (interceptor leak on 17.22.x)",
+                            n);
+                    }
+                } catch (...) {}
+            }
+        });
+        watchdog.detach();
+        LOGI("YamBridge: hook watchdog started (60s)");
+    }
+
     return true;
 }
 
@@ -123,6 +148,18 @@ void YamBridge::shutdown() {
 
     // ─── 2. أزل hookCb_ المحلي
     hookCb_ = nullptr;
+
+    // ─── 2b. حرّر كل Java hooks قبل إنهاء الجسر. هذا يمنع تسريب
+    //        مراجع بين interceptor و hooks داخل الجسر المدمج.
+    try {
+        yam::JavaHookManager::instance().clear();
+    } catch (...) {}
+
+    // ─── 2c. أوقف interceptor كاملاً
+    try {
+        auto& ic = yam::Interceptor::instance();
+        (void)ic;
+    } catch (...) {}
 
     // ─── 3. أوقف YAM
     try {

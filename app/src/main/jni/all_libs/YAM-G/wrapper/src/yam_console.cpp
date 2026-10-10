@@ -530,6 +530,23 @@ register_command("deopt_all", [](const std::vector<String>&) -> String {        
         // --- Advanced subsystems ---
     register_command("cmodule", [](const std::vector<String>& a) -> String {
         if (a.size() < 2) return "usage: cmodule <name> <source>";
+
+        // تشخيصي: تحذير إذا تجاوزنا حجماً معقولاً. على 17.22.x،
+        // كل CModule يستهلك slice لا يُستعاد — نحتاج نكون حذرين.
+        {
+            auto existing = cmodules().names();
+            if (existing.size() >= 128) {
+                return "cmodule limit soft-warn: 128 active. "
+                       "run 'cmodules' to inspect, 'cmodule_free <name>' to release.";
+            }
+            if (existing.size() >= 32 && existing.size() % 16 == 0) {
+                // log دوري
+                String msg = "cmodule count=" + std::to_string(existing.size()) +
+                             " — slice leak on 17.22.x";
+                YAM_LOG_WARN() << msg;
+            }
+        }
+
         String src;
         for (size_t i = 1; i < a.size(); ++i) {
             if (i > 1) src += " ";
@@ -791,6 +808,25 @@ register_command("deopt_all", [](const std::vector<String>&) -> String {        
         i64 ms = a.empty() ? 300000 : std::atoll(a[0].c_str());
         bp::set_timeout(ms);
         return "bp timeout=" + std::to_string(ms) + "ms";
+    });
+
+    register_command("slices", [](const std::vector<String>&) -> String {
+        // Approximate code-slice stats. The library does not expose a
+        // public counter, but we can still report our own allocations
+        // tracked via the CModuleRegistry (one entry per CModule).
+        auto names = cmodules().names();
+        String s = "cmodules=" + std::to_string(names.size()) + "\n";
+        for (auto& n : names) s += "  " + n + "\n";
+        s += "note: slice allocator leak (17.22.x) affects heavy CModule/Stalker use";
+        return s;
+    });
+
+    register_command("hooks", [](const std::vector<String>&) -> String {
+        String s = "java_hooks=";
+        s += std::to_string(yam::JavaHookManager::instance().size());
+        s += "\n";
+        s += "note: interceptor leak (17.22.x) only affects native attach/detach";
+        return s;
     });
 
     register_command("bridge_state", [](const std::vector<String>&) -> String {
