@@ -141,6 +141,14 @@ jobs:
         echo "=== source file count ==="
         find app/src/main/jni/all_libs/Dobby/source -name "*.cc" -o -name "*.c" | wc -l
 
+    - name: Generate bootstrap_js.h from scripts/bootstrap.js
+      run: |
+        python3 scripts/build_bootstrap.py
+        echo "--- bootstrap_js.h head ---"
+        head -20 app/src/main/jni/all_libs/YAM-G/wrapper/src/bootstrap_js.h
+        echo "--- total lines ---"
+        wc -l app/src/main/jni/all_libs/YAM-G/wrapper/src/bootstrap_js.h
+
     - name: Generate embedded dex
       run: |
         chmod +x scripts/generate-dex.sh scripts/dex_to_header.py
