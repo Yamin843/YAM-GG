@@ -211,26 +211,20 @@ void JavaScriptBridge::on_reply(const String& payload_json) {
     Ptr<detail::JavaSync> sync;
     {
         std::lock_guard<std::mutex> lk(pending_mu_);
-
-        // إذا لا يوجد pending لهذا id — هذا رد متأخر بعد timeout.
-        // لا نخزّنه للأبد: نتجاهله (المستدعي رحل).
         auto it = pending_.find(reply.id);
         if (it == pending_.end()) {
+            // Late reply after timeout — drop silently.
             return;
         }
         sync = it->second;
         replies_[reply.id] = reply;
 
-        // ضمان نظافة إضافية: إذا نمت الخريطة (نظرياً)، امسح الأقدم.
-        // لا cap ثابت — نمسح فقط عند تخزين رد جديد لـ pending.
+        // Only store replies for still-pending ids; prune anything else.
         if (replies_.size() > pending_.size() + 16) {
-            // الـ pending الحالية هي الوحيدة التي يُتوقع إجابتها.
-            // أي شيء آخر هنا قديم — نحذفه.
             std::vector<u64> to_remove;
             for (auto& kv : replies_) {
-                if (pending_.find(kv.first) == pending_.end()) {
+                if (pending_.find(kv.first) == pending_.end())
                     to_remove.push_back(kv.first);
-                }
             }
             for (u64 id : to_remove) replies_.erase(id);
         }
@@ -298,11 +292,9 @@ void JavaScriptBridge::on_event_json(const JsonValue& ev) {
             if (auto* v = ev.get("callbackId")) cb_id = v->as_i64(0);
             if (auto* v = ev.get("phase"))      phase = v->as_str("enter");
             if (auto* v = ev.get("thisHandle")) this_h = static_cast<u64>(v->as_i64(0));
-            if (auto* v = ev.get("argHandles")) {
-                if (v->is_arr())
-                    for (auto& a : v->arr_val)
-                        args.push_back(static_cast<u64>(a.as_i64(0)));
-            }
+            if (auto* v = ev.get("argHandles")) if (v->is_arr())
+                for (auto& a : v->arr_val)
+                    args.push_back(static_cast<u64>(a.as_i64(0)));
             if (auto* v = ev.get("returnHandle"))
                 ret_h = static_cast<u64>(v->as_i64(0));
             if (auto* v = ev.get("isVoid"))
@@ -310,9 +302,8 @@ void JavaScriptBridge::on_event_json(const JsonValue& ev) {
             if (auto* v = ev.get("exceptionMessage"))
                 ex_msg = v->as_str();
 
-            try {
-                cb(cb_id, phase, args, this_h, ret_h, is_void, ex_msg);
-            } catch (const std::exception& e) {
+            try { cb(cb_id, phase, args, this_h, ret_h, is_void, ex_msg); }
+            catch (const std::exception& e) {
                 YAM_LOG_ERROR() << "hook_cb: " << e.what();
             }
         }
@@ -1205,8 +1196,9 @@ JavaHookManager::JavaHookManager() {
            const std::vector<u64>& args, u64 this_h,
            u64 /*ret_h*/, bool /*is_void*/, const String& /*ex_msg*/)
         {
-            // نُمرّر المرحلة "enter" فقط إلى callback الـ JavaHookManager.
-            // مراحل leave/exception متاحة عبر yam::events::on("hook_cb").
+            // Only dispatch "enter" to the JavaHookManager callback. The
+            // full lifecycle (enter/leave/exception) is available via
+            // yam::events::on("hook_cb", ...) if needed.
             if (phase != "enter") return;
 
             JavaHookManager::Fn fn;

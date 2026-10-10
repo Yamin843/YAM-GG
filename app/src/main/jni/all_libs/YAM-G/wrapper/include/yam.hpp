@@ -1183,6 +1183,10 @@ public:
     // ret_h: valid only for "leave" (0 = void or unknown)
     // is_void: true when original returned void
     // ex_msg: valid only for "exception"
+    // phase: "enter" | "leave" | "exception"
+    // ret_h: valid only for "leave" (0 = void / unknown)
+    // is_void: true when original returned void
+    // ex_msg: valid only for "exception"
     using HookCallback = std::function<void(
         i64 /*cbId*/, const String& /*phase*/,
         const std::vector<u64>& /*args*/, u64 /*thisH*/,

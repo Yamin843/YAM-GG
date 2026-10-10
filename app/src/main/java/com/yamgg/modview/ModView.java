@@ -4,42 +4,56 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.PixelFormat;
 import android.opengl.GLSurfaceView;
-import android.util.Log;
 import android.text.Editable;
+import android.text.InputType;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.KeyEvent;
-import android.view.inputmethod.InputMethodManager;
-import android.widget.EditText;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
 public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
 
-
-
     private static final String TAG = "YAMGG";
 
+    // ─── Native methods (registered in C++ via RegisterNatives) ───
     private static native void nativeOnSurfaceCreated();
     private static native void nativeOnSurfaceChanged(int width, int height);
     private static native void nativeOnDrawFrame(int width, int height);
     private static native void nativeOnTouch(int action, float x, float y, int pointerId);
+    private static native void nativeOnKey(int keyCode, int action);
+    private static native void nativeOnChar(int codepoint);
+    private static native void nativeOnScroll(float dx, float dy);
     private static native boolean nativeWantCaptureMouse();
+    private static native boolean nativeWantTextInput();
     private static native boolean nativeHitTest(float x, float y);
     private static native String nativeGetPendingCmd();
-    private static native void nativeOnChar(int codepoint);
-    private static native boolean nativeWantTextInput();
-    private static native void nativeOnKey(int keyCode, int action);
-    private static native void nativeOnScroll(float dx, float dy);
 
+    // ─── Static state (single instance per process) ───
     private static volatile ModView sInstance = null;
     private static volatile Activity sActivity = null;
     private static final Object sLock = new Object();
     private static EditText sHiddenInput = null;
+
+    // ─── Two-finger scroll state ───
+    private boolean twoFingerScrollActive = false;
+    private float   twoFingerLastY = 0f;
+    private long    lastScrollSentMs = 0L;
+    private float   smoothedDy = 0f;
+
+    // ─── Gesture ownership: if the first touch lands inside our UI,
+    //     we claim the entire gesture and block the underlying app. ───
+    private boolean touchOwned = false;
+
+    // ─── Keyboard visibility tracking ───
+    private volatile boolean keyboardShown = false;
 
     public ModView(Context context) {
         super(context);
@@ -56,43 +70,38 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
         setLongClickable(true);
         setHapticFeedbackEnabled(false);
         setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-        );
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // GLSurfaceView.Renderer
+    // ═══════════════════════════════════════════════════════════════
     @Override
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
         Log.i(TAG, "ModView.onSurfaceCreated");
-        try {
-            nativeOnSurfaceCreated();
-        } catch (Throwable t) {
-            Log.e(TAG, "onSurfaceCreated failed", t);
-        }
+        try { nativeOnSurfaceCreated(); }
+        catch (Throwable t) { Log.e(TAG, "onSurfaceCreated failed", t); }
     }
 
     @Override
     public void onSurfaceChanged(GL10 gl, int width, int height) {
         Log.i(TAG, "ModView.onSurfaceChanged " + width + "x" + height);
-        try {
-            nativeOnSurfaceChanged(width, height);
-        } catch (Throwable t) {
-            Log.e(TAG, "onSurfaceChanged failed", t);
-        }
+        try { nativeOnSurfaceChanged(width, height); }
+        catch (Throwable t) { Log.e(TAG, "onSurfaceChanged failed", t); }
     }
 
     @Override
     public void onDrawFrame(GL10 gl) {
-        try {
-            nativeOnDrawFrame(getWidth(), getHeight());
-        } catch (Throwable t) {
-            Log.e(TAG, "onDrawFrame failed", t);
-        }
+        try { nativeOnDrawFrame(getWidth(), getHeight()); }
+        catch (Throwable t) { Log.e(TAG, "onDrawFrame failed", t); }
         syncSoftKeyboard();
     }
 
-    private volatile boolean keyboardShown = false;
+    // ═══════════════════════════════════════════════════════════════
+    // IME sync (called every frame from onDrawFrame)
+    // ═══════════════════════════════════════════════════════════════
     private void syncSoftKeyboard() {
         try {
             final boolean want = nativeWantTextInput();
@@ -121,31 +130,18 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
         } catch (Throwable t) {}
     }
 
-    // ─── Two-finger scroll ───
-    private boolean twoFingerScrollActive = false;
-    private float   twoFingerLastY = 0f;
-    private long    lastScrollSentMs = 0;
-    private float   smoothedDy = 0f;
-
-    // ─── Gesture ownership ───
-    // When the first finger lands, we ask native code whether the touch
-    // is inside our UI. If yes, we own the entire gesture until UP/CANCEL
-    // — the underlying app never sees it. If no, we pass the DOWN through
-    // so Unity/app gets a normal tap.
-    private boolean touchOwned = false;
-
+    // ═══════════════════════════════════════════════════════════════
+    // Touch dispatch (gesture ownership + two-finger scroll + EMA)
+    // ═══════════════════════════════════════════════════════════════
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
         int pointerCount = event.getPointerCount();
 
-        // ─────── Two-finger → scroll ───────
+        // ─── Two-finger → scroll ───
         if (pointerCount >= 2) {
             if (action == MotionEvent.ACTION_POINTER_DOWN) {
-                if (!touchOwned) {
-                    // Second finger while not owning → let the app handle it.
-                    return false;
-                }
+                if (!touchOwned) return false;
                 try { nativeOnTouch(MotionEvent.ACTION_CANCEL, 0f, 0f, 0); }
                 catch (Throwable t) {}
                 twoFingerScrollActive = true;
@@ -165,8 +161,7 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                 if (now - lastScrollSentMs >= 8L) {
                     lastScrollSentMs = now;
                     float scroll = -smoothedDy * 0.025f;
-                    try { nativeOnScroll(0f, scroll); }
-                    catch (Throwable t) {}
+                    try { nativeOnScroll(0f, scroll); } catch (Throwable t) {}
                 }
                 return true;
             }
@@ -192,7 +187,7 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
             if (twoFingerScrollActive) return true;
         }
 
-        // ─────── Single finger ───────
+        // ─── Single finger ───
         if (action == MotionEvent.ACTION_DOWN) {
             twoFingerScrollActive = false;
             smoothedDy = 0f;
@@ -204,16 +199,10 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
             catch (Throwable t) { inside = false; }
 
             touchOwned = inside;
-
-            if (!touchOwned) {
-                // Not ours — pass through without telling ImGui.
-                return false;
-            }
+            if (!touchOwned) return false;
         }
 
-        if (!touchOwned) {
-            return false;
-        }
+        if (!touchOwned) return false;
 
         try {
             int pointerIndex = event.getActionIndex();
@@ -229,66 +218,67 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
             || action == MotionEvent.ACTION_CANCEL) {
             touchOwned = false;
         }
-
         return true;
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        // Fallback — should not be called because we override dispatch.
+        // Fallback — normally dispatchTouchEvent handles everything.
         return true;
     }
 
     @Override
-    public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
-        nativeOnKey(keyCode, 0);
-        // نُمرّر مفاتيح التحكم إلى ImGui؛ الباقي يذهب للـ IME إن مفتوح.
+    public boolean onGenericMotionEvent(MotionEvent event) {
+        // External mouse / trackpad wheel
+        if (event.getAction() == MotionEvent.ACTION_SCROLL
+            && (event.getSource()
+                & android.view.InputDevice.SOURCE_CLASS_POINTER) != 0) {
+            float v = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+            float h = event.getAxisValue(MotionEvent.AXIS_HSCROLL);
+            try { nativeOnScroll(h, v); } catch (Throwable t) {}
+            try { return nativeWantCaptureMouse(); } catch (Throwable t) {}
+        }
+        return super.onGenericMotionEvent(event);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Key events
+    // ═══════════════════════════════════════════════════════════════
+    private static boolean isConsumedKey(int keyCode) {
         switch (keyCode) {
-            case android.view.KeyEvent.KEYCODE_BACK:
-            case android.view.KeyEvent.KEYCODE_ESCAPE:
-            case android.view.KeyEvent.KEYCODE_ENTER:
-            case android.view.KeyEvent.KEYCODE_TAB:
-            case android.view.KeyEvent.KEYCODE_DEL:
-            case android.view.KeyEvent.KEYCODE_FORWARD_DEL:
-            case android.view.KeyEvent.KEYCODE_DPAD_UP:
-            case android.view.KeyEvent.KEYCODE_DPAD_DOWN:
-            case android.view.KeyEvent.KEYCODE_DPAD_LEFT:
-            case android.view.KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_BACK:
+            case KeyEvent.KEYCODE_ESCAPE:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_TAB:
+            case KeyEvent.KEYCODE_DEL:
+            case KeyEvent.KEYCODE_FORWARD_DEL:
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
                 return true;
             default:
-                return super.onKeyDown(keyCode, event);
+                return false;
         }
     }
 
     @Override
-    public boolean onKeyUp(int keyCode, android.view.KeyEvent event) {
-        nativeOnKey(keyCode, 1);
-        switch (keyCode) {
-            case android.view.KeyEvent.KEYCODE_BACK:
-            case android.view.KeyEvent.KEYCODE_ESCAPE:
-            case android.view.KeyEvent.KEYCODE_ENTER:
-            case android.view.KeyEvent.KEYCODE_TAB:
-            case android.view.KeyEvent.KEYCODE_DEL:
-            case android.view.KeyEvent.KEYCODE_FORWARD_DEL:
-            case android.view.KeyEvent.KEYCODE_DPAD_UP:
-            case android.view.KeyEvent.KEYCODE_DPAD_DOWN:
-            case android.view.KeyEvent.KEYCODE_DPAD_LEFT:
-            case android.view.KeyEvent.KEYCODE_DPAD_RIGHT:
-                return true;
-            default:
-                return super.onKeyUp(keyCode, event);
-        }
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        try { nativeOnKey(keyCode, 0); } catch (Throwable t) {}
+        return isConsumedKey(keyCode) || super.onKeyDown(keyCode, event);
     }
 
-
-
-    public static ModView getInstance() {
-        return sInstance;
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        try { nativeOnKey(keyCode, 1); } catch (Throwable t) {}
+        return isConsumedKey(keyCode) || super.onKeyUp(keyCode, event);
     }
 
-    public static Activity getActivity() {
-        return sActivity;
-    }
+    // ═══════════════════════════════════════════════════════════════
+    // Static attach / detach
+    // ═══════════════════════════════════════════════════════════════
+    public static ModView getInstance() { return sInstance; }
+    public static Activity getActivity() { return sActivity; }
 
     public static void detach() {
         final ModView view;
@@ -301,14 +291,11 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
         }
         if (view == null || act == null) return;
         act.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
+            @Override public void run() {
                 try {
                     ViewGroup parent = (ViewGroup) view.getParent();
                     if (parent != null) parent.removeView(view);
-                } catch (Throwable t) {
-                    Log.e(TAG, "detach failed", t);
-                }
+                } catch (Throwable t) { Log.e(TAG, "detach failed", t); }
             }
         });
     }
@@ -324,19 +311,14 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
         }
 
         activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
+            @Override public void run() {
                 try {
                     ViewGroup decor = (ViewGroup) activity.getWindow().getDecorView();
                     if (decor == null) return;
-
                     for (int i = 0; i < decor.getChildCount(); i++) {
-                        if (decor.getChildAt(i) instanceof ModView) {
-                            return;
-                        }
+                        if (decor.getChildAt(i) instanceof ModView) return;
                     }
 
-                    // GLSurfaceView MUST be created on UI thread.
                     final ModView view = new ModView(activity);
                     synchronized (sLock) {
                         sInstance = view;
@@ -344,11 +326,11 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                     }
 
                     ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT);
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT);
                     decor.addView(view, lp);
 
-                    // Hidden EditText to receive IME input
+                    // Hidden EditText for IME input
                     try {
                         if (sHiddenInput == null) {
                             EditText et = new EditText(activity);
@@ -357,14 +339,13 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                             et.setBackground(null);
                             et.setCursorVisible(false);
                             et.setTextColor(0);
-                            et.setInputType(android.text.InputType.TYPE_CLASS_TEXT
-                                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+                            et.setInputType(InputType.TYPE_CLASS_TEXT
+                                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
                             et.setImeOptions(
-    android.view.inputmethod.EditorInfo.IME_ACTION_NONE
-    | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
-    | android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN
-    | android.view.inputmethod.EditorInfo.IME_FLAG_NO_ENTER_ACTION
-);
+                                EditorInfo.IME_ACTION_NONE
+                                | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                                | EditorInfo.IME_FLAG_NO_FULLSCREEN
+                                | EditorInfo.IME_FLAG_NO_ENTER_ACTION);
                             et.addTextChangedListener(new TextWatcher() {
                                 @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
                                 @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
@@ -378,8 +359,8 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                                 }
                                 @Override public void afterTextChanged(Editable s) {}
                             });
-                            et.setOnKeyListener(new android.view.View.OnKeyListener() {
-                                @Override public boolean onKey(android.view.View v, int keyCode, KeyEvent event) {
+                            et.setOnKeyListener(new View.OnKeyListener() {
+                                @Override public boolean onKey(View v, int keyCode, KeyEvent event) {
                                     int act = event.getAction();
                                     if (act == KeyEvent.ACTION_DOWN
                                         || act == KeyEvent.ACTION_MULTIPLE) {
@@ -387,9 +368,6 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                                     } else if (act == KeyEvent.ACTION_UP) {
                                         nativeOnKey(keyCode, 1);
                                     }
-
-                                    // Enter / Tab / Del: نُبلّغ ImGui ونمنع الإدخال الافتراضي
-                                    // (الـ IME سيُرسل الحرف عبر onTextChanged للأحرف العادية).
                                     if (act == KeyEvent.ACTION_DOWN) {
                                         if (keyCode == KeyEvent.KEYCODE_ENTER
                                             || keyCode == KeyEvent.KEYCODE_TAB
@@ -408,7 +386,6 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                     } catch (Throwable t) {
                         Log.e(TAG, "hidden EditText setup failed", t);
                     }
-
                     Log.i(TAG, "ModView attached to DecorView");
                 } catch (Throwable t) {
                     Log.e(TAG, "attach failed", t);

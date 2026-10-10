@@ -2,11 +2,10 @@
 #define YAMGG_UI_TABS_CLASSBROWSER_H
 
 #include <string>
-#include "../../all_libs/YAM-G/wrapper/include/yam.hpp"
 #include <vector>
 #include <map>
-#include <mutex>
 #include <set>
+#include <mutex>
 
 namespace yamgg {
 
@@ -18,25 +17,31 @@ public:
 private:
     ClassBrowser();
     ~ClassBrowser();
+    ClassBrowser(const ClassBrowser&) = delete;
+    ClassBrowser& operator=(const ClassBrowser&) = delete;
 
     struct KeyValue { char k[128]; char v[256]; };
+
     struct ParamInfo {
         std::string typeName;
-        std::string kind;
+        std::string kind;         // int/long/short/byte/float/double/boolean/char/string/enum/array/map/object
         std::vector<std::string> enumValues;
-        char scalar[512];
+        char scalar[512]{0};
         bool booleanVal{false};
         std::vector<KeyValue> kvs;
     };
+
     struct MethodInfo {
         std::string name, ret, retKind;
         bool isStatic{true};
         bool tracing{false};
         std::vector<ParamInfo> args;
     };
+
     struct FieldInfo {
         std::string name, type, value;
     };
+
     struct InstanceEntry {
         unsigned long long handle{0};
         std::string className;
@@ -48,6 +53,7 @@ private:
     void triggerLoadClasses();
     void triggerLoadMethods(const std::string& cls);
     void triggerTrace(const std::string& cls, MethodInfo& m);
+    void triggerUntrace(const std::string& cls, MethodInfo& m);
     void triggerCall(const std::string& cls, MethodInfo& m);
     void findInstances(const std::string& cls);
     std::string buildArgsJSON(const MethodInfo& m);
@@ -63,18 +69,17 @@ private:
     mutable std::mutex mu_;
     std::vector<std::string> classes_;
     std::map<std::string, std::vector<MethodInfo>> methods_;
-
-    // مفاتيح = "className::methodName" — تبقى حتى بعد reload
-    std::set<std::string> tracedMethods_;
     std::map<std::string, std::vector<FieldInfo>> fields_;
     std::map<std::string, std::vector<InstanceEntry>> instances_;
+    std::set<std::string> tracedMethods_;   // "cls::method"
+
     std::string filter_;
     std::string selectedClass_;
-    int selectedInstance_{0};
+    int  selectedInstance_{0};
     bool loading_{false};
     bool eventsRegistered_{false};
+    bool chunksRegistered_{false};
 
-    // Advanced filter checkboxes
     bool searchClass_{true};
     bool searchMethod_{false};
     bool searchField_{false};
@@ -83,4 +88,5 @@ private:
 
 #define YAMGG_CLASSBROWSER yamgg::ClassBrowser::instance()
 } // namespace yamgg
+
 #endif
