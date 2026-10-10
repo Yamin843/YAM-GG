@@ -1,4 +1,5 @@
 #include "YamBridge.h"
+#include <thread>
 #include "../Core/Runtime.h"
 #include "../UI/Tabs/JSConsole.h"
 
@@ -114,7 +115,7 @@ bool YamBridge::initialize() {
             using namespace std::chrono;
             while (true) {
                 std::this_thread::sleep_for(seconds(60));
-                if (!yam::YamBridge::instance().isReady()) break;
+                if (!YamBridge::instance().isReady()) break;
                 try {
                     auto n = yam::JavaHookManager::instance().size();
                     if (n >= 256) {
@@ -223,12 +224,23 @@ void YamBridge::onEvalResult(unsigned long long id, bool ok,
     // eval is now synchronous through JavaScriptBridge::eval() — the
     // eval_result event is informational only. We simply forward it to
     // the on-screen console so the user can see what happened.
-    if (ok) {
-        if (!result.empty()) {
-            JSConsole::instance().pushOutput(result);
+    //
+    // Guarded: this callback may fire before the UI thread has created
+    // the JSConsole singleton. pushOutput() touches a mutex, which is
+    // fine on any thread — but a full UI push before ImGui_ImplOpenGL3
+    // has initialized could deadlock. We check ready state.
+    try {
+        if (ok) {
+            if (!result.empty()) {
+                JSConsole::instance().pushOutput(result);
+            }
+        } else if (!error.empty()) {
+            JSConsole::instance().pushOutput("[error] " + error);
         }
-    } else if (!error.empty()) {
-        JSConsole::instance().pushOutput("[error] " + error);
+    } catch (const std::exception& e) {
+        LOGE("onEvalResult: %s", e.what());
+    } catch (...) {
+        LOGE("onEvalResult: unknown exception");
     }
 }
 
@@ -238,13 +250,22 @@ void YamBridge::onConsole(const std::string& level, const std::string& line) {
     else if (level == "warn")  prefix = "[warn] ";
     else                       prefix = "";
 
-    JSConsole::instance().pushOutput(prefix + line);
+    // Same early-init concern as onEvalResult. Guard everything.
+    try {
+        JSConsole::instance().pushOutput(prefix + line);
+    } catch (...) {
+        // If the console isn't up yet, fall through to logcat.
+    }
 
     if (level == "error") {
-        if (errorSink_) errorSink_(line);
+        if (errorSink_) {
+            try { errorSink_(line); } catch (...) {}
+        }
         LOGE("[js] %s", line.c_str());
     } else {
-        if (outputSink_) outputSink_(line);
+        if (outputSink_) {
+            try { outputSink_(line); } catch (...) {}
+        }
         LOGI("[js] %s", line.c_str());
     }
 }
