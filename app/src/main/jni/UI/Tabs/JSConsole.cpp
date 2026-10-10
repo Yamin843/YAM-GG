@@ -4,6 +4,8 @@
 #include "../../Bridge/YamBridge.h"
 
 #include "imgui.h"
+#include "imgui_internal.h"
+#include "yam.hpp"
 
 #include <android/log.h>
 #include <cstring>
