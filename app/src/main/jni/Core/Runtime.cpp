@@ -8,7 +8,7 @@
 #include <sys/system_properties.h>
 
 #define LOG_TAG "YAMGG"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 namespace yamgg {
@@ -21,26 +21,20 @@ Runtime& Runtime::instance() {
     return inst;
 }
 
+// ─── System property reader (with sanity) ───
 static int readApiLevel() {
     char buf[PROP_VALUE_MAX] = {0};
     int len = __system_property_get("ro.build.version.sdk", buf);
-    if (len <= 0) {
-        // fallback: kernel version
-        char krel[PROP_VALUE_MAX] = {0};
-        if (__system_property_get("ro.build.version.release", krel) > 0) {
-            // لا يمكن استنتاج API level من الإصدار بدقة، لكن نُعيد 0
-        }
-        return 0;
-    }
+    if (len <= 0) return 0;
     int v = atoi(buf);
-    if (v < 0 || v > 100) return 0;   // sanity
+    if (v < 0 || v > 100) return 0;
     return v;
 }
 
+// ─── /proc/self/cmdline (unbounded, kernel caps at 128 KB) ───
 static std::string readCmdline() {
     std::ifstream f("/proc/self/cmdline", std::ios::binary);
     if (!f) return "";
-    // بلا cap — نقرأ كل شيء حتى EOF. kernel يضع حداً طبيعياً 128KB.
     std::stringstream ss;
     ss << f.rdbuf();
     std::string s = ss.str();
@@ -49,14 +43,13 @@ static std::string readCmdline() {
     return s;
 }
 
+// ─── package name = first component before ':' ───
 static std::string readPackageName() {
     std::string cmdline = readCmdline();
     if (cmdline.empty()) return "";
-    // الصيغة: pkg أو pkg:process
     size_t colon = cmdline.find(':');
     std::string pkg = (colon == std::string::npos)
         ? cmdline : cmdline.substr(0, colon);
-    // تحقق صحة: يجب أن يحتوي على نقطة واحدة على الأقل
     if (pkg.find('.') == std::string::npos) return "";
     return pkg;
 }

@@ -16,14 +16,14 @@ public:
     void onDrawFrame(int width, int height);
     void onTouch(int action, float x, float y, int pointerId);
     void onChar(unsigned int codepoint);
+    void onKey(int keyCode, int action);   // 0=down, 1=up
     void onScroll(float dx, float dy);
-    void onKey(int keyCode, int action);   // action: 0=down, 1=up
-    bool wantTextInput() const { return wantTextInput_.load(); }
 
     bool isReady() const { return ready_.load(); }
     bool wantCaptureMouse() const { return wantCaptureMouse_.load(); }
-    int width() const { return width_; }
-    int height() const { return height_; }
+    bool wantTextInput() const { return wantTextInput_.load(); }
+    int  width() const { return width_; }
+    int  height() const { return height_; }
 
     void shutdown();
 
@@ -40,14 +40,14 @@ private:
     int height_{0};
     double lastFrameTime_{0.0};
     bool backendInit_{false};
+
     std::atomic<bool> wantCaptureMouse_{false};
     std::atomic<bool> wantTextInput_{false};
+
     std::mutex charMu_;
     std::vector<unsigned int> charQueue_;
 
-    // Scroll inertia: input dx/dy is accumulated here and drained
-    // gradually each frame with exponential decay. This gives the
-    // smooth "coasting" feel of native Android list scrolls.
+    // Scroll inertia
     std::mutex scrollMu_;
     float scrollVelX_{0.0f};
     float scrollVelY_{0.0f};

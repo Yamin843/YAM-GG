@@ -21,18 +21,14 @@ public:
     bool attachCurrentThread(JNIEnv** env, bool* didAttach);
     void detachCurrentThread();
 
-    std::string packageName() const { return package_name_; }
-    std::string processName() const { return process_name_; }
+    const std::string& packageName() const { return package_name_; }
+    const std::string& processName() const { return process_name_; }
     int apiLevel() const { return api_level_; }
 
-    void setPackageName(const std::string& name) { package_name_ = name; }
-    void setProcessName(const std::string& name) { process_name_ = name; }
-    void setApiLevel(int level) { api_level_ = level; }
-
-    std::string dexClassLoader() const { return dex_class_loader_; }
+    const std::string& dexClassLoader() const { return dex_class_loader_; }
     void setDexClassLoader(const std::string& s) { dex_class_loader_ = s; }
 
-    std::string modViewClassName() const { return modview_class_name_; }
+    const std::string& modViewClassName() const { return modview_class_name_; }
     void setModViewClassName(const std::string& s) { modview_class_name_ = s; }
 
 private:

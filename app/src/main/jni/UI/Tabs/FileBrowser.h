@@ -17,16 +17,14 @@ public:
 
     void draw();
 
-    void setOnSelect(std::function<void(const std::string&)> cb) { onSelect_ = std::move(cb); }
+    void setOnSelect(std::function<void(const std::string&)> cb) {
+        onSelect_ = std::move(cb);
+    }
 
-    // Returns true if (x,y) is inside the FileBrowser window currently
-    // being drawn (only when open).
+    // For JNI hit-test integration.
     bool hitTest(float x, float y) const;
-
-    // Returns the window rect if open & valid.
     bool getRect(float& rx, float& ry, float& rw, float& rh) const;
-
-    void invalidateRect() { rectValid_ = false; }
+    void invalidateRect();
 
 private:
     FileBrowser() = default;
@@ -53,7 +51,7 @@ private:
     bool showHidden_{true};
     std::string error_;
 
-    // rect captured during draw() for hitTest() queries from JNI
+    // Rect captured during draw for hitTest().
     float rectX_{0.0f}, rectY_{0.0f}, rectW_{0.0f}, rectH_{0.0f};
     bool  rectValid_{false};
 };

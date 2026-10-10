@@ -5,10 +5,9 @@
 #include <android/log.h>
 #include <cstring>
 #include <vector>
-#include <mutex>
 
 #define LOG_TAG "YAMGG"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 namespace yamgg {
@@ -39,7 +38,7 @@ bool DexLoader::loadEmbeddedDex(JNIEnv* env) {
     }
 
     jmethodID wrapMethod = env->GetStaticMethodID(
-            byteBufferClass, "wrap", "([B)Ljava/nio/ByteBuffer;");
+        byteBufferClass, "wrap", "([B)Ljava/nio/ByteBuffer;");
     if (!wrapMethod) {
         env->ExceptionClear();
         LOGE("ByteBuffer.wrap not found");
@@ -62,7 +61,8 @@ bool DexLoader::loadEmbeddedDex(JNIEnv* env) {
         return false;
     }
 
-    jobject byteBuffer = env->CallStaticObjectMethod(byteBufferClass, wrapMethod, byteArray);
+    jobject byteBuffer = env->CallStaticObjectMethod(
+        byteBufferClass, wrapMethod, byteArray);
     env->DeleteLocalRef(byteArray);
     if (!byteBuffer) {
         env->ExceptionClear();
@@ -79,7 +79,7 @@ bool DexLoader::loadEmbeddedDex(JNIEnv* env) {
     }
 
     jmethodID getSystemCL = env->GetStaticMethodID(
-            classLoaderClass, "getSystemClassLoader", "()Ljava/lang/ClassLoader;");
+        classLoaderClass, "getSystemClassLoader", "()Ljava/lang/ClassLoader;");
     jobject parentLoader = nullptr;
     if (getSystemCL) {
         parentLoader = env->CallStaticObjectMethod(classLoaderClass, getSystemCL);
@@ -90,9 +90,8 @@ bool DexLoader::loadEmbeddedDex(JNIEnv* env) {
     }
 
     jmethodID ctor = env->GetMethodID(
-            imdclClass,
-            "<init>",
-            "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
+        imdclClass, "<init>",
+        "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
     if (!ctor) {
         env->ExceptionClear();
         LOGE("InMemoryDexClassLoader ctor not found");
@@ -125,18 +124,14 @@ bool DexLoader::loadEmbeddedDex(JNIEnv* env) {
 jclass DexLoader::findClass(JNIEnv* env, const char* name) {
     if (!env || !name) return nullptr;
 
-    // Refuse only truly absurd input. 50 000 chars is an upper bound that
-    // matches the user's explicit requirement (no artificial limits).
-    // JNI NewStringUTF officially handles up to 64 KB in the worst case,
-    // so we stay well under that.
+    // 50 000 chars upper bound — refusals for garbage only.
     size_t nameLen = std::strlen(name);
     if (nameLen == 0 || nameLen > 50000) {
         LOGE("DexLoader::findClass: invalid name length %zu", nameLen);
         return nullptr;
     }
 
-    // snapshot under lock — classLoaderObj_ / classLoaderClass_ are
-    // touched by detach() on a different thread.
+    // Snapshot under lock — detach() may clear these on another thread.
     jobject cl = nullptr;
     jclass  clCls = nullptr;
     {
@@ -147,8 +142,7 @@ jclass DexLoader::findClass(JNIEnv* env, const char* name) {
 
     if (cl && clCls) {
         jmethodID loadClass = env->GetMethodID(
-                clCls, "loadClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;");
+            clCls, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
         if (loadClass) {
             jstring jname = env->NewStringUTF(name);
             if (!jname) {
@@ -156,7 +150,7 @@ jclass DexLoader::findClass(JNIEnv* env, const char* name) {
                 return nullptr;
             }
             jclass cls = reinterpret_cast<jclass>(
-                    env->CallObjectMethod(cl, loadClass, jname));
+                env->CallObjectMethod(cl, loadClass, jname));
             env->DeleteLocalRef(jname);
             if (env->ExceptionCheck()) {
                 env->ExceptionClear();

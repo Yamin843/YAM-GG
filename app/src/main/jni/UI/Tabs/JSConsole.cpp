@@ -4,7 +4,7 @@
 #include "../../Bridge/YamBridge.h"
 
 #include "imgui.h"
-#include "imgui_internal.h"
+
 #include <android/log.h>
 #include <cstring>
 #include <cctype>
@@ -22,11 +22,43 @@ JSConsole::JSConsole() = default;
 JSConsole::~JSConsole() = default;
 JSConsole& JSConsole::instance() { static JSConsole i; return i; }
 
+void JSConsole::registerEvents() {
+    if (eventsRegistered_) return;
+    eventsRegistered_ = true;
+
+    yam::events::on("user_script_loaded", [this](const yam::Event& ev) {
+        std::string nm  = ev.get_str("name");
+        bool        ok  = ev.get_bool("ok", false);
+        std::string err = ev.get_str("error");
+        std::lock_guard<std::mutex> lk(mu_);
+        for (auto& s : scripts_) {
+            if (s.name == nm) {
+                s.running = ok;
+                if (ok) pushOutput("[injected] " + nm);
+                else pushOutput("[error] " + nm + ": " +
+                                (err.empty() ? "unknown" : err));
+                return;
+            }
+        }
+    });
+    yam::events::on("script_failed", [this](const yam::Event& ev) {
+        std::string nm  = ev.get_str("name");
+        std::string err = ev.get_str("error");
+        std::lock_guard<std::mutex> lk(mu_);
+        for (auto& s : scripts_) {
+            if (s.name == nm) {
+                s.running = false;
+                pushOutput("[error] " + nm + ": " + err);
+                return;
+            }
+        }
+    });
+}
+
 void JSConsole::pushOutput(const std::string& line) {
     std::lock_guard<std::mutex> lk(mu_);
     output_.push_back(line);
-    // لا cap. لا حذف تلقائي. إذا احتاج المستخدم clear، يضغط Clear Log.
-    // الإبقاء على كل السطور يجعل التشخيص ممكناً بلا فقدان.
+    // No cap — clipper virtualizes rendering.
 }
 
 void JSConsole::evaluate(const std::string& code) {
@@ -46,14 +78,13 @@ void JSConsole::evaluate(const std::string& code) {
 void JSConsole::loadScriptFromFile(const std::string& path) {
     if (path.empty()) { pushOutput("[error] empty path"); return; }
 
-    // validate .js extension
     size_t dot = path.find_last_of('.');
     if (dot == std::string::npos) {
         pushOutput("[error] not a .js file: " + path);
         return;
     }
     std::string ext = path.substr(dot + 1);
-    for (auto& c : ext) c = static_cast<char>(std::tolower(c));
+    for (auto& c : ext) c = (char)std::tolower(c);
     if (ext != "js") {
         pushOutput("[error] not a .js file: " + path);
         return;
@@ -63,29 +94,24 @@ void JSConsole::loadScriptFromFile(const std::string& path) {
     if (!f) { pushOutput("[error] cannot open: " + path); return; }
     std::stringstream ss; ss << f.rdbuf();
     std::string code = ss.str();
-    if (code.empty()) {
-        pushOutput("[error] empty script: " + path);
-        return;
-    }
+    if (code.empty()) { pushOutput("[error] empty script: " + path); return; }
 
     size_t slash = path.find_last_of('/');
     std::string name = (slash == std::string::npos) ? path : path.substr(slash + 1);
 
-    // إذا كان موجوداً، حدّث الكود
+    std::lock_guard<std::mutex> lk(mu_);
     for (auto& s : scripts_) {
         if (s.name == name) {
             bool wasRunning = s.running;
             s.code = code;
             s.path = path;
             s.selected = true;
-            s.running = false;   // الكود القديم لا يزال في الجسر
+            s.running = false;
             if (wasRunning) {
-                pushOutput("[updated] " + name +
-                           " (" + std::to_string(code.size()) +
-                           " bytes) — previously RUNNING, reload to apply");
+                pushOutput("[updated] " + name + " — previously RUNNING, reload to apply");
             } else {
-                pushOutput("[updated] " + name +
-                           " (" + std::to_string(code.size()) + " bytes)");
+                pushOutput("[updated] " + name + " (" +
+                           std::to_string(code.size()) + " bytes)");
             }
             return;
         }
@@ -95,30 +121,36 @@ void JSConsole::loadScriptFromFile(const std::string& path) {
     e.name = name; e.path = path; e.code = code;
     e.selected = true; e.id = nextScriptId_++;
     scripts_.push_back(e);
-    pushOutput("[loaded] " + name +
-               " (" + std::to_string(code.size()) + " bytes)");
+    pushOutput("[loaded] " + name + " (" +
+               std::to_string(code.size()) + " bytes)");
 }
 
 void JSConsole::loadSelected() {
+    registerEvents();
+
     YamBridge& b = YamBridge::instance();
+    int fired = 0;
+    std::lock_guard<std::mutex> lk(mu_);
     for (auto& s : scripts_) {
         if (!s.selected || s.running) continue;
-        // Use sync variant with 5s timeout — we only mark as "running"
-        // if the JS side confirmed success.
-        auto r = b.loadScriptSync(s.name, s.code, 5000);
+        auto r = b.loadScript(s.name, s.code);   // fire-and-forget
         if (r.ok) {
-            s.running = true;
-            pushOutput("[injected] " + s.name);
+            fired++;
+            pushOutput("[loading] " + s.name + " ...");
         } else {
             pushOutput("[error] " + s.name + ": " +
                        (r.error.empty() ? "unknown" : r.error));
         }
+    }
+    if (fired > 0) {
+        pushOutput("[note] waiting for load results (see LOG tab)");
     }
 }
 
 void JSConsole::unloadSelected() {
     YamBridge& b = YamBridge::instance();
     bool anyWarned = false;
+    std::lock_guard<std::mutex> lk(mu_);
     for (auto& s : scripts_) {
         if (!s.selected || !s.running) continue;
         bool ok = b.unloadScript(s.name);
@@ -138,20 +170,37 @@ void JSConsole::unloadSelected() {
 }
 
 void JSConsole::forgetScripts() {
-    // Clear the local list without touching the bridge.
-    // Useful if the user wants a clean slate in the UI while keeping
-    // loaded scripts active.
+    std::lock_guard<std::mutex> lk(mu_);
     for (auto& s : scripts_) s.running = false;
     scripts_.clear();
     pushOutput("[forget] local list cleared (bridge unchanged)");
 }
+
 void JSConsole::unloadAll() {
     YamBridge& b = YamBridge::instance();
-    for (auto& s : scripts_) if (s.running) { b.unloadScript(s.name); s.running = false; }
+    bool ok = b.unloadAllScripts();
+    std::lock_guard<std::mutex> lk(mu_);
+    for (auto& s : scripts_) s.running = false;
+    pushOutput(ok ? "[unloaded all] bridge cleared"
+                  : "[error] unload all failed");
 }
-void JSConsole::clearOutput() { std::lock_guard<std::mutex> lk(mu_); output_.clear(); }
-int JSConsole::scriptCount() const { return (int)scripts_.size(); }
-int JSConsole::runningCount() const { int n = 0; for (auto& s : scripts_) if (s.running) n++; return n; }
+
+void JSConsole::clearOutput() {
+    std::lock_guard<std::mutex> lk(mu_);
+    output_.clear();
+}
+
+int JSConsole::scriptCount() const {
+    std::lock_guard<std::mutex> lk(mu_);
+    return (int)scripts_.size();
+}
+
+int JSConsole::runningCount() const {
+    std::lock_guard<std::mutex> lk(mu_);
+    int n = 0;
+    for (auto& s : scripts_) if (s.running) n++;
+    return n;
+}
 
 void JSConsole::draw() {
     if (ImGui::BeginTabBar("##JSSubTabs", ImGuiTabBarFlags_None)) {
@@ -175,21 +224,14 @@ void JSConsole::drawLogTab() {
                        ImGuiWindowFlags_HorizontalScrollbar);
     {
         std::lock_guard<std::mutex> lk(mu_);
-
-        // Virtualize via clipper: only visible rows are rendered.
-        // Requires uniform row height → use TextUnformatted (no wrap).
-        // Horizontal scrolling is enabled via the outer BeginChild flag.
-        const int total = static_cast<int>(output_.size());
+        const int total = (int)output_.size();
         ImGuiListClipper clipper;
         clipper.Begin(total);
         while (clipper.Step()) {
             for (int idx = clipper.DisplayStart; idx < clipper.DisplayEnd; idx++) {
-                const std::string& line = output_[static_cast<size_t>(idx)];
-
+                const std::string& line = output_[(size_t)idx];
                 ImVec4 col(0.92f, 0.92f, 0.94f, 1.0f);
                 const char* prefix = nullptr;
-                ImVec4 prefixCol = col;
-
                 if (line.rfind("[error]", 0) == 0) {
                     col = ImVec4(0.94f, 0.33f, 0.31f, 1.0f);
                     prefix = "ERR";
@@ -200,22 +242,18 @@ void JSConsole::drawLogTab() {
                     col = ImVec4(1.00f, 0.83f, 0.30f, 1.0f);
                     prefix = ">>";
                 }
-                prefixCol = col;
-
                 if (prefix) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, prefixCol);
+                    ImGui::PushStyleColor(ImGuiCol_Text, col);
                     ImGui::TextUnformatted(prefix);
                     ImGui::PopStyleColor();
                     ImGui::SameLine(0, 10);
                 }
-
                 ImGui::PushStyleColor(ImGuiCol_Text, col);
                 ImGui::TextUnformatted(line.c_str());
                 ImGui::PopStyleColor();
             }
         }
         clipper.End();
-
         if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f)
             ImGui::SetScrollHereY(1.0f);
     }
@@ -228,7 +266,6 @@ void JSConsole::drawLogTab() {
 void JSConsole::drawConsoleTab() {
     ImGui::Spacing();
 
-    // Escape → يُخرج التركيز من أي عنصر لتفادي حجز المفاتيح
     if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
         ImGui::ClearActiveID();
     }
@@ -243,20 +280,18 @@ void JSConsole::drawConsoleTab() {
         ImGui::SameLine();
         bs = autoBtn("Load");
         if (ImGui::Button("Load", bs)) loadSelected();
+
         ImGui::SameLine();
         bs = autoBtn("Unload");
         if (ImGui::Button("Unload", bs)) unloadSelected();
 
         ImGui::SameLine();
         bs = autoBtn("Unload All");
-        if (ImGui::Button("Unload All", bs)) {
-            if (YamBridge::instance().unloadAllScripts()) {
-                for (auto& s : scripts_) s.running = false;
-                pushOutput("[unloaded all] bridge cleared");
-            } else {
-                pushOutput("[error] unload all failed (bridge not ready)");
-            }
-        }
+        if (ImGui::Button("Unload All", bs)) unloadAll();
+
+        ImGui::SameLine();
+        bs = autoBtn("Forget");
+        if (ImGui::Button("Forget", bs)) forgetScripts();
 
         ImGui::SameLine();
         bs = autoBtn("Paste");
@@ -277,7 +312,6 @@ void JSConsole::drawConsoleTab() {
     }
     ImGui::Separator();
 
-    // Editor
     {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.62f, 0.68f, 1.0f));
         ImGui::TextUnformatted("SCRIPT EDITOR");
@@ -285,21 +319,22 @@ void JSConsole::drawConsoleTab() {
     }
 
     ImGui::InputTextMultiline("##code", codeBuffer_, sizeof(codeBuffer_),
-                              ImVec2(-1, 220), ImGuiInputTextFlags_AllowTabInput);
+                              ImVec2(-1, 200), ImGuiInputTextFlags_AllowTabInput);
 
-    // Ctrl+Enter → Run السكربت من داخل المحرر
     {
         ImGuiIO& io = ImGui::GetIO();
         bool ctrl = io.KeyCtrl || io.KeySuper;
-        if (ImGui::IsItemFocused() && ctrl && ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
+        if (ImGui::IsItemFocused() && ctrl
+            && ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
             if (codeBuffer_[0]) evaluate(std::string(codeBuffer_));
         }
     }
 
     {
         ImVec2 bs = autoBtn("Run");
-        if (ImGui::Button("Run", bs))
+        if (ImGui::Button("Run", bs)) {
             if (codeBuffer_[0]) evaluate(std::string(codeBuffer_));
+        }
         ImGui::SameLine();
         bs = autoBtn("Clear");
         if (ImGui::Button("Clear", bs)) codeBuffer_[0] = 0;
@@ -307,7 +342,6 @@ void JSConsole::drawConsoleTab() {
 
     ImGui::Separator();
 
-    // Scripts list with checkboxes
     {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.62f, 0.68f, 1.0f));
         ImGui::TextUnformatted("SCRIPTS");
@@ -326,7 +360,7 @@ void JSConsole::drawConsoleTab() {
     ImGui::BeginChild("##ScriptsList", ImVec2(0, 0), true);
     if (scripts_.empty()) {
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextWrapped("(use fromSD to load a file)");
+        ImGui::TextWrapped("(use 'fromSD' to load a file)");
         ImGui::PopTextWrapPos();
     }
     for (size_t i = 0; i < scripts_.size(); ++i) {
@@ -334,7 +368,8 @@ void JSConsole::drawConsoleTab() {
         ImGui::PushID((int)i);
         ImGui::Checkbox("##sel", &s.selected);
         ImGui::SameLine();
-        // نقطة حالة ملوّنة
+
+        // Status dot
         {
             ImVec2 p = ImGui::GetCursorScreenPos();
             float lineH = ImGui::GetTextLineHeight();
@@ -358,7 +393,8 @@ void JSConsole::drawConsoleTab() {
         if (ImGui::SmallButton("X")) {
             if (s.running) YamBridge::instance().unloadScript(s.name);
             scripts_.erase(scripts_.begin() + i);
-            ImGui::PopID(); break;
+            ImGui::PopID();
+            break;
         }
         ImGui::PopID();
     }

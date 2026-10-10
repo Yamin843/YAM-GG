@@ -1,11 +1,9 @@
-
 #include "MainWindow.h"
 #include "Theme.h"
 #include "Tabs/JSConsole.h"
 #include "Tabs/ClassBrowser.h"
 #include "Tabs/FileBrowser.h"
 #include "Widgets/Notification.h"
-#include "../Core/Runtime.h"
 
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -13,6 +11,7 @@
 #include <android/log.h>
 #include <cstring>
 #include <cmath>
+#include <mutex>
 
 #define LOG_TAG "YAMGG"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -27,27 +26,27 @@ struct MainWindow::Impl {
     ImVec2 lastSize{0, 0};
     ImVec2 initialSize{0, 0};
     bool   initializedSize{false};
-    int    currentTab{0};
-    char   titleBuf[128];
+    int    currentTab{0};     // 0 = JV, 1 = JS
+    char   titleBuf[64];
     float  opacity{1.0f};
 
-    // minimize
+    // Minimize
     bool   minimized{false};
     ImVec2 minimizedPos{40.0f, 120.0f};
     ImVec2 lastFullPos{0, 0};
     ImVec2 lastFullSize{0, 0};
 
-    // window drag
-    bool   dragPending{false};       // click registered, not yet dragged
+    // Drag state
+    bool   dragPending{false};
     bool   windowDragging{false};
     ImVec2 dragStartMouse{0, 0};
     ImVec2 dragStartWindow{0, 0};
-    int    dragStartMs{0};           // when the click started (ms)
 
-    // hit test rect (updated every frame while we draw)
-    ImVec2 currentWindowPos{0, 0};
-    ImVec2 currentWindowSize{0, 0};
-    bool   currentWindowValid{false};
+    // Cached rect for hitTest (guarded by rectMu_)
+    mutable std::mutex rectMu;
+    ImVec2 rectPos{0, 0};
+    ImVec2 rectSize{0, 0};
+    bool   rectValid{false};
 };
 
 MainWindow::MainWindow() : impl_(new Impl()) {
@@ -55,9 +54,7 @@ MainWindow::MainWindow() : impl_(new Impl()) {
     impl_->titleBuf[sizeof(impl_->titleBuf) - 1] = 0;
 }
 
-MainWindow::~MainWindow() {
-    delete impl_;
-}
+MainWindow::~MainWindow() { delete impl_; }
 
 MainWindow& MainWindow::instance() {
     static MainWindow inst;
@@ -67,14 +64,18 @@ MainWindow& MainWindow::instance() {
 void MainWindow::draw() {
     if (!visible_) {
         impl_->windowDragging = false;
-        impl_->dragPending    = false;
+        impl_->dragPending = false;
+        {
+            std::lock_guard<std::mutex> lk(impl_->rectMu);
+            impl_->rectValid = false;
+        }
         Notification::instance().draw();
         return;
     }
 
     if (impl_->minimized) {
         impl_->windowDragging = false;
-        impl_->dragPending    = false;
+        impl_->dragPending = false;
         drawMinimized();
         Notification::instance().draw();
         return;
@@ -107,8 +108,7 @@ void MainWindow::drawMainWindow() {
     }
 
     ImGui::SetNextWindowSizeConstraints(
-        ImVec2(kMinW, kMinH),
-        ImVec2(io.DisplaySize.x, io.DisplaySize.y));
+        ImVec2(kMinW, kMinH), ImVec2(io.DisplaySize.x, io.DisplaySize.y));
 
     if (impl_->firstDraw) {
         ImGui::SetNextWindowPos(
@@ -140,18 +140,17 @@ void MainWindow::drawMainWindow() {
         return;
     }
 
-    // Track the actual window rect for hitTest() (called from native code
-    // potentially before this frame's draw is committed).
-    impl_->currentWindowPos   = ImGui::GetWindowPos();
-    impl_->currentWindowSize  = ImGui::GetWindowSize();
-    impl_->currentWindowValid = true;
-
-    // ─── YG minimize button (top-right, inside window) ───
+    // Save / restore cursor for the YG button. We place it at the top-right
+    // corner of the window's content area (which visually coincides with
+    // the title bar's right side). Restoring the cursor prevents the
+    // sidebar from being pushed down.
     {
+        ImVec2 savedCursor = ImGui::GetCursorPos();
+
         ImVec2 wpos  = ImGui::GetWindowPos();
         ImVec2 wsize = ImGui::GetWindowSize();
-        const float sz = 48.0f;
-        const float mg = 12.0f;
+        const float sz = 34.0f;
+        const float mg = 8.0f;
 
         ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.85f, 0.65f, 0.00f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.00f, 0.80f, 0.15f, 1.0f));
@@ -159,10 +158,10 @@ void MainWindow::drawMainWindow() {
         ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.02f, 0.02f, 0.02f, 1.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, sz * 0.5f);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
 
-        ImGui::SetCursorScreenPos(ImVec2(wpos.x + wsize.x - sz - mg,
-                                          wpos.y + mg));
+        ImGui::SetCursorScreenPos(
+            ImVec2(wpos.x + wsize.x - sz - mg, wpos.y + mg));
         ImGui::PushID("YG_btn");
         if (ImGui::Button("YG", ImVec2(sz, sz))) {
             impl_->lastFullPos  = wpos;
@@ -170,19 +169,20 @@ void MainWindow::drawMainWindow() {
             impl_->minimized    = true;
         }
         ImGui::PopID();
-
         ImGui::PopStyleVar(3);
         ImGui::PopStyleColor(4);
+
+        ImGui::SetCursorPos(savedCursor);
     }
 
-    // ─── Sidebar ───
-    const float sidebarW = 110.0f;
+    // Sidebar
+    const float sidebarW = 100.0f;
     ImGui::BeginChild("##Sidebar", ImVec2(sidebarW, 0), false);
     {
         auto tabBtn = [&](const char* label, int id) {
             bool sel = (impl_->currentTab == id);
-            const float btnH = 72.0f;
-            ImVec2 btnSz(sidebarW - 20.0f, btnH);
+            const float btnH = 64.0f;
+            ImVec2 btnSz(sidebarW - 16.0f, btnH);
 
             ImVec4 bg, hov, act, txt;
             if (sel) {
@@ -196,15 +196,13 @@ void MainWindow::drawMainWindow() {
                 act = ImVec4(0.20f, 0.16f, 0.05f, 1.0f);
                 txt = ImVec4(0.72f, 0.72f, 0.74f, 1.0f);
             }
-
             ImGui::PushStyleColor(ImGuiCol_Button,        bg);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hov);
             ImGui::PushStyleColor(ImGuiCol_ButtonActive,  act);
             ImGui::PushStyleColor(ImGuiCol_Text,          txt);
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, btnH * 0.28f);
             ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign,
-                ImVec2(0.5f, 0.5f));
+            ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.5f, 0.5f));
             ImGui::PushID(label);
             if (ImGui::Button(label, btnSz)) impl_->currentTab = id;
             ImGui::PopID();
@@ -212,8 +210,7 @@ void MainWindow::drawMainWindow() {
             ImGui::PopStyleColor(4);
             ImGui::Dummy(ImVec2(0, 6));
         };
-
-        ImGui::Dummy(ImVec2(0, 6));
+        ImGui::Dummy(ImVec2(0, 4));
         tabBtn("JV", 0);
         tabBtn("JS", 1);
     }
@@ -221,7 +218,7 @@ void MainWindow::drawMainWindow() {
 
     ImGui::SameLine();
 
-    // ─── Content ───
+    // Content
     ImGui::BeginChild("##ContentArea", ImVec2(0, 0), false);
     {
         if (impl_->currentTab == 0) {
@@ -232,11 +229,11 @@ void MainWindow::drawMainWindow() {
     }
     ImGui::EndChild();
 
-    // ─── 5-zone resize edges + corner ───
+    // 5-zone resize edges + corner (bottom-right 100×100)
     if (!impl_->fullscreen) {
         ImVec2 wPos  = ImGui::GetWindowPos();
         ImVec2 wSize = ImGui::GetWindowSize();
-        const float edge = 48.0f;
+        const float edge = 40.0f;
 
         // Top edge → drag
         ImGui::SetCursorScreenPos(ImVec2(wPos.x + edge, wPos.y + 2));
@@ -248,8 +245,7 @@ void MainWindow::drawMainWindow() {
         }
 
         // Bottom edge → resize height
-        ImGui::SetCursorScreenPos(ImVec2(wPos.x + edge,
-                                          wPos.y + wSize.y - edge));
+        ImGui::SetCursorScreenPos(ImVec2(wPos.x + edge, wPos.y + wSize.y - edge));
         ImGui::InvisibleButton("##zbot", ImVec2(wSize.x - 2*edge, edge),
             ImGuiButtonFlags_MouseButtonLeft);
         if (ImGui::IsItemActive()) {
@@ -273,8 +269,7 @@ void MainWindow::drawMainWindow() {
         }
 
         // Right edge → resize width
-        ImGui::SetCursorScreenPos(ImVec2(wPos.x + wSize.x - edge,
-                                          wPos.y + edge));
+        ImGui::SetCursorScreenPos(ImVec2(wPos.x + wSize.x - edge, wPos.y + edge));
         ImGui::InvisibleButton("##zright", ImVec2(edge, wSize.y - 2*edge),
             ImGuiButtonFlags_MouseButtonLeft);
         if (ImGui::IsItemActive()) {
@@ -285,7 +280,7 @@ void MainWindow::drawMainWindow() {
             ImGui::SetWindowSize(ImVec2(nw, wSize.y));
         }
 
-        // Corner (bottom-right) → resize both
+        // Bottom-right corner → resize both
         ImGui::SetCursorScreenPos(
             ImVec2(wPos.x + wSize.x - 100, wPos.y + wSize.y - 100));
         ImGui::InvisibleButton("##zcorner", ImVec2(100, 100),
@@ -302,41 +297,35 @@ void MainWindow::drawMainWindow() {
         }
     }
 
-    // ─── Unified drag from any empty spot ───
-    // Threshold-based: click must move > 6 px before drag starts, so a
-    // simple tap on a tree node / button does not shift the window.
+    // Drag from any empty spot (with 6px threshold to not interfere with taps)
     if (!impl_->fullscreen) {
         ImGuiIO& dio = ImGui::GetIO();
         bool hovered = ImGui::IsWindowHovered(
             ImGuiHoveredFlags_ChildWindows
             | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
 
-        // 1) On mouse-down over empty area, arm the pending drag.
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
             && hovered
             && !ImGui::IsAnyItemActive()
             && !impl_->windowDragging) {
-            impl_->dragPending     = true;
-            impl_->dragStartMouse  = dio.MousePos;
-            impl_->dragStartWindow = ImGui::GetWindowPos();
+            impl_->dragPending    = true;
+            impl_->dragStartMouse = dio.MousePos;
+            impl_->dragStartWindow= ImGui::GetWindowPos();
         }
 
-        // 2) If pending, check for threshold breach or release.
         if (impl_->dragPending) {
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                // released without moving → tap, not drag
                 impl_->dragPending = false;
             } else {
                 float dx = dio.MousePos.x - impl_->dragStartMouse.x;
                 float dy = dio.MousePos.y - impl_->dragStartMouse.y;
-                if ((dx * dx + dy * dy) > 36.0f) {   // 6 px
+                if ((dx * dx + dy * dy) > 36.0f) {  // 6 px threshold
                     impl_->windowDragging = true;
                     impl_->dragPending    = false;
                 }
             }
         }
 
-        // 3) If dragging, move the window and stop on release.
         if (impl_->windowDragging) {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
                 ImVec2 d(dio.MousePos.x - impl_->dragStartMouse.x,
@@ -348,6 +337,14 @@ void MainWindow::drawMainWindow() {
                 impl_->windowDragging = false;
             }
         }
+    }
+
+    // Record the actual window rect for hitTest()
+    {
+        std::lock_guard<std::mutex> lk(impl_->rectMu);
+        impl_->rectPos   = ImGui::GetWindowPos();
+        impl_->rectSize  = ImGui::GetWindowSize();
+        impl_->rectValid = true;
     }
 
     ImGui::End();
@@ -365,12 +362,9 @@ void MainWindow::drawMinimized() {
     if (impl_->minimizedPos.y < 0) impl_->minimizedPos.y = 0;
 
     ImGuiWindowFlags f = ImGuiWindowFlags_NoTitleBar
-        | ImGuiWindowFlags_NoResize
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoScrollbar
-        | ImGuiWindowFlags_NoScrollWithMouse
-        | ImGuiWindowFlags_NoSavedSettings
-        | ImGuiWindowFlags_NoCollapse
+        | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+        | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse
         | ImGuiWindowFlags_NoBringToFrontOnFocus;
 
     ImGui::SetNextWindowPos(impl_->minimizedPos, ImGuiCond_Always);
@@ -379,17 +373,18 @@ void MainWindow::drawMinimized() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 3.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, size * 0.5f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg,
-        ImVec4(0.02f, 0.02f, 0.02f, 0.95f));
-    ImGui::PushStyleColor(ImGuiCol_Border,
-        ImVec4(0.85f, 0.65f, 0.00f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.02f, 0.02f, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_Border,   ImVec4(0.85f, 0.65f, 0.00f, 1.0f));
 
     ImGui::Begin("##YAMGG_Minimized", nullptr, f);
 
-    // Update hitTest rect for minimized state.
-    impl_->currentWindowPos   = impl_->minimizedPos;
-    impl_->currentWindowSize  = ImVec2(size, size);
-    impl_->currentWindowValid = true;
+    // Track rect for hitTest()
+    {
+        std::lock_guard<std::mutex> lk(impl_->rectMu);
+        impl_->rectPos   = impl_->minimizedPos;
+        impl_->rectSize  = ImVec2(size, size);
+        impl_->rectValid = true;
+    }
 
     ImVec2 curPos = ImGui::GetCursorScreenPos();
     ImGui::InvisibleButton("##yg_icon", ImVec2(size, size));
@@ -410,10 +405,8 @@ void MainWindow::drawMinimized() {
             if (std::fabs(d.x) < 3.0f && std::fabs(d.y) < 3.0f) {
                 impl_->minimized = false;
                 if (impl_->lastFullSize.x > 100.0f) {
-                    ImGui::SetNextWindowPos(impl_->lastFullPos,
-                        ImGuiCond_Appearing);
-                    ImGui::SetNextWindowSize(impl_->lastFullSize,
-                        ImGuiCond_Appearing);
+                    ImGui::SetNextWindowPos(impl_->lastFullPos, ImGuiCond_Appearing);
+                    ImGui::SetNextWindowSize(impl_->lastFullSize, ImGuiCond_Appearing);
                 }
             }
         }
@@ -427,44 +420,37 @@ void MainWindow::drawMinimized() {
 void MainWindow::drawStatusBar() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x,
-                                    vp->WorkPos.y + vp->WorkSize.y - 44.0f));
-    ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, 44.0f));
+                                    vp->WorkPos.y + vp->WorkSize.y - 40.0f));
+    ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, 40.0f));
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
-        | ImGuiWindowFlags_NoResize
-        | ImGuiWindowFlags_NoMove
-        | ImGuiWindowFlags_NoScrollbar
-        | ImGuiWindowFlags_NoSavedSettings
-        | ImGuiWindowFlags_NoBringToFrontOnFocus
-        | ImGuiWindowFlags_NoNavFocus
-        | ImGuiWindowFlags_NoBackground;
+        | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings
+        | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus
+        | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 10.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 10.0f));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.02f, 0.02f, 0.03f, 0.92f));
 
     if (ImGui::Begin("##StatusBar", nullptr, flags)) {
         int sc = JSConsole::instance().scriptCount();
         int rc = JSConsole::instance().runningCount();
 
-        // Brand mark
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.72f, 0.25f, 1.0f));
         ImGui::TextUnformatted("YAM-GG");
         ImGui::PopStyleColor();
 
-        // Separator dot
         ImGui::SameLine(0, 10);
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.35f, 0.38f, 1.0f));
         ImGui::TextUnformatted("·");
         ImGui::PopStyleColor();
 
-        // Scripts count
         ImGui::SameLine(0, 10);
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.72f, 0.72f, 0.74f, 1.0f));
         ImGui::Text("%d scripts", sc);
         ImGui::PopStyleColor();
 
-        // Running count with color indication
         if (rc > 0) {
             ImGui::SameLine(0, 10);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.40f, 0.75f, 0.42f, 1.0f));
@@ -477,8 +463,26 @@ void MainWindow::drawStatusBar() {
     ImGui::PopStyleVar(2);
 }
 
-void MainWindow::drawMenuBar() {
-    // disabled per user request
+bool MainWindow::getRect(float& x, float& y, float& w, float& h) const {
+    std::lock_guard<std::mutex> lk(impl_->rectMu);
+    if (!impl_->rectValid) return false;
+    if (impl_->rectSize.x <= 0.0f || impl_->rectSize.y <= 0.0f) return false;
+    x = impl_->rectPos.x;
+    y = impl_->rectPos.y;
+    w = impl_->rectSize.x;
+    h = impl_->rectSize.y;
+    return true;
+}
+
+bool MainWindow::hitTest(float x, float y) const {
+    float rx, ry, rw, rh;
+    if (!getRect(rx, ry, rw, rh)) return false;
+    return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
+}
+
+void MainWindow::invalidateRect() {
+    std::lock_guard<std::mutex> lk(impl_->rectMu);
+    impl_->rectValid = false;
 }
 
 void MainWindow::openFileBrowser() {
@@ -499,26 +503,6 @@ bool MainWindow::fileBrowserOpen() const {
 
 void MainWindow::notify(const std::string& msg, float duration) {
     Notification::instance().push(msg, duration);
-}
-
-void MainWindow::invalidateRect() {
-    if (impl_) impl_->currentWindowValid = false;
-}
-
-bool MainWindow::getRect(float& x, float& y, float& w, float& h) const {
-    if (!impl_->currentWindowValid) return false;
-    ImVec2 p = impl_->currentWindowPos;
-    ImVec2 s = impl_->currentWindowSize;
-    if (s.x <= 0.0f || s.y <= 0.0f) return false;
-    x = p.x; y = p.y; w = s.x; h = s.y;
-    return true;
-}
-
-bool MainWindow::hitTest(float x, float y) const {
-    float rx, ry, rw, rh;
-    if (!getRect(rx, ry, rw, rh)) return false;
-    return x >= rx && x <= rx + rw &&
-           y >= ry && y <= ry + rh;
 }
 
 } // namespace yamgg

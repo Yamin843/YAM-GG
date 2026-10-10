@@ -1,5 +1,4 @@
 #include "FileBrowser.h"
-
 #include "imgui.h"
 
 #include <android/log.h>
@@ -64,11 +63,10 @@ void FileBrowser::refresh() {
 
         Entry e;
         e.name = name;
-        if (!currentPath_.empty() && currentPath_.back() == '/') {
+        if (!currentPath_.empty() && currentPath_.back() == '/')
             e.fullPath = currentPath_ + name;
-        } else {
+        else
             e.fullPath = currentPath_ + "/" + name;
-        }
 
         struct stat st;
         if (stat(e.fullPath.c_str(), &st) == 0) {
@@ -78,7 +76,6 @@ void FileBrowser::refresh() {
             e.isDir = (entry->d_type == DT_DIR);
             e.size = 0;
         }
-
         entries_.push_back(std::move(e));
     }
     closedir(dir);
@@ -93,15 +90,24 @@ void FileBrowser::refresh() {
 void FileBrowser::draw() {
     if (!open_) return;
 
-    // ESC closes the dialog
     if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
         close();
         return;
     }
 
-    ImGui::SetNextWindowSize(ImVec2(700, 520), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(960, 720), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
                             ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20.0f, 18.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14.0f, 10.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.0f, 10.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 22.0f);
+
+    struct StylePopGuard {
+        int n;
+        ~StylePopGuard() { ImGui::PopStyleVar(n); }
+    } guard{4};
 
     bool opened = ImGui::Begin("Select JS Script", &open_,
                                 ImGuiWindowFlags_NoCollapse);
@@ -111,7 +117,6 @@ void FileBrowser::draw() {
         return;
     }
 
-    // capture rect for hitTest()
     {
         ImVec2 wp = ImGui::GetWindowPos();
         ImVec2 ws = ImGui::GetWindowSize();
@@ -120,37 +125,28 @@ void FileBrowser::draw() {
         rectValid_ = true;
     }
 
-    // ─── Search filter ───
+    // ── Filter / controls ──
     {
-        ImGui::SetNextItemWidth(-200);
-        ImGui::InputTextWithHint("##filter", "filter...", filter_,
-                                  sizeof(filter_));
+        ImGui::SetNextItemWidth(-240);
+        ImGui::InputTextWithHint("##filter", "filter...", filter_, sizeof(filter_));
         ImGui::SameLine();
-        if (ImGui::Button("Up", ImVec2(60, 0))) {
-            goUp();
-        }
+        if (ImGui::Button("Up", ImVec2(60, 0))) goUp();
         ImGui::SameLine();
-        if (ImGui::Button("Refresh", ImVec2(80, 0))) {
-            refresh();
-        }
+        if (ImGui::Button("Refresh", ImVec2(80, 0))) refresh();
         ImGui::SameLine();
         ImGui::Checkbox("Hidden", &showHidden_);
-        if (ImGui::Button("Reload", ImVec2(80, 0))) {
-            refresh();
-        }
     }
 
-    // ─── Breadcrumb path (built bottom-up, clickable) ───
+    // ── Breadcrumb ──
     {
         ImGui::PushTextWrapPos(0.0f);
         std::string path = currentPath_;
         if (path.empty()) path = "/";
-        // مسح الـ "/" النهائي إن وُجد
         if (path.size() > 1 && path.back() == '/') path.pop_back();
 
         std::vector<std::string> crumbs;
         size_t start = 0;
-        if (path[0] == '/') { crumbs.push_back("/"); start = 1; }
+        if (!path.empty() && path[0] == '/') { crumbs.push_back("/"); start = 1; }
 
         while (start < path.size()) {
             size_t slash = path.find('/', start);
@@ -170,19 +166,15 @@ void FileBrowser::draw() {
                 ImGui::SameLine();
             }
             if (crumbs[i] == "/") {
-                ImGui::PushStyleColor(ImGuiCol_Button,
-                    ImVec4(0.10f, 0.10f, 0.12f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                    ImVec4(0.20f, 0.16f, 0.06f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.10f, 0.10f, 0.12f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.16f, 0.06f, 1.0f));
                 if (ImGui::SmallButton("/")) navigateTo("/");
                 ImGui::PopStyleColor(2);
                 cumulative = "";
             } else {
-                ImGui::PushID(static_cast<int>(i));
-                ImGui::PushStyleColor(ImGuiCol_Button,
-                    ImVec4(0.10f, 0.10f, 0.12f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                    ImVec4(0.20f, 0.16f, 0.06f, 1.0f));
+                ImGui::PushID((int)i);
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.10f, 0.10f, 0.12f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.16f, 0.06f, 1.0f));
                 if (ImGui::SmallButton(crumbs[i].c_str())) {
                     if (cumulative.empty()) cumulative = "/";
                     else if (cumulative.back() != '/') cumulative += "/";
@@ -206,15 +198,11 @@ void FileBrowser::draw() {
         ImGui::PopStyleColor();
     }
 
-    if (!error_.empty()) {
-        ImGui::End();
-        return;
-    }
-
     std::string f = filter_;
     std::transform(f.begin(), f.end(), f.begin(), ::tolower);
 
-    if (ImGui::BeginChild("##list", ImVec2(0, -60), true, ImGuiWindowFlags_HorizontalScrollbar)) {
+    if (ImGui::BeginChild("##list", ImVec2(0, -60), true,
+                           ImGuiWindowFlags_HorizontalScrollbar)) {
         for (auto& e : entries_) {
             if (!f.empty()) {
                 std::string lower = e.name;
@@ -224,18 +212,22 @@ void FileBrowser::draw() {
 
             ImGui::PushID(e.fullPath.c_str());
             if (e.isDir) {
-                // Folder: gold icon + name
-                ImGui::PushStyleColor(ImGuiCol_Text,
-                    ImVec4(0.95f, 0.78f, 0.20f, 1.0f));
-                ImGui::TextUnformatted("▸");
+                ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.10f, 0.09f, 0.05f, 0.55f));
+                ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.22f, 0.18f, 0.06f, 0.85f));
+                ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.28f, 0.22f, 0.08f, 1.00f));
+
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.82f, 0.24f, 1.0f));
+                ImGui::TextUnformatted(">");
                 ImGui::PopStyleColor();
-                ImGui::SameLine(0, 10);
-                ImGui::PushStyleColor(ImGuiCol_Text,
-                    ImVec4(0.96f, 0.96f, 0.98f, 1.0f));
+                ImGui::SameLine(0, 12);
+
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.98f, 1.00f, 1.0f));
                 ImGui::PushTextWrapPos(0.0f);
-                bool clicked = ImGui::Selectable(e.name.c_str(), false);
+                bool clicked = ImGui::Selectable(e.name.c_str(), false, 0, ImVec2(0, 40.0f));
                 ImGui::PopTextWrapPos();
                 ImGui::PopStyleColor();
+                ImGui::PopStyleColor(3);
+
                 if (clicked) {
                     ImGui::PopID();
                     navigateTo(e.fullPath);
@@ -248,42 +240,42 @@ void FileBrowser::draw() {
                     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
                     isJs = (ext == ".js");
                 }
-                // File: small icon char
+                ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.08f, 0.08f, 0.09f, 0.40f));
+                ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.16f, 0.14f, 0.06f, 0.75f));
+
                 if (isJs) {
-                    ImGui::PushStyleColor(ImGuiCol_Text,
-                        ImVec4(0.55f, 0.85f, 0.55f, 1.0f));
-                    ImGui::TextUnformatted("•");
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.60f, 0.92f, 0.60f, 1.0f));
+                    ImGui::TextUnformatted("*");
                     ImGui::PopStyleColor();
                 } else {
-                    ImGui::PushStyleColor(ImGuiCol_Text,
-                        ImVec4(0.40f, 0.40f, 0.45f, 1.0f));
-                    ImGui::TextUnformatted("·");
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.60f, 1.0f));
+                    ImGui::TextUnformatted("-");
                     ImGui::PopStyleColor();
                 }
-                ImGui::SameLine(0, 10);
-                char disp[640];
-                snprintf(disp, sizeof(disp), "%s", e.name.c_str());
+                ImGui::SameLine(0, 12);
+
                 if (isJs) {
-                    ImGui::PushStyleColor(ImGuiCol_Text,
-                        ImVec4(0.88f, 0.88f, 0.92f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 1.00f, 1.0f));
                 } else {
-                    ImGui::PushStyleColor(ImGuiCol_Text,
-                        ImVec4(0.68f, 0.68f, 0.72f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.78f, 0.78f, 0.82f, 1.0f));
                 }
                 ImGui::PushTextWrapPos(0.0f);
-                bool clicked = ImGui::Selectable(disp, false);
+                bool clicked = ImGui::Selectable(e.name.c_str(), false, 0, ImVec2(0, 36.0f));
                 ImGui::PopTextWrapPos();
                 ImGui::PopStyleColor();
 
-                // Size on the right
                 ImGui::SameLine();
                 char sizeBuf[64];
-                snprintf(sizeBuf, sizeof(sizeBuf), "%lld B",
-                         (long long)e.size);
-                ImGui::PushStyleColor(ImGuiCol_Text,
-                    ImVec4(0.45f, 0.45f, 0.50f, 1.0f));
+                if (e.size >= 1024) {
+                    snprintf(sizeBuf, sizeof(sizeBuf), "%.1f KB",
+                             (double)e.size / 1024.0);
+                } else {
+                    snprintf(sizeBuf, sizeof(sizeBuf), "%lld B", (long long)e.size);
+                }
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.62f, 1.0f));
                 ImGui::TextUnformatted(sizeBuf);
                 ImGui::PopStyleColor();
+                ImGui::PopStyleColor(2);
 
                 if (clicked && onSelect_) {
                     std::string path = e.fullPath;
@@ -316,8 +308,9 @@ bool FileBrowser::getRect(float& rx, float& ry, float& rw, float& rh) const {
 bool FileBrowser::hitTest(float x, float y) const {
     float rx, ry, rw, rh;
     if (!getRect(rx, ry, rw, rh)) return false;
-    return x >= rx && x <= rx + rw &&
-           y >= ry && y <= ry + rh;
+    return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
 }
+
+void FileBrowser::invalidateRect() { rectValid_ = false; }
 
 } // namespace yamgg

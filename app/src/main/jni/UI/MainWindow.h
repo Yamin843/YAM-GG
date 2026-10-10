@@ -1,4 +1,3 @@
-
 #ifndef YAMGG_UI_MAINWINDOW_H
 #define YAMGG_UI_MAINWINDOW_H
 
@@ -22,15 +21,10 @@ public:
 
     void notify(const std::string& msg, float duration = 3.0f);
 
-    // Returns true if (x, y) falls inside our current visible UI.
-    // Used by ModView to decide whether to claim a touch gesture
-    // (blocks the underlying app) or pass it through.
+    // Rect tracked during draw(). JNI calls these from any thread; the
+    // implementation guards with a mutex in the .cpp.
     bool hitTest(float x, float y) const;
     bool getRect(float& x, float& y, float& w, float& h) const;
-
-    // Mark the cached rect as stale. Called at the start of each frame
-    // before any window draws itself, so hitTest() returns false for
-    // windows that are no longer rendered.
     void invalidateRect();
 
 private:
@@ -40,12 +34,10 @@ private:
     MainWindow& operator=(const MainWindow&) = delete;
 
     void drawMainWindow();
-    void drawMenuBar();
-    void drawStatusBar();
     void drawMinimized();
+    void drawStatusBar();
 
     bool visible_{true};
-    bool firstDraw_{true};
     bool collapsed_{false};
 
     struct Impl;

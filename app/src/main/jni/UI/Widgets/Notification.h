@@ -25,7 +25,7 @@ private:
         int         id;
         std::string msg;
         std::chrono::steady_clock::time_point created;
-        float duration;
+        float       duration;
     };
 
     std::deque<Item> items_;

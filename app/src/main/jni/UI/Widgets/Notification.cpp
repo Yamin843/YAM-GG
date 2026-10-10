@@ -1,5 +1,4 @@
 #include "Notification.h"
-
 #include "imgui.h"
 
 namespace yamgg {
@@ -11,9 +10,9 @@ Notification& Notification::instance() {
 
 void Notification::push(const std::string& msg, float duration) {
     Item it;
-    it.id = next_id_++;
-    it.msg = msg;
-    it.created = std::chrono::steady_clock::now();
+    it.id       = next_id_++;
+    it.msg      = msg;
+    it.created  = std::chrono::steady_clock::now();
     it.duration = duration > 0.0f ? duration : 3.0f;
     items_.push_back(std::move(it));
     if (items_.size() > 8) items_.pop_front();
@@ -22,11 +21,11 @@ void Notification::push(const std::string& msg, float duration) {
 void Notification::draw() {
     auto now = std::chrono::steady_clock::now();
     while (!items_.empty()) {
-        float age = std::chrono::duration<float>(now - items_.front().created).count();
+        float age = std::chrono::duration<float>(
+            now - items_.front().created).count();
         if (age > items_.front().duration) items_.pop_front();
         else break;
     }
-
     if (items_.empty()) return;
 
     ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -35,8 +34,8 @@ void Notification::draw() {
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 3.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.03f, 0.03f, 0.03f, 0.92f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.85f, 0.65f, 0.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border,   ImVec4(0.85f, 0.65f, 0.00f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text,     ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
 
     for (auto it = items_.rbegin(); it != items_.rend(); ++it) {
         float age = std::chrono::duration<float>(now - it->created).count();
@@ -51,15 +50,15 @@ void Notification::draw() {
         char name[64];
         snprintf(name, sizeof(name), "##notif_%d", it->id);
         ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
-                | ImGuiWindowFlags_NoResize
-                | ImGuiWindowFlags_NoMove
-                | ImGuiWindowFlags_NoScrollbar
-                | ImGuiWindowFlags_AlwaysAutoResize
-                | ImGuiWindowFlags_NoSavedSettings
-                | ImGuiWindowFlags_NoFocusOnAppearing
-                | ImGuiWindowFlags_NoBringToFrontOnFocus
-                | ImGuiWindowFlags_NoInputs
-                | ImGuiWindowFlags_NoNav;
+            | ImGuiWindowFlags_NoResize
+            | ImGuiWindowFlags_NoMove
+            | ImGuiWindowFlags_NoScrollbar
+            | ImGuiWindowFlags_AlwaysAutoResize
+            | ImGuiWindowFlags_NoSavedSettings
+            | ImGuiWindowFlags_NoFocusOnAppearing
+            | ImGuiWindowFlags_NoBringToFrontOnFocus
+            | ImGuiWindowFlags_NoInputs
+            | ImGuiWindowFlags_NoNav;
         if (ImGui::Begin(name, nullptr, flags)) {
             ImGui::TextWrapped("%s", it->msg.c_str());
         }

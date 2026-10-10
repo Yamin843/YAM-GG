@@ -13,10 +13,9 @@ public:
     void draw();
     void evaluate(const std::string& code);
     void loadScriptFromFile(const std::string& path);
-    void unloadAll();        // clears everything via bridge
-    void forgetScripts();    // just clears local list — no bridge call
-    int scriptCount() const;
-    int runningCount() const;
+    void unloadAll();
+    int  scriptCount() const;
+    int  runningCount() const;
     void pushOutput(const std::string& line);
 
 private:
@@ -38,16 +37,20 @@ private:
     void drawConsoleTab();
     void loadSelected();
     void unloadSelected();
+    void forgetScripts();
     void clearOutput();
+    void registerEvents();
 
     std::vector<ScriptEntry> scripts_;
     std::vector<std::string> output_;
     mutable std::mutex mu_;
     int nextScriptId_{1};
     int activeSubTab_{0};
+    bool eventsRegistered_{false};
     char codeBuffer_[65536]{0};
 };
 
 #define YAMGG_JSCONSOLE yamgg::JSConsole::instance()
 } // namespace yamgg
+
 #endif
