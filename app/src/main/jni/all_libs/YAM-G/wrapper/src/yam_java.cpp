@@ -1235,24 +1235,51 @@ Result<HandleId> JavaHookManager::hook(const String& cls, const String& method,
     u64 cls_bridge = reinterpret_cast<u64>(cr.value().raw());
     auto mr = JavaFacade::method(cls_bridge, method, sig);
     if (!mr) return Result<HandleId>::err(mr.error_code(), mr.error_message());
+
     i64 cb_id = g_cb_id.fetch_add(1);
-    { std::lock_guard<std::mutex> lk(g_hook_mu); g_hook_fns[cb_id] = std::move(fn); }
+    {
+        std::lock_guard<std::mutex> lk(g_hook_mu);
+        g_hook_fns[cb_id] = std::move(fn);
+    }
+
     auto hr = JavaScriptBridge::instance().hook_method(mr.value(), cb_id);
     if (!hr) {
         std::lock_guard<std::mutex> lk(g_hook_mu);
         g_hook_fns.erase(cb_id);
         return Result<HandleId>::err(hr.error_code(), hr.error_message());
     }
+
     HandleId id = registry().register_entry(RegistryKind::JavaMethod, cls,
                                              reinterpret_cast<void*>(mr.value()));
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        hooks_[id] = cb_id;
+    }
     return Result<HandleId>::ok(id);
 }
 Result<void> JavaHookManager::unhook(HandleId id) {
     auto rec = registry().lookup(id);
     if (!rec) return Result<void>::err(ErrorCode::MethodNotFound, "hook id");
+
+    // Pull cb_id out of hooks_ BEFORE removing — we need it to clear
+    // g_hook_fns. This was the missing step that leaked one entry per
+    // destroyed JavaMethod.
+    i64 cb_id = 0;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        auto it = hooks_.find(id);
+        if (it != hooks_.end()) {
+            cb_id = it->second;
+            hooks_.erase(it);
+        }
+    }
+    if (cb_id != 0) {
+        std::lock_guard<std::mutex> lk(g_hook_mu);
+        g_hook_fns.erase(cb_id);
+    }
+
     JavaScriptBridge::instance().unhook_method(
         reinterpret_cast<u64>(rec->native_handle));
-    { std::lock_guard<std::mutex> lk(mu_); hooks_.erase(id); }
     return Result<void>::ok();
 }
 void JavaHookManager::clear() {

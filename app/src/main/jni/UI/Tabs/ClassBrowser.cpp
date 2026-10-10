@@ -1,6 +1,7 @@
 #include "ClassBrowser.h"
 #include "../../Bridge/YamBridge.h"
 #include "../Widgets/Notification.h"
+#include "JSConsole.h"
 
 #include "imgui.h"
 #include "../../all_libs/YAM-G/wrapper/include/yam.hpp"
@@ -125,6 +126,19 @@ void ClassBrowser::registerEvents() {
     auto err = [this](const yam::Event&) { std::lock_guard<std::mutex> lk(mu_); loading_ = false; };
     yam::events::on("classes_error", err);
     yam::events::on("class_detail_error", err);
+
+    // استقبل نتائج Call وعرضها للمستخدم
+    yam::events::on("call_result", [](const yam::Event& ev) {
+        // The JS side sends: { type:"call_result", result:"..." }
+        std::string result = ev.get_str("result");
+        bool threw = false;
+        if (ev.get("ok")) threw = !ev.get_bool("ok", true);
+        if (ev.get("threw")) threw = ev.get_bool("threw", false);
+
+        // Show in console output
+        std::string tag = threw ? "[call ✗] " : "[call ✓] ";
+        JSConsole::instance().pushOutput(tag + result);
+    });
 
     // استقبال class_probe (من cpp_probe_class) كحدث احتياطي
     yam::events::on("class_probe", [this](const yam::Event& ev) {
@@ -499,9 +513,22 @@ void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
         ImGui::SameLine(0, 0);
     }
 
-    char label[1024];
-    std::snprintf(label, sizeof(label), "%s  %s(%zu)",
-        m.ret.c_str(), m.name.c_str(), m.args.size());
+    // Large buffer + safe truncation. Android obfuscated methods can
+    // have very long signature strings; if we truncate we want to
+    // indicate it rather than silently lose the tail.
+    char label[4096];
+    int n = std::snprintf(label, sizeof(label), "%s  %s(%zu)",
+                          m.ret.c_str(), m.name.c_str(), m.args.size());
+    if (n < 0) label[0] = 0;
+    else if (n >= (int)sizeof(label)) {
+        // Truncated — put an ellipsis at the end so it's obvious.
+        const char* ellipsis = "…";
+        size_t elen = std::strlen(ellipsis);
+        if (sizeof(label) > elen + 1) {
+            std::memcpy(label + sizeof(label) - 1 - elen, ellipsis, elen);
+            label[sizeof(label) - 1] = 0;
+        }
+    }
 
     ImGui::PushStyleColor(ImGuiCol_Text,
         m.tracing

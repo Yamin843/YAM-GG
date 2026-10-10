@@ -118,13 +118,32 @@ void JSConsole::loadSelected() {
 
 void JSConsole::unloadSelected() {
     YamBridge& b = YamBridge::instance();
+    bool anyWarned = false;
     for (auto& s : scripts_) {
         if (!s.selected || !s.running) continue;
         bool ok = b.unloadScript(s.name);
         s.running = false;
-        pushOutput(ok ? ("[unloaded] " + s.name)
-                      : ("[warn] " + s.name + ": unload may be partial"));
+        if (ok) {
+            pushOutput("[removed] " + s.name +
+                       " (JS hooks remain — use 'Unload All' to clear bridge)");
+            anyWarned = true;
+        } else {
+            pushOutput("[warn] " + s.name + ": unload failed");
+        }
     }
+    if (anyWarned) {
+        pushOutput("[note] frida-java-bridge has no per-script unload; "
+                   "only 'Unload All' actually removes JS code.");
+    }
+}
+
+void JSConsole::forgetScripts() {
+    // Clear the local list without touching the bridge.
+    // Useful if the user wants a clean slate in the UI while keeping
+    // loaded scripts active.
+    for (auto& s : scripts_) s.running = false;
+    scripts_.clear();
+    pushOutput("[forget] local list cleared (bridge unchanged)");
 }
 void JSConsole::unloadAll() {
     YamBridge& b = YamBridge::instance();
@@ -227,6 +246,18 @@ void JSConsole::drawConsoleTab() {
         ImGui::SameLine();
         bs = autoBtn("Unload");
         if (ImGui::Button("Unload", bs)) unloadSelected();
+
+        ImGui::SameLine();
+        bs = autoBtn("Unload All");
+        if (ImGui::Button("Unload All", bs)) {
+            if (YamBridge::instance().unloadAllScripts()) {
+                for (auto& s : scripts_) s.running = false;
+                pushOutput("[unloaded all] bridge cleared");
+            } else {
+                pushOutput("[error] unload all failed (bridge not ready)");
+            }
+        }
+
         ImGui::SameLine();
         bs = autoBtn("Paste");
         if (ImGui::Button("Paste", bs)) {

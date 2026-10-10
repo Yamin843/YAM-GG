@@ -1259,7 +1259,11 @@ private:
     JavaHookManager();
     ~JavaHookManager();
     mutable std::mutex mu_;
-    std::unordered_map<HandleId, Fn> hooks_;
+    // HandleId -> cb_id (the id used to key g_hook_fns in yam_java.cpp).
+    // The actual Fn lives in g_hook_fns (shared with the bridge callback).
+    // Storing only cb_id lets unhook() clean BOTH tables — the old map
+    // of <HandleId, Fn> leaked one entry per destroyed hook.
+    std::unordered_map<HandleId, std::int64_t> hooks_;
 };
 inline JavaHookManager& java_hooks() { return JavaHookManager::instance(); }
 

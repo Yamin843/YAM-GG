@@ -37,6 +37,8 @@ public:
     LoadResult loadScriptSync(const std::string& name, const std::string& code,
                                int timeout_ms = 8000);
     bool unloadScript(const std::string& name);
+    // Unloads ALL scripts (calls clear_user_scripts on the bridge).
+    bool unloadAllScripts();
     std::vector<std::string> listScripts() const;
 
     void installEventRouter();

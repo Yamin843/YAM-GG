@@ -304,19 +304,37 @@ YamBridge::LoadResult YamBridge::loadScript(const std::string& name,
 
 bool YamBridge::unloadScript(const std::string& name) {
     if (!ready_.load()) return false;
+
+    // IMPORTANT: frida-java-bridge has NO per-script unload API. The only
+    // way to remove JS code is clear_user_scripts() which kills ALL scripts.
+    //
+    // To honor individual-remove semantics, we only forget the name here.
+    // The JS hooks installed by that script stay active until the user
+    // explicitly unloads all — this is a documented bridge limitation,
+    // not a bug in our code. The UI (JSConsole) warns the user.
+    std::lock_guard<std::mutex> lk(mu_);
+    for (auto it = scriptNames_.begin(); it != scriptNames_.end(); ++it) {
+        if (*it == name) {
+            scriptNames_.erase(it);
+            LOGI("unloadScript: '%s' removed from list "
+                 "(JS hooks remain — use Unload All to fully clear)",
+                 name.c_str());
+            return true;
+        }
+    }
+    return false;
+}
+
+bool YamBridge::unloadAllScripts() {
+    if (!ready_.load()) return false;
     try {
-        // Ask JS side to unload user scripts (the java-bridge exposes this).
         yam::JavaScriptBridge::instance().clear_user_scripts();
     } catch (...) {
         return false;
     }
     std::lock_guard<std::mutex> lk(mu_);
-    for (auto it = scriptNames_.begin(); it != scriptNames_.end(); ++it) {
-        if (*it == name) {
-            scriptNames_.erase(it);
-            return true;
-        }
-    }
+    scriptNames_.clear();
+    LOGI("unloadAllScripts: cleared all scripts on the bridge");
     return true;
 }
 

@@ -13,7 +13,8 @@ public:
     void draw();
     void evaluate(const std::string& code);
     void loadScriptFromFile(const std::string& path);
-    void unloadAll();
+    void unloadAll();        // clears everything via bridge
+    void forgetScripts();    // just clears local list — no bridge call
     int scriptCount() const;
     int runningCount() const;
     void pushOutput(const std::string& line);
