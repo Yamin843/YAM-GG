@@ -636,14 +636,10 @@
         jv_enumerate: function (cmd) {
             try {
                 var all = Java.enumerateLoadedClassesSync();
-                var f = cmd.filter || "";
-                var out = [];
-                for (var i = 0; i < all.length; i++) {
-                    if (f && all[i].indexOf(f) < 0) continue;
-                    out.push(all[i]);
-                }
-                sendMaybeChunked({type:"classes_list", count:out.length,
-                                  filter:f, classes:out});
+                // IMPORTANT: always send ALL classes; C++ does live filtering
+                // (case-insensitive, substring) on every keystroke.
+                sendMaybeChunked({type:"classes_list", count:all.length,
+                                  filter:"", classes:all});
             } catch (e) {
                 send({type:"classes_list", count:0, classes:[], error:""+e});
             }
@@ -1027,20 +1023,28 @@
         run_user_script: function (cmd) {
             var nm = cmd.name || "anon";
             var code = cmd.code || "";
-            try {
-                // CRITICAL: do NOT wrap in Java.performNow. If the user's
-                // script contains its own Java.perform(...) — the frida
-                // idiom — nesting would deadlock the JS thread and freeze
-                // the host app. Let the user script schedule its own
-                // Java.perform on the ART thread asynchronously.
-                (new Function(code))();
-                send({type:"user_script_loaded", name:nm,
-                      size:code.length, ok:true});
-            } catch (e) {
-                send({type:"user_script_loaded", name:nm,
-                      ok:false, error:""+e});
-                send({type:"script_failed", name:nm, error:""+e});
-            }
+            // Defer execution: the poller thread must not block on the
+            // user's script (which may do slow Java calls and stall the
+            // ART watchdog). We schedule on the next tick and use
+            // Java.perform (async) instead of performNow.
+            setTimeout(function() {
+                try {
+                    Java.perform(function() {
+                        try {
+                            (new Function(code))();
+                            send({type:"user_script_loaded", name:nm,
+                                  size:code.length, ok:true});
+                        } catch (e) {
+                            send({type:"user_script_loaded", name:nm,
+                                  ok:false, error:""+e});
+                            send({type:"script_failed", name:nm, error:""+e});
+                        }
+                    });
+                } catch (e) {
+                    send({type:"user_script_loaded", name:nm, ok:false,
+                          error:"outer: "+e});
+                }
+            }, 0);
         },
         enumerate_classes: function (cmd) {
             try {

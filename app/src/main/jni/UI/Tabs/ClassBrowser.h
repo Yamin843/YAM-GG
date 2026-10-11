@@ -71,7 +71,9 @@ private:
     std::string argsSpecFor(const std::vector<ParamInfo>& args);
 
     mutable std::mutex mu_;
-    std::vector<std::string> classes_;
+    std::vector<std::string> classes_;   // ALL
+    std::vector<std::string> filtered_;  // cached filter result
+    std::string lastQuery_;
     std::map<std::string, std::vector<MethodInfo>> methods_;
     std::map<std::string, std::vector<FieldInfo>> fields_;
     std::map<std::string, std::vector<CtorInfo>> ctors_;

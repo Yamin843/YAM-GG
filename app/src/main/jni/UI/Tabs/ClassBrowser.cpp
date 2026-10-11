@@ -289,12 +289,12 @@ void ClassBrowser::triggerLoadClasses() {
     {
         std::lock_guard<std::mutex> lk(mu_);
         classes_.clear();
-        if (filter_.empty()) filter_ = "com.";
+        filtered_.clear();
+        lastQuery_.clear();
     }
-    std::string f;
-    { std::lock_guard<std::mutex> lk(mu_); f = filter_; }
-    std::string cmd = R"({"action":"jv_enumerate","filter":")";
-    cmd += jesc(f); cmd += R"("})";
+    // Always fetch ALL classes — filtering happens locally in drawTree
+    // (case-insensitive substring, live per keystroke).
+    std::string cmd = R"({"action":"jv_enumerate","filter":""})";
     sendCommand(cmd);
 }
 
@@ -435,9 +435,37 @@ void ClassBrowser::drawSearchBar() {
 
 void ClassBrowser::drawTree() {
     std::lock_guard<std::mutex> lk(mu_);
-    if (classes_.empty()) {
+
+    // Rebuild filtered list only when the query changes
+    std::string q = searchBuf_;
+    if (q != lastQuery_) {
+        lastQuery_ = q;
+        filtered_.clear();
+        filtered_.reserve(classes_.size());
+
+        std::string qlow = q;
+        for (auto& ch : qlow) ch = (char)std::tolower((unsigned char)ch);
+
+        if (qlow.empty()) {
+            filtered_ = classes_;
+        } else {
+            for (auto& c : classes_) {
+                std::string cl = c;
+                for (auto& ch : cl) ch = (char)std::tolower((unsigned char)ch);
+                if (cl.find(qlow) != std::string::npos)
+                    filtered_.push_back(c);
+            }
+        }
+        LOGI("CB: filtered %zu / %zu (q=%s)", filtered_.size(),
+             classes_.size(), q.c_str());
+    }
+
+    if (filtered_.empty()) {
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextWrapped("No results — press Find");
+        if (classes_.empty())
+            ImGui::TextWrapped("Loading classes...");
+        else
+            ImGui::TextWrapped("No match (type any part, case-insensitive)");
         ImGui::PopTextWrapPos();
         return;
     }
@@ -446,7 +474,7 @@ void ClassBrowser::drawTree() {
     auto flush = [&]() {
         if (!members.empty()) { drawPackageGroup(lastPkg, members); members.clear(); }
     };
-    for (auto& c : classes_) {
+    for (auto& c : filtered_) {
         size_t dot = c.find_last_of('.');
         std::string pkg = (dot == std::string::npos) ? "<default>" : c.substr(0, dot);
         if (pkg != lastPkg) { flush(); lastPkg = pkg; }
