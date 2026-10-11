@@ -8,14 +8,13 @@ namespace yamgg_bootstrap {
 
 static const char kBootstrapSrc[] = R"YAMJS(
 // ===========================================================================
-// YAM-GG bootstrap.js — advanced Java layer
+// YAM-GG bootstrap.js — full type-aware Java layer
 // ===========================================================================
 (function () {
     "use strict";
+    try { send({type:"boot_top_v7"}); } catch (e) {}
 
-    try { send({type:"boot_top_v6"}); } catch (e) {}
-
-    // ─── Handle registry ──────────────────────────────────────────────
+    // ─── Handles ──────────────────────────────────────────────────────
     var table = Object.create(null);
     var nextHandle = 1;
     function alloc(o) { var id = nextHandle++; table[id] = o; return id; }
@@ -29,30 +28,470 @@ static const char kBootstrapSrc[] = R"YAMJS(
     // ─── Reply envelope ───────────────────────────────────────────────
     function reply(id, ok, kind, value, handle, error) {
         var m = { id: id, ok: !!ok };
-        if (kind)   m.kind = kind;
-        if (value  !== undefined && value  !== null) m.result = value;
+        if (kind) m.kind = kind;
+        if (value !== undefined && value !== null) m.result = value;
         if (handle !== undefined && handle !== null) m.handle = handle;
-        if (error)  m.error = String(error);
-        try { send({ type: "reply", payload: JSON.stringify(m) }); } catch (e) {}
+        if (error) m.error = String(error);
+        try { send({type:"reply", payload:JSON.stringify(m)}); } catch (e) {}
     }
-    function replyHandle(id, h) { reply(id, true,  "handle", null, h); }
-    function replyValue(id, v)  { reply(id, true,  "value",  v,    null); }
-    function replyVoid(id)      { reply(id, true,  "void",   null, null); }
-    function replyError(id, e)  {
-        reply(id, false, "error", null, null,
-              (e && e.message) ? e.message : String(e));
+    function replyHandle(id, h) { reply(id, true, "handle", null, h); }
+    function replyValue(id, v)  { reply(id, true, "value", v, null); }
+    function replyVoid(id)      { reply(id, true, "void", null, null); }
+    function replyError(id, e)  { reply(id, false, "error", null, null,
+                                        (e && e.message) ? e.message : String(e)); }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  TYPE CLASSIFIER — every Java type we know
+    // ═══════════════════════════════════════════════════════════════
+    function classifyType(typeName) {
+        if (!typeName) return "object";
+        switch (typeName) {
+            case "void": return "void";
+            case "int": return "int";
+            case "long": return "long";
+            case "short": return "short";
+            case "byte": return "byte";
+            case "float": return "float";
+            case "double": return "double";
+            case "boolean": return "boolean";
+            case "char": return "char";
+            case "java.lang.String": return "string";
+            case "java.lang.CharSequence": return "string";
+            case "java.lang.Integer": case "java.lang.Long":
+            case "java.lang.Short": case "java.lang.Byte":
+            case "java.lang.Float": case "java.lang.Double":
+            case "java.lang.Number": case "java.lang.Boolean":
+            case "java.lang.Character": return "boxed";
+            case "[B": return "byte_array";
+            case "[I": case "[S": case "[J": case "[F":
+            case "[D": case "[C": case "[Z": return "prim_array";
+            case "java.util.Date": case "java.sql.Timestamp":
+                return "date";
+            case "java.io.File": return "file";
+            case "android.graphics.Color": return "color";
+            case "org.json.JSONObject": case "org.json.JSONArray":
+                return "json";
+            case "android.content.Intent": return "intent";
+            case "android.os.Bundle": return "bundle";
+            case "android.content.Context": return "context";
+        }
+        if (typeName.charAt(0) === LB) return "object_array";
+        if (typeName.indexOf("Map") >= 0) return "map";
+        if (typeName.indexOf("Set") >= 0) return "set";
+        if (typeName.indexOf("List") >= 0) return "list";
+        if (typeName.indexOf("Collection") >= 0 ||
+            typeName.indexOf("Iterable") >= 0) return "list";
+        if (typeName.indexOf("Runnable") >= 0 ||
+            typeName.indexOf("Listener") >= 0 ||
+            typeName.indexOf("Callback") >= 0) return "interface";
+        try {
+            var C = Java.use(typeName);
+            if (C.class.isEnum()) return "enum";
+            var mods = C.class.getModifiers();
+            if ((mods & 512) !== 0) return "interface";
+            if ((mods & 1024) !== 0) return "abstract";
+        } catch (e) {}
+        return "object";
     }
 
-    // ─── JNI sig parser ───────────────────────────────────────────────
-    function prim(c) {
-        switch (c) {
-        case "Z": return "boolean"; case "B": return "byte";
-        case "C": return "char";    case "S": return "short";
-        case "I": return "int";     case "J": return "long";
-        case "F": return "float";   case "D": return "double";
-        case "V": return "void";    default:  return c;
+    // ═══════════════════════════════════════════════════════════════
+    //  PRESETS — ready-to-use templates per kind
+    // ═══════════════════════════════════════════════════════════════
+    function presetForKind(kind, typeName) {
+        switch (kind) {
+            case "int": case "short": case "byte":
+                return {kind:kind, value:0};
+            case "long":   return {kind:"long", value:0};
+            case "float":  return {kind:"float", value:0.0};
+            case "double": return {kind:"double", value:0.0};
+            case "boolean":return {kind:"boolean", value:false};
+            case "char":   return {kind:"char", value:"a"};
+            case "string": return {kind:"string", value:""};
+            case "boxed":  return {kind:"null"};
+            case "byte_array":  return {kind:"byte_array", hex:"00 00 00 00"};
+            case "prim_array":  return {kind:"array",
+                                        elementType:"int", elements:[]};
+            case "object_array": {
+                var el = typeName && typeName.length > 1
+                       ? typeName.substring(1).replace(/\//g,".") : "java.lang.Object";
+                return {kind:"array", elementType:el, elements:[]};
+            }
+            case "list":   return {kind:"list",
+                                   className:typeName||"java.util.ArrayList",
+                                   items:[]};
+            case "set":    return {kind:"set",
+                                   className:typeName||"java.util.HashSet",
+                                   items:[]};
+            case "map":    return {kind:"map",
+                                   className:typeName||"java.util.HashMap",
+                                   entries:[]};
+            case "json":   return {kind:"json",
+                                   className:typeName||"org.json.JSONObject",
+                                   value:"{}"};
+            case "color":  return {kind:"color", value:0xFF000000};
+            case "date":   return {kind:"expr", expr:"new java.util.Date()"};
+            case "file":   return {kind:"string", value:"/sdcard/"};
+            case "intent": return {kind:"expr",
+                                   expr:"new android.content.Intent()"};
+            case "bundle": return {kind:"expr",
+                                   expr:"new android.os.Bundle()"};
+            case "context":return {kind:"expr",
+                                   expr:"Java.use('android.app.ActivityThread')"
+                                       +".currentApplication()"};
+            case "interface": return {kind:"null"};
+            case "abstract":  return {kind:"null"};
+            case "enum": {
+                try {
+                    var C = Java.use(typeName);
+                    var vals = C.values();
+                    if (vals.length > 0)
+                        return {kind:"enum", className:typeName,
+                                enumName:String(vals[0].name())};
+                } catch (e) {}
+                return {kind:"null"};
+            }
+            default: return {kind:"null"};
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  describeTyped — STRUCTURED data (not a string)
+    // ═══════════════════════════════════════════════════════════════
+    function describeTyped(v, depth) {
+        depth = depth || 0;
+        if (depth > 5) return {kind:"truncated", display:"<...>"};
+        if (v === null) return {kind:"null", display:"null"};
+        if (v === undefined) return {kind:"null", display:"undefined"};
+        var t = typeof v;
+        if (t === "boolean") return {kind:"boolean", value:v, display:String(v)};
+        if (t === "number") {
+            return Number.isInteger(v)
+                ? {kind:"long", value:v, display:String(v)}
+                : {kind:"double", value:v, display:String(v)};
+        }
+        if (t === "string") return {kind:"string", value:v, display:JSON.stringify(v)};
+        if (t === "function") return {kind:"fn", display:"<fn "+(v.name||"anon")+">"};
+        if (t !== "object") return {kind:"raw", display:String(v)};
+
+        try {
+            var cn = v.$className ? String(v.$className) : "";
+            if (!cn) return {kind:"raw", display:JSON.stringify(v)};
+
+            // Primitive wrappers
+            if (cn === "java.lang.String")
+                return {kind:"string", value:String(v),
+                        display:JSON.stringify(String(v))};
+            if (cn === "java.lang.Integer" || cn === "java.lang.Short" ||
+                cn === "java.lang.Byte" || cn === "java.lang.Long")
+                return {kind:"long", value:Number(v), display:String(v)};
+            if (cn === "java.lang.Float" || cn === "java.lang.Double")
+                return {kind:"double", value:Number(v), display:String(v)};
+            if (cn === "java.lang.Boolean")
+                return {kind:"boolean", value:(String(v)==="true"),
+                        display:String(v)};
+            if (cn === "java.lang.Character")
+                return {kind:"char", value:String(v),
+                        display:JSON.stringify(String(v))};
+
+            // Enum
+            var isEnum = false;
+            try { isEnum = Java.use(cn).class.isEnum(); } catch (e) {}
+            if (isEnum) {
+                var hn = 0;
+                try { hn = alloc(v); } catch (e) {}
+                return {kind:"enum", className:cn, handle:hn,
+                        name:String(v.name()), ordinal:Number(v.ordinal()),
+                        display:cn+"."+String(v.name())};
+            }
+
+            // Arrays
+            if (cn.charAt(0) === LB) {
+                var n = 0;
+                try { n = Number(v.length) || 0; } catch (e) {}
+                var items = [];
+                var cap = Math.min(n, 32);
+                for (var i = 0; i < cap; i++) {
+                    var el;
+                    try { el = v[i]; } catch (e) { el = null; }
+                    items.push(describeTyped(el, depth + 1));
+                }
+                var hnA = 0;
+                try { hnA = alloc(v); } catch (e) {}
+                return {kind:"array", className:cn, handle:hnA,
+                        elementType:cn.substring(1), length:n, items:items,
+                        display:"("+cn+") length="+n};
+            }
+
+            // Map
+            if (cn.indexOf("Map") >= 0) {
+                var entries = [];
+                var n2 = 0;
+                try {
+                    var it = v.entrySet().iterator();
+                    while (it.hasNext() && n2 < 24) {
+                        var e = it.next();
+                        entries.push({key:describeTyped(e.getKey(), depth+1),
+                                      value:describeTyped(e.getValue(), depth+1)});
+                        n2++;
+                    }
+                } catch (e) {}
+                var hnM = 0;
+                try { hnM = alloc(v); } catch (e) {}
+                return {kind:"map", className:cn, handle:hnM, length:n2,
+                        entries:entries, display:"{"+n2+" entries}"};
+            }
+
+            // List/Set/Collection
+            if (cn.indexOf("List") >= 0 || cn.indexOf("Set") >= 0 ||
+                cn.indexOf("Collection") >= 0) {
+                var items2 = [];
+                var n3 = 0;
+                try {
+                    var it2 = v.iterator();
+                    while (it2.hasNext() && n3 < 32) {
+                        items2.push(describeTyped(it2.next(), depth + 1));
+                        n3++;
+                    }
+                } catch (e) {}
+                var hnL = 0;
+                try { hnL = alloc(v); } catch (e) {}
+                return {kind:(cn.indexOf("Set")>=0 ? "set" : "list"),
+                        className:cn, handle:hnL, length:n3, items:items2,
+                        display:"["+n3+" items]"};
+            }
+
+            // Object: fields
+            var fields = [];
+            try {
+                var C = Java.use(cn);
+                var flds = C.class.getDeclaredFields();
+                var cap2 = Math.min(flds.length, 24);
+                for (var k = 0; k < cap2; k++) {
+                    var f = flds[k];
+                    try {
+                        f.setAccessible(true);
+                        fields.push({
+                            name:String(f.getName()),
+                            typeName:String(f.getType().getName()),
+                            typed:describeTyped(f.get(v), depth + 1)
+                        });
+                    } catch (e) {}
+                }
+            } catch (e) {}
+            var hnO = 0;
+            try { hnO = alloc(v); } catch (e) {}
+            return {kind:"object", className:cn, handle:hnO, fields:fields,
+                    display:"<"+cn+" "+String(v)+">"};
+        } catch (e) {
+            return {kind:"error", display:"<err:"+e+">"};
+        }
+    }
+
+    // ─── Legacy describe for logs (compact) ──────────────────────────
+    function describe(v) {
+        var t = describeTyped(v, 0);
+        return formatTypedCompact(t);
+    }
+    function formatTypedCompact(t) {
+        if (!t || !t.kind) return "<invalid>";
+        switch (t.kind) {
+            case "null": case "string": case "int": case "long":
+            case "short": case "byte": case "float": case "double":
+            case "boolean": case "char": case "enum":
+                return t.display || "";
+            case "array": case "list": case "set": {
+                var parts = [];
+                var items = t.items || [];
+                for (var i = 0; i < items.length; i++)
+                    parts.push(formatTypedCompact(items[i]));
+                return "(" + (t.className||"") + ")[" + parts.join(",") + "]";
+            }
+            case "map": {
+                var parts2 = [];
+                var es = t.entries || [];
+                for (var j = 0; j < es.length; j++)
+                    parts2.push(formatTypedCompact(es[j].key) + ":" +
+                                formatTypedCompact(es[j].value));
+                return "{" + parts2.join(",") + "}";
+            }
+            case "object": {
+                return t.display || "";
+            }
+            default: return t.display || "";
+        }
+    }
+
+    // ─── Full multi-line tree format for trace output ────────────────
+    function formatTypedTree(t, indent) {
+        indent = indent || "";
+        if (!t || !t.kind) return indent + "<invalid>";
+        switch (t.kind) {
+            case "null": return indent + "null";
+            case "string": case "int": case "long": case "short":
+            case "byte": case "float": case "double": case "boolean":
+            case "char": case "enum":
+                return indent + (t.display || "");
+            case "truncated": return indent + "<...>";
+            case "array": case "list": case "set": {
+                var out = indent + "(" + (t.className || t.elementType || "") +
+                          ") length=" + (t.length || 0);
+                var items = t.items || [];
+                for (var i = 0; i < items.length; i++)
+                    out += "\n" + indent + "  [" + i + "] " +
+                           formatTypedTree(items[i], "").trim();
+                return out;
+            }
+            case "map": {
+                var out2 = indent + "(" + t.className + ") entries=" +
+                           (t.length || 0);
+                var es = t.entries || [];
+                for (var j = 0; j < es.length; j++) {
+                    out2 += "\n" + indent + "  [" +
+                            formatTypedTree(es[j].key, "").trim() + "] = " +
+                            formatTypedTree(es[j].value, "").trim();
+                }
+                return out2;
+            }
+            case "object": {
+                var out3 = indent + t.display;
+                var flds = t.fields || [];
+                for (var f = 0; f < flds.length; f++) {
+                    out3 += "\n" + indent + "  ." + flds[f].name +
+                            " (" + flds[f].typeName + ") = " +
+                            formatTypedTree(flds[f].typed, "").trim();
+                }
+                return out3;
+            }
+            default: return indent + (t.display || "<unknown>");
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  matTyped — construct Java from typed spec (any kind)
+    // ═══════════════════════════════════════════════════════════════
+    function matTyped(spec, expectedType) {
+        if (spec === null || spec === undefined) return null;
+        if (typeof spec !== "object") return spec;
+        if (typeof spec.handle === "number") return get(spec.handle);
+        if (!("kind" in spec)) {
+            if ("value" in spec) return spec.value;
+            return spec;
+        }
+        switch (spec.kind) {
+            case "null": return null;
+            case "int": case "short": case "byte":
+                return parseInt(spec.value, 10) || 0;
+            case "long":
+                if (typeof Int64 === "function")
+                    return Int64(String(spec.value || 0));
+                return Number(spec.value || 0);
+            case "float": case "double":
+                return parseFloat(spec.value) || 0;
+            case "boolean": return !!spec.value;
+            case "string": return String(spec.value || "");
+            case "char": {
+                var sv = String(spec.value || "\u0000");
+                return sv.length > 0 ? sv.charAt(0) : String.fromCharCode(0);
+            }
+            case "enum":
+                return Java.use(spec.className).valueOf(spec.enumName);
+            case "handle": return get(spec.handle);
+            case "byte_array": {
+                var hex = String(spec.hex || "").replace(/\s/g, "");
+                var len = hex.length / 2;
+                var b = Java.array("byte", []);
+                var arr = Java.use("[B").$new(len);
+                for (var i = 0; i < len; i++) {
+                    var v2 = parseInt(hex.substr(i*2, 2), 16) || 0;
+                    if (v2 > 127) v2 -= 256;
+                    arr[i] = v2;
+                }
+                return arr;
+            }
+            case "array": {
+                var elT = spec.elementType || "java.lang.Object";
+                var elems = (spec.elements || []).map(function(e) {
+                    return matTyped(e, elT);
+                });
+                return Java.array(elT, elems);
+            }
+            case "arrayJson": {
+                var elT2 = spec.elementType || "java.lang.Object";
+                try {
+                    var parsed = JSON.parse(spec.json || "[]");
+                    if (Array.isArray(parsed))
+                        return Java.array(elT2, parsed.map(function(e) {
+                            return matTyped(e, elT2);
+                        }));
+                } catch (e) {}
+                return null;
+            }
+            case "list": {
+                var L = Java.use(spec.className || "java.util.ArrayList");
+                var list = L.$new();
+                var litems = spec.items || [];
+                for (var li = 0; li < litems.length; li++)
+                    list.add(matTyped(litems[li]));
+                return list;
+            }
+            case "set": {
+                var S = Java.use(spec.className || "java.util.HashSet");
+                var st = S.$new();
+                var sitems = spec.items || [];
+                for (var si = 0; si < sitems.length; si++)
+                    st.add(matTyped(sitems[si]));
+                return st;
+            }
+            case "map": {
+                var M = Java.use(spec.className || "java.util.HashMap");
+                var mp = M.$new();
+                var entries = spec.entries || [];
+                for (var ei = 0; ei < entries.length; ei++) {
+                    var en = entries[ei];
+                    mp.put(matTyped(en.k), matTyped(en.v));
+                }
+                return mp;
+            }
+            case "json": {
+                var JC = Java.use(spec.className || "org.json.JSONObject");
+                return JC.$new(String(spec.value || "{}"));
+            }
+            case "color": {
+                var cv = Number(spec.value) || 0;
+                return Java.use("android.graphics.Color").argb(
+                    (cv >> 24) & 0xFF, (cv >> 16) & 0xFF,
+                    (cv >> 8) & 0xFF, cv & 0xFF);
+            }
+            case "construct": {
+                var C = Java.use(spec.className);
+                var cargs = (spec.args || []).map(function(a) {
+                    return matTyped(a);
+                });
+                var inst;
+                if (spec.ctorSig) {
+                    inst = C.$alloc();
+                    C.$init.overload.apply(C.$init, parseSig(spec.ctorSig))
+                        .call(inst, ...cargs);
+                } else {
+                    inst = C.$new.apply(C, cargs);
+                }
+                if (spec.fields) {
+                    for (var fi = 0; fi < spec.fields.length; fi++)
+                        inst[spec.fields[fi].name] =
+                            matTyped(spec.fields[fi].value);
+                }
+                return inst;
+            }
+            case "expr": {
+                try {
+                    var fn = new Function("Java", "return ("+spec.expr+");");
+                    return fn(Java);
+                } catch (e) { return null; }
+            }
+            default: return spec.value !== undefined ? spec.value : null;
+        }
+    }
+
     function parseSig(sig) {
         if (!sig) return [];
         var out = [], i = 0;
@@ -73,7 +512,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     if (e2 === -1) break;
                     var pre = "";
                     for (var p = 0; p < d; p++) pre += LB;
-                    out.push(pre + sig.substring(i + 1, e2).split("/").join("."));
+                    out.push(pre + sig.substring(i+1, e2).split("/").join("."));
                     i = e2 + 1;
                 } else {
                     var pre2 = "";
@@ -81,101 +520,23 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     out.push(pre2 + sig.charAt(i));
                     i++;
                 }
-            } else { out.push(prim(c)); i++; }
+            } else {
+                var pn = "";
+                if (c === "Z") pn = "boolean";
+                else if (c === "B") pn = "byte";
+                else if (c === "C") pn = "char";
+                else if (c === "S") pn = "short";
+                else if (c === "I") pn = "int";
+                else if (c === "J") pn = "long";
+                else if (c === "F") pn = "float";
+                else if (c === "D") pn = "double";
+                else if (c === "V") pn = "void";
+                else pn = c;
+                out.push(pn);
+                i++;
+            }
         }
         return out;
-    }
-
-    // ─── Type classification from class name ──────────────────────────
-    function classifyType(typeName) {
-        if (!typeName) return "object";
-        if (typeName === "int") return "int";
-        if (typeName === "long") return "long";
-        if (typeName === "short") return "short";
-        if (typeName === "byte") return "byte";
-        if (typeName === "float") return "float";
-        if (typeName === "double") return "double";
-        if (typeName === "boolean") return "boolean";
-        if (typeName === "char") return "char";
-        if (typeName === "void") return "void";
-        if (typeName === "java.lang.String") return "string";
-        if (typeName.charAt(0) === LB) return "array";
-        if (typeName.indexOf("Map") >= 0) return "map";
-        if (typeName.indexOf("List") >= 0 ||
-            typeName.indexOf("Set") >= 0 ||
-            typeName.indexOf("Collection") >= 0) return "list";
-        return "object";
-    }
-
-    // ─── describe (cycle-safe, depth-limited) ────────────────────────
-    function describe(v, maxDepth) {
-        return describeRec(v, new WeakSet(), 0, maxDepth === undefined ? 6 : maxDepth);
-    }
-    function describeRec(v, seen, depth, maxDepth) {
-        if (v === null) return "null";
-        if (v === undefined) return "undefined";
-        var t = typeof v;
-        if (t === "number" || t === "boolean") return String(v);
-        if (t === "string") return JSON.stringify(v);
-        if (t === "function") return "<fn " + (v.name || "anon") + ">";
-        if (t !== "object") return String(v);
-        if (typeof seen.add === "function") {
-            if (seen.has(v)) return "<circular>";
-            try { seen.add(v); } catch (e) {}
-        }
-        if (depth > maxDepth) return "<...>";
-        try {
-            var cn = v.$className ? String(v.$className) : "";
-            if (!cn) return JSON.stringify(v);
-            if (cn === "java.lang.String") return JSON.stringify(String(v));
-            if (cn === "java.lang.Integer" || cn === "java.lang.Long" ||
-                cn === "java.lang.Short" || cn === "java.lang.Byte" ||
-                cn === "java.lang.Float" || cn === "java.lang.Double" ||
-                cn === "java.lang.Boolean" || cn === "java.lang.Character")
-                return String(v);
-            if (cn.charAt(0) === LB) {
-                var out = [], n = 0;
-                try { n = Number(v.length) || 0; } catch (e) { n = 0; }
-                var cap = Math.min(n, 20);
-                for (var i = 0; i < cap; i++) {
-                    var el;
-                    try { el = v[i]; } catch (e) { el = null; }
-                    out.push(describeRec(el, seen, depth + 1, maxDepth));
-                }
-                if (n > cap) out.push("..." + (n - cap) + " more");
-                return "(" + cn + ")" + LB + out.join(",") + RB;
-            }
-            if (cn.indexOf("Map") >= 0) {
-                var mp = [];
-                try {
-                    var it = v.entrySet().iterator();
-                    var count = 0;
-                    while (it.hasNext() && count < 12) {
-                        var e = it.next();
-                        mp.push(describeRec(e.getKey(), seen, depth + 1, maxDepth) + ":" +
-                                describeRec(e.getValue(), seen, depth + 1, maxDepth));
-                        count++;
-                    }
-                    if (it.hasNext()) mp.push("...");
-                } catch (e) { return "<" + cn + ">"; }
-                return "(" + cn + "){" + mp.join(",") + "}";
-            }
-            if (cn.indexOf("List") >= 0 || cn.indexOf("Set") >= 0 ||
-                cn.indexOf("Collection") >= 0) {
-                var li = [];
-                try {
-                    var it2 = v.iterator();
-                    var c2 = 0;
-                    while (it2.hasNext() && c2 < 20) {
-                        li.push(describeRec(it2.next(), seen, depth + 1, maxDepth));
-                        c2++;
-                    }
-                    if (it2.hasNext()) li.push("...");
-                } catch (e) { return "<" + cn + ">"; }
-                return "(" + cn + ")" + LB + li.join(",") + RB;
-            }
-            return "<" + cn + " " + String(v) + ">";
-        } catch (e) { return "<err:" + e + ">"; }
     }
 
     // ─── Chunked sender ───────────────────────────────────────────────
@@ -197,128 +558,40 @@ static const char kBootstrapSrc[] = R"YAMJS(
         for (var i = 0; i < total; i++) {
             try { send({type:"chunk_data", sessionId:sid, index:i,
                         totalChunks:total,
-                        data:json.substring(i*CHUNK_SIZE, (i+1)*CHUNK_SIZE)}); } catch (e) {}
+                        data:json.substring(i*CHUNK_SIZE,
+                                            (i+1)*CHUNK_SIZE)}); } catch (e) {}
         }
         try { send({type:"chunk_end", sessionId:sid, kind:kind}); } catch (e) {}
     }
 
-    // ─── Materializer: JSON → Java (with type detection) ──────────────
-    function mat(v, expectedType) {
-        if (v === null || v === undefined) return v;
-        if (typeof v !== "object") {
-            // Try to interpret raw value based on expected Java type
-            if (expectedType) {
-                if (expectedType === "int" || expectedType === "short" ||
-                    expectedType === "byte" || expectedType === "long")
-                    return parseInt(v, 10) || 0;
-                if (expectedType === "float" || expectedType === "double")
-                    return parseFloat(v) || 0;
-                if (expectedType === "boolean") return !!v;
-                if (expectedType === "char") return String(v).charAt(0);
-                if (expectedType === "java.lang.String") return String(v);
-            }
-            return v;
-        }
-        if (typeof v.handle === "number") return get(v.handle);
-        if (!("kind" in v)) {
-            if ("value" in v) return v.value;
-            return v;
-        }
-        switch (v.kind) {
-        case "int": case "short": case "byte": return v.value | 0;
-        case "long":
-            if (typeof Int64 === "function") return Int64(String(v.value));
-            return Number(v.value);
-        case "float": case "double": return Number(v.value);
-        case "boolean": return !!v.value;
-        case "string":  return String(v.value);
-        case "char": {
-            var sv = String(v.value);
-            return sv.length > 0 ? sv.charAt(0) : String.fromCharCode(0);
-        }
-        case "null":      return null;
-        case "undefined": return undefined;
-        case "enum":      return Java.use(v.className).valueOf(v.enumName);
-        case "array": {
-            var elType = v.elementType || "java.lang.Object";
-            return Java.array(elType, (v.elements || []).map(function(e) {
-                return mat(e, elType);
-            }));
-        }
-        case "arrayJson": {
-            var elT = v.elementType || "java.lang.Object";
-            try {
-                var parsed = JSON.parse(v.json);
-                if (Array.isArray(parsed)) {
-                    return Java.array(elT, parsed.map(function(e) {
-                        return mat(e, elT);
-                    }));
-                }
-            } catch (e) {}
-            return null;
-        }
-        case "construct": {
-            var cc = Java.use(v.className);
-            var cargs = (v.args || []).map(function(a) { return mat(a); });
-            var inst;
-            if (v.ctorSig) {
-                inst = cc.$alloc();
-                cc.$init.overload.apply(cc.$init, parseSig(v.ctorSig))
-                    .call(inst, ...cargs);
-            } else {
-                inst = cc.$new.apply(cc, cargs);
-            }
-            if (v.fields) {
-                for (var fi = 0; fi < v.fields.length; fi++) {
-                    inst[v.fields[fi].name] = mat(v.fields[fi].value);
-                }
-            }
-            return inst;
-        }
-        case "expr": {
-            try {
-                var fn = new Function("Java", "return (" + v.expr + ");");
-                return fn(Java);
-            } catch (e) { return null; }
-        }
-        default: return v.value;
-        }
-    }
-
-    // ─── Smart overload selection ─────────────────────────────────────
+    // ─── Smart overload picker ────────────────────────────────────────
     function argMatchesType(arg, jtype) {
-        if (arg === null || arg === undefined) return true;  // null matches anything
+        if (arg === null || arg === undefined) return true;
         var t = typeof arg;
         var tn = jtype.className;
         if (t === "number") {
-            if (tn === "int" || tn === "long" || tn === "short" ||
-                tn === "byte" || tn === "float" || tn === "double" ||
-                tn === "java.lang.Integer" || tn === "java.lang.Long" ||
-                tn === "java.lang.Short" || tn === "java.lang.Byte" ||
-                tn === "java.lang.Float" || tn === "java.lang.Double" ||
-                tn === "java.lang.Number" || tn === "java.lang.Object")
-                return true;
-            return false;
+            return (tn === "int" || tn === "long" || tn === "short" ||
+                    tn === "byte" || tn === "float" || tn === "double" ||
+                    tn === "java.lang.Integer" || tn === "java.lang.Long" ||
+                    tn === "java.lang.Number" || tn === "java.lang.Object");
         }
         if (t === "string") {
-            if (tn === "java.lang.String" || tn === "java.lang.CharSequence" ||
-                tn === "java.lang.Object") return true;
-            return false;
+            return (tn === "java.lang.String" ||
+                    tn === "java.lang.CharSequence" ||
+                    tn === "java.lang.Object");
         }
         if (t === "boolean") {
-            if (tn === "boolean" || tn === "java.lang.Boolean" ||
-                tn === "java.lang.Object") return true;
-            return false;
+            return (tn === "boolean" || tn === "java.lang.Boolean" ||
+                    tn === "java.lang.Object");
         }
         if (t === "object" && arg.$className) {
             var acn = String(arg.$className);
             if (acn === tn || tn === "java.lang.Object") return true;
-            // Try assignable check via Class.isAssignableFrom
             try {
-                var argCls = Java.use(acn);
-                var targetCls = Java.use(tn);
-                return argCls.class.isAssignableFrom(targetCls.class) ||
-                       targetCls.class.isAssignableFrom(argCls.class);
+                var aC = Java.use(acn);
+                var tC = Java.use(tn);
+                return aC.class.isAssignableFrom(tC.class) ||
+                       tC.class.isAssignableFrom(aC.class);
             } catch (e) { return false; }
         }
         return false;
@@ -326,7 +599,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
 
     function pickOverload(overloads, args) {
         if (!overloads || overloads.length === 0) return null;
-        // 1. Exact arity
         var candidates = [];
         for (var i = 0; i < overloads.length; i++) {
             if (overloads[i].argumentTypes.length === args.length)
@@ -334,7 +606,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
         }
         if (candidates.length === 0) return null;
         if (candidates.length === 1) return candidates[0];
-        // 2. Exact type match
         for (var k = 0; k < candidates.length; k++) {
             var ov = candidates[k];
             var ok = true;
@@ -345,33 +616,22 @@ static const char kBootstrapSrc[] = R"YAMJS(
             }
             if (ok) return ov;
         }
-        // 3. Fallback
         return candidates[0];
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  cpp_* handlers (reply-based)
+    //  cpp_* handlers
     // ═══════════════════════════════════════════════════════════════
     var cppHandlers = {
         cpp_use_class: function (cmd) {
             replyHandle(cmd.id, alloc(Java.use(cmd.className)));
         },
-        cpp_get_method: function (cmd) {
-            var c = get(cmd.classHandle);
-            if (!c) throw new Error("no class handle");
-            var m = c[cmd.methodName];
-            if (!m) throw new Error("no method: " + cmd.methodName);
-            var method = cmd.signature
-                ? m.overload.apply(m, parseSig(cmd.signature))
-                : ((m.overloads && m.overloads.length > 0) ? m.overloads[0] : m);
-            replyHandle(cmd.id, alloc(method));
-        },
+        cpp_noop: function (cmd) { replyVoid(cmd.id); },
         cpp_release_handle: function (cmd) { drop(cmd.handle); replyVoid(cmd.id); },
         cpp_clear_handles: function (cmd) { dropAll(); replyVoid(cmd.id); },
-        cpp_noop: function (cmd) { replyVoid(cmd.id); },
         cpp_eval: function (cmd) {
             try {
-                var fn = new Function("return (" + (cmd.code || "null") + ");");
+                var fn = new Function("return ("+(cmd.code||"null")+");");
                 reply(cmd.id, true, "value", describe(fn()));
             } catch (e) { replyError(cmd.id, e); }
         }
@@ -382,7 +642,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
     // ═══════════════════════════════════════════════════════════════
     var jvHandlers = {
 
-        // Enumerate loaded classes.
         jv_enumerate: function (cmd) {
             try {
                 var all = Java.enumerateLoadedClassesSync();
@@ -399,13 +658,10 @@ static const char kBootstrapSrc[] = R"YAMJS(
             }
         },
 
-        // Full class detail: methods (with generics) + fields + constructors.
         jv_detail: function (cmd) {
             try {
                 var C = Java.use(cmd.className);
                 var jcls = C.class;
-
-                // ─ Methods ─────────────────────────────────────────────
                 var methods = [];
                 var ms = jcls.getDeclaredMethods();
                 for (var i = 0; i < ms.length; i++) {
@@ -414,34 +670,40 @@ static const char kBootstrapSrc[] = R"YAMJS(
                         m.setAccessible(true);
                         var pts = m.getParameterTypes();
                         var genTypes = null;
-                        try { genTypes = m.getGenericParameterTypes(); } catch (e) {}
+                        try { genTypes = m.getGenericParameterTypes(); }
+                        catch (e) {}
                         var args = [];
                         for (var j = 0; j < pts.length; j++) {
                             var tn = String(pts[j].getName());
                             var kd = classifyType(tn);
                             var ev = [];
-                            if (kd === "object") {
+                            if (kd === "enum") {
                                 try {
                                     var pc = Java.use(tn);
-                                    if (pc.class.isEnum()) {
-                                        kd = "enum";
-                                        var vals = pc.values();
-                                        for (var e2 = 0; e2 < vals.length; e2++)
-                                            ev.push(String(vals[e2].name()));
-                                    }
+                                    var vals = pc.values();
+                                    for (var e2 = 0; e2 < vals.length; e2++)
+                                        ev.push(String(vals[e2].name()));
                                 } catch (ex) {}
                             }
-                            var generic = null;
+                            var gen = null;
                             if (genTypes && genTypes[j]) {
-                                try { generic = String(genTypes[j].toString()); } catch (e) {}
+                                try { gen = String(genTypes[j].toString()); }
+                                catch (e) {}
                             }
-                            args.push({typeName: tn, kind: kd,
-                                        enumValues: ev, generic: generic});
+                            var defSpec = null;
+                            try { defSpec = presetForKind(kd, tn); }
+                            catch (e) { defSpec = {kind:"null"}; }
+                            args.push({
+                                typeName: tn, kind: kd, enumValues: ev,
+                                generic: gen, defaultSpec: defSpec
+                            });
                         }
                         var mods = m.getModifiers();
                         methods.push({
                             name: String(m.getName()),
                             ret: String(m.getReturnType().getName()),
+                            retKind: classifyType(
+                                String(m.getReturnType().getName())),
                             isStatic: (mods & 8) !== 0,
                             isAbstract: (mods & 1024) !== 0,
                             args: args
@@ -449,32 +711,29 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     } catch (e) {}
                 }
 
-                // ─ Fields ──────────────────────────────────────────────
                 var fields = [];
                 var fs = jcls.getDeclaredFields();
                 for (var k = 0; k < fs.length; k++) {
                     try {
                         var f = fs[k];
                         f.setAccessible(true);
-                        var mods2 = f.getModifiers();
-                        var isStatic = (mods2 & 8) !== 0;
+                        var isStatic = (f.getModifiers() & 8) !== 0;
                         var fval = "";
+                        var ftype = String(f.getType().getName());
                         if (isStatic) {
-                            try {
-                                var raw = f.get(null);
-                                fval = describe(raw);
-                            } catch (e) { fval = "<read err>"; }
+                            try { fval = describe(f.get(null)); }
+                            catch (e) { fval = "<read err>"; }
                         }
                         fields.push({
                             name: String(f.getName()),
-                            type: String(f.getType().getName()),
+                            type: ftype,
+                            typeKind: classifyType(ftype),
                             isStatic: isStatic,
                             value: fval
                         });
                     } catch (e) {}
                 }
 
-                // ─ Constructors ────────────────────────────────────────
                 var ctors = [];
                 var cs = jcls.getDeclaredConstructors();
                 for (var q = 0; q < cs.length; q++) {
@@ -484,8 +743,10 @@ static const char kBootstrapSrc[] = R"YAMJS(
                         var cargs = [];
                         for (var w = 0; w < cpts.length; w++) {
                             var ctn = String(cpts[w].getName());
-                            cargs.push({typeName: ctn, kind: classifyType(ctn),
-                                        enumValues: []});
+                            var ck = classifyType(ctn);
+                            var cdef = presetForKind(ck, ctn);
+                            cargs.push({typeName: ctn, kind: ck,
+                                        enumValues: [], defaultSpec: cdef});
                         }
                         ctors.push({args: cargs});
                     } catch (e) {}
@@ -493,10 +754,8 @@ static const char kBootstrapSrc[] = R"YAMJS(
 
                 sendMaybeChunked({
                     type:"class_detail_result",
-                    className:cmd.className,
-                    methods:methods,
-                    fields:fields,
-                    constructors:ctors
+                    className: cmd.className,
+                    methods: methods, fields: fields, constructors: ctors
                 });
             } catch (e) {
                 send({type:"class_detail_result", className:cmd.className,
@@ -504,7 +763,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
             }
         },
 
-        // Trace a method (all overloads), with args + return + backtrace.
         jv_trace: function (cmd) {
             try {
                 var C = Java.use(cmd.className);
@@ -517,30 +775,37 @@ static const char kBootstrapSrc[] = R"YAMJS(
                         ov.__ygg_trace = ov.implementation || null;
                         ov.implementation = function() {
                             var a = Array.prototype.slice.call(arguments);
-                            var s = [];
+                            // Typed args
+                            var typedArgs = [];
                             for (var k = 0; k < a.length; k++) {
-                                try { s.push(describe(a[k], 3)); }
-                                catch (e) { s.push("<err>"); }
+                                try { typedArgs.push(describeTyped(a[k], 0)); }
+                                catch (e) { typedArgs.push({kind:"error",
+                                                            display:"<err>"}); }
                             }
                             // Backtrace
                             var bt = "";
                             try {
-                                var b = Java.backtrace({limit: 6});
+                                var b = Java.backtrace({limit:8});
                                 if (b && b.frames) {
                                     var fr = [];
                                     for (var f = 0; f < b.frames.length; f++) {
                                         var fr0 = b.frames[f];
-                                        fr.push(String(fr0.className || "") +
-                                                "." + String(fr0.methodName || ""));
+                                        fr.push(String(fr0.className||"") + "." +
+                                                String(fr0.methodName||""));
                                     }
-                                    bt = " bt:[" + fr.join(" < ") + "]";
+                                    bt = fr.join(" < ");
                                 }
                             } catch (e) {}
+                            // Build multi-line trace output
+                            var out = "[trace] " + cmd.className + "." +
+                                      cmd.methodName;
+                            for (var k2 = 0; k2 < typedArgs.length; k2++) {
+                                out += "\n  arg" + k2 + " = " +
+                                    formatTypedTree(typedArgs[k2], "").trim();
+                            }
+                            if (bt) out += "\n  bt: " + bt;
                             try {
-                                send({type:"trace_line", level:"log",
-                                      line:"[" + cmd.className + "." +
-                                           cmd.methodName + "] (" +
-                                           s.join(", ") + ")" + bt});
+                                send({type:"trace_line", level:"log", line:out});
                             } catch (e) {}
                             var r;
                             try {
@@ -549,17 +814,20 @@ static const char kBootstrapSrc[] = R"YAMJS(
                             } catch (ex) {
                                 try {
                                     send({type:"trace_line", level:"error",
-                                          line:"[" + cmd.className + "." +
-                                               cmd.methodName + "] THREW: " + ex});
+                                          line:"[trace] " + cmd.className +
+                                               "." + cmd.methodName +
+                                               " THREW: " + ex});
                                 } catch (e2) {}
                                 throw ex;
                             }
                             if (r !== undefined) {
                                 try {
+                                    var rt = describeTyped(r, 0);
                                     send({type:"trace_line", level:"log",
-                                          line:"[" + cmd.className + "." +
-                                               cmd.methodName + "] -> " +
-                                               describe(r, 3)});
+                                          line:"[trace] " + cmd.className +
+                                               "." + cmd.methodName +
+                                               " -> " +
+                                               formatTypedTree(rt, "").trim()});
                                 } catch (e) {}
                             }
                             return r;
@@ -591,7 +859,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
             } catch (e) { send({type:"untrace_err", error:""+e}); }
         },
 
-        // Find instances with full field dump.
         jv_instances: function (cmd) {
             try {
                 var items = [];
@@ -608,14 +875,13 @@ static const char kBootstrapSrc[] = R"YAMJS(
                                 if ((f.getModifiers() & 8) !== 0) continue;
                                 try {
                                     f.setAccessible(true);
+                                    var t = describeTyped(f.get(x), 0);
                                     fields.push({
                                         name: String(f.getName()),
-                                        value: describe(f.get(x), 3)
+                                        value: formatTypedTree(t, "").trim(),
+                                        typed: t
                                     });
-                                } catch (e) {
-                                    fields.push({name: String(f.getName()),
-                                                 value: "<err>"});
-                                }
+                                } catch (e) {}
                             }
                             items.push({handle:h,
                                         className:String(x.$className),
@@ -624,19 +890,20 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     },
                     onComplete: function() {}
                 });
-                send({type:"instances_result", className:cmd.className,
-                      items:items});
+                sendMaybeChunked({type:"instances_result",
+                                  className:cmd.className, items:items});
             } catch (e) {
                 send({type:"instances_result", className:cmd.className,
                       items:[], error:""+e});
             }
         },
 
-        // Create a new instance via constructor.
         jv_new: function (cmd) {
             try {
                 var C = Java.use(cmd.className);
-                var args = (cmd.argsSpec || []).map(function(a) { return mat(a); });
+                var args = (cmd.argsSpec || []).map(function(a) {
+                    return matTyped(a);
+                });
                 var inst = C.$new.apply(C, args);
                 var h = alloc(inst);
                 send({type:"call_result", ok:true,
@@ -646,13 +913,14 @@ static const char kBootstrapSrc[] = R"YAMJS(
             }
         },
 
-        // Smart call: pick overload by types.
         jv_call: function (cmd) {
             try {
                 var C = Java.use(cmd.className);
                 var MM = C[cmd.methodName];
                 if (!MM || !MM.overloads) throw new Error("no overloads");
-                var args = (cmd.argsSpec || []).map(function(a) { return mat(a); });
+                var args = (cmd.argsSpec || []).map(function(a) {
+                    return matTyped(a);
+                });
                 var isStatic = cmd.isStatic === true;
                 var inst = null;
                 if (!isStatic) {
@@ -664,71 +932,73 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     if (!inst) throw new Error("no instance");
                 }
                 var chosen = pickOverload(MM.overloads, args);
-                if (!chosen) throw new Error("no matching overload for " +
-                    args.length + " args");
+                if (!chosen) throw new Error("no matching overload");
                 var r = isStatic ? chosen.apply(null, args)
                                  : chosen.apply(inst, args);
-                send({type:"call_result", ok:true, result:describe(r, 6)});
+                send({type:"call_result", ok:true,
+                      result:formatTypedTree(describeTyped(r, 0), "").trim()});
             } catch (e) {
                 send({type:"call_result", ok:false, error:""+e});
             }
         },
 
-        // Deep inspect an object (recursive).
         jv_inspect: function (cmd) {
             try {
                 var obj = get(cmd.handle);
                 if (!obj) throw new Error("no handle");
-                var C = Java.use(String(obj.$className));
-                var fields = [];
-                var flds = C.class.getDeclaredFields();
-                for (var i = 0; i < flds.length; i++) {
-                    var f = flds[i];
-                    try {
-                        f.setAccessible(true);
-                        fields.push({
-                            name: String(f.getName()),
-                            type: String(f.getType().getName()),
-                            value: describe(f.get(obj), 4)
-                        });
-                    } catch (e) {}
-                }
-                sendMaybeChunked({
-                    type:"inspect_result",
-                    className: String(obj.$className),
-                    fields: fields
-                });
+                var t = describeTyped(obj, 0);
+                sendMaybeChunked({type:"inspect_result",
+                                  className:String(obj.$className),
+                                  typed:t});
             } catch (e) {
                 send({type:"inspect_result", error:""+e});
             }
         },
 
-        // Watch a field: poll it and emit on change.
+        jv_read_field: function (cmd) {
+            try {
+                var obj = get(cmd.handle);
+                if (!obj) throw new Error("no handle");
+                var t = describeTyped(obj[cmd.fieldName], 0);
+                send({type:"field_result", ok:true,
+                      value:formatTypedTree(t, "").trim(), typed:t});
+            } catch (e) {
+                send({type:"field_result", ok:false, error:""+e});
+            }
+        },
+
+        jv_write_field: function (cmd) {
+            try {
+                var obj = get(cmd.handle);
+                if (!obj) throw new Error("no handle");
+                obj[cmd.fieldName] = matTyped(cmd.value);
+                send({type:"field_write_ok"});
+            } catch (e) {
+                send({type:"field_write_err", error:""+e});
+            }
+        },
+
         jv_watch_field: function (cmd) {
             try {
                 var obj = get(cmd.handle);
                 if (!obj) throw new Error("no handle");
-                var fieldName = cmd.fieldName;
-                var intervalMs = cmd.intervalMs || 500;
+                var fn = cmd.fieldName;
+                var ms = cmd.intervalMs || 500;
                 if (!obj.__ygg_watchers) obj.__ygg_watchers = {};
-                if (obj.__ygg_watchers[fieldName]) return;
-                var lastVal = describe(obj[fieldName]);
-                obj.__ygg_watchers[fieldName] = setInterval(function() {
+                if (obj.__ygg_watchers[fn]) return;
+                var last = formatTypedTree(describeTyped(obj[fn], 0), "").trim();
+                obj.__ygg_watchers[fn] = setInterval(function() {
                     try {
-                        var cur = describe(obj[fieldName]);
-                        if (cur !== lastVal) {
-                            send({type:"watch_change",
-                                  fieldName:fieldName,
-                                  oldValue:lastVal,
-                                  newValue:cur});
-                            lastVal = cur;
+                        var cur = formatTypedTree(describeTyped(obj[fn], 0), "").trim();
+                        if (cur !== last) {
+                            send({type:"watch_change", fieldName:fn,
+                                  oldValue:last, newValue:cur});
+                            last = cur;
                         }
                     } catch (e) {}
-                }, intervalMs);
-                send({type:"watch_started", fieldName:fieldName});
-            } catch (e) {
-                send({type:"watch_err", error:""+e});
-            }
+                }, ms);
+                send({type:"watch_started", fieldName:fn});
+            } catch (e) { send({type:"watch_err", error:""+e}); }
         },
 
         jv_unwatch_field: function (cmd) {
@@ -741,119 +1011,23 @@ static const char kBootstrapSrc[] = R"YAMJS(
             } catch (e) {}
         },
 
-        // Read instance field (any type).
-        jv_read_field: function (cmd) {
-            try {
-                var obj = get(cmd.handle);
-                if (!obj) throw new Error("no handle");
-                var v = obj[cmd.fieldName];
-                send({type:"field_result", ok:true, value:describe(v, 4)});
-            } catch (e) {
-                send({type:"field_result", ok:false, error:""+e});
-            }
-        },
-
-        jv_write_field: function (cmd) {
-            try {
-                var obj = get(cmd.handle);
-                if (!obj) throw new Error("no handle");
-                obj[cmd.fieldName] = mat(cmd.value);
-                send({type:"field_write_ok"});
-            } catch (e) {
-                send({type:"field_write_err", error:""+e});
-            }
-        },
-
-        // Hook a method (enter / leave / exception).
-        jv_hook: function (cmd) {
-            try {
-                var C = Java.use(cmd.className);
-                var MM = C[cmd.methodName];
-                if (!MM || !MM.overloads) throw new Error("no overloads");
-                var tag = cmd.className + "." + cmd.methodName;
-                for (var i = 0; i < MM.overloads.length; i++) {
-                    (function(ov) {
-                        if (ov.__ygg_hook !== undefined) return;
-                        ov.__ygg_hook = ov.implementation || null;
-                        ov.implementation = function() {
-                            var a = Array.prototype.slice.call(arguments);
-                            var as = [];
-                            for (var k = 0; k < a.length; k++) {
-                                try { as.push(describe(a[k], 3)); }
-                                catch (e) { as.push("<err>"); }
-                            }
-                            var bt = "";
-                            try {
-                                var b = Java.backtrace({limit:8});
-                                if (b && b.frames) {
-                                    var fr = [];
-                                    for (var f = 0; f < b.frames.length; f++) {
-                                        var fr0 = b.frames[f];
-                                        fr.push(String(fr0.className||"") + "." +
-                                                String(fr0.methodName||""));
-                                    }
-                                    bt = " bt:[" + fr.join(" < ") + "]";
-                                }
-                            } catch (e) {}
-                            send({type:"hook_enter", tag:tag,
-                                  args:as, backtrace:bt});
-                            var r;
-                            try {
-                                r = ov.__ygg_hook
-                                    ? ov.__ygg_hook.apply(this, a) : undefined;
-                            } catch (ex) {
-                                send({type:"hook_exception", tag:tag,
-                                      exception:""+ex});
-                                throw ex;
-                            }
-                            send({type:"hook_leave", tag:tag,
-                                  ret:describe(r, 3)});
-                            return r;
-                        };
-                    })(MM.overloads[i]);
-                }
-                send({type:"hook_ok", tag:tag});
-            } catch (e) {
-                send({type:"hook_err", error:""+e});
-            }
-        },
-
-        jv_unhook: function (cmd) {
-            try {
-                var C = Java.use(cmd.className);
-                var MM = C[cmd.methodName];
-                if (MM && MM.overloads) {
-                    for (var i = 0; i < MM.overloads.length; i++) {
-                        var ov = MM.overloads[i];
-                        if (ov.__ygg_hook !== undefined) {
-                            ov.implementation = ov.__ygg_hook;
-                            delete ov.__ygg_hook;
-                        }
-                    }
-                }
-                send({type:"unhook_ok"});
-            } catch (e) { send({type:"unhook_err", error:""+e}); }
-        },
-
-        // Evaluate arbitrary JS with Java in scope.
         jv_eval: function (cmd) {
             try {
-                var fn = new Function("Java", "return (" + cmd.code + ");");
+                var fn = new Function("Java", "return ("+cmd.code+");");
                 var r = fn(Java);
-                send({type:"eval_result", ok:true, result:describe(r, 6)});
+                send({type:"eval_result", ok:true,
+                      result:formatTypedTree(describeTyped(r, 0), "").trim()});
             } catch (e) {
                 send({type:"eval_result", ok:false, error:""+e});
             }
         }
     };
 
-    // ═══════════════════════════════════════════════════════════════
-    //  native handlers
-    // ═══════════════════════════════════════════════════════════════
+    // ─── native handlers ─────────────────────────────────────────────
     var nativeHandlers = {
         eval: function (cmd) {
             try {
-                var fn = new Function("return (" + (cmd.code || "null") + ");");
+                var fn = new Function("return ("+(cmd.code||"null")+");");
                 send({type:"eval_result", ok:true, result:describe(fn())});
             } catch (e) {
                 send({type:"eval_result", ok:false, error:""+e});
@@ -874,14 +1048,15 @@ static const char kBootstrapSrc[] = R"YAMJS(
         enumerate_classes: function (cmd) {
             try {
                 var all = Java.enumerateLoadedClassesSync();
-                sendMaybeChunked({type:"classes_list", count:all.length, classes:all});
+                sendMaybeChunked({type:"classes_list", count:all.length,
+                                  classes:all});
             } catch (e) {
                 send({type:"classes_list", count:0, classes:[], error:""+e});
             }
         }
     };
 
-    // ─── Dispatcher ───────────────────────────────────────────────────
+    // ─── Dispatcher ──────────────────────────────────────────────────
     function dispatchCmd(cmd) {
         if (!cmd || !cmd.action) return;
         var h = cppHandlers[cmd.action];
@@ -902,15 +1077,13 @@ static const char kBootstrapSrc[] = R"YAMJS(
         if (msg.action) return msg;
         return null;
     }
-
     try {
         recv("yamgg_cmd", function (msg) { dispatchCmd(unwrapCmd(msg)); });
     } catch (e) {}
 
-    // ─── ModView loader + attach ──────────────────────────────────────
+    // ─── ModView loader ──────────────────────────────────────────────
     var g_targetLoader = null;
     var g_modViewClass = null;
-
     function resolveLoader() {
         if (g_targetLoader !== null) return g_targetLoader;
         try {
@@ -933,7 +1106,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
         } catch (e) { send({type:"loader_scan_err", message:""+e}); }
         return null;
     }
-
     function getModViewClass() {
         if (g_modViewClass !== null) return g_modViewClass;
         var ldr = resolveLoader();
@@ -948,9 +1120,9 @@ static const char kBootstrapSrc[] = R"YAMJS(
         return g_modViewClass;
     }
 
+    // ─── Attach ──────────────────────────────────────────────────────
     var attachDone = false;
     var attachAttempts = 0;
-
     function tryOne(tag, act) {
         if (!act || attachDone) return false;
         var Mv = getModViewClass();
@@ -968,7 +1140,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
             return false;
         }
     }
-
     function tryUnityPlayer() {
         try {
             var UP = Java.use("com.unity3d.player.UnityPlayer");
@@ -1010,7 +1181,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
         } catch (e) {}
         return false;
     }
-
     function tryAttachOnce() {
         attachAttempts++;
         Java.performNow(function () {
@@ -1043,31 +1213,25 @@ static const char kBootstrapSrc[] = R"YAMJS(
         } catch (e) { send({type:"hook_outer_error", message:""+e}); }
     }
 
-    // ─── Poller — THE event loop ─────────────────────────────────────
+    // ─── Poller — event loop ─────────────────────────────────────────
     var pollCount = 0;
     var POLL_INTERVAL_MS = 50;
     var ALIVE_EVERY_MS = 30000;
     var lastAliveAt = 0;
     var booted = false;
-
     function pollTick() {
         try {
             Java.performNow(function () {
                 var MV = getModViewClass();
                 if (!MV) return;
-
                 if (!booted) {
                     booted = true;
-                    try { send({type:"boot_poller_v6"}); } catch (e) {}
+                    try { send({type:"boot_poller_v7"}); } catch (e) {}
                     installAllHooks();
                     tryAttachOnce();
-                    try { send({type:"boot_poller_done_v6"}); } catch (e) {}
+                    try { send({type:"boot_poller_done_v7"}); } catch (e) {}
                 }
-
-                if (!attachDone) {
-                    try { tryAttachOnce(); } catch (e) {}
-                }
-
+                if (!attachDone) { try { tryAttachOnce(); } catch (e) {} }
                 var drained = 0;
                 for (var i = 0; i < 128; i++) {
                     var raw;
@@ -1082,7 +1246,6 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     dispatchCmd(cmd);
                     drained++;
                 }
-
                 pollCount++;
                 var now = Date.now();
                 if ((now - lastAliveAt) >= ALIVE_EVERY_MS) {
@@ -1095,13 +1258,11 @@ static const char kBootstrapSrc[] = R"YAMJS(
             try { send({type:"tick_err", message:""+e}); } catch (e2) {}
         }
     }
-
     try { send({type:"poller_started", interval:POLL_INTERVAL_MS}); } catch (e) {}
     setInterval(pollTick, POLL_INTERVAL_MS);
-
     try { send({type:"cpp_ready"}); }       catch (e) {}
     try { send({type:"cpp_ready_final"}); } catch (e) {}
-    try { send({type:"boot_signals_done_v6"}); } catch (e) {}
+    try { send({type:"boot_signals_done_v7"}); } catch (e) {}
 })();
 )YAMJS";
 

@@ -1,6 +1,5 @@
 // ===========================================================================
-// ClassBrowser.cpp — JV tab. All Java logic lives in bootstrap.js (jv_*).
-// This file ONLY: builds JSON commands, receives events, draws the tree.
+// ClassBrowser.cpp — JV tab. Type-aware editors per kind.
 // ===========================================================================
 #include "ClassBrowser.h"
 #include "JSConsole.h"
@@ -14,6 +13,7 @@
 #include <algorithm>
 #include <cstring>
 #include <cstdio>
+#include <sstream>
 
 #define LOG_TAG "YAMGG"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -21,8 +21,6 @@
 namespace yamgg {
 
 namespace {
-// JSON string escape. Uses C++ raw string literals to avoid any
-// backslash ambiguity between source, python, and bash.
 std::string jesc(const std::string& s) {
     std::string out;
     out.reserve(s.size() + 8);
@@ -40,7 +38,6 @@ std::string jesc(const std::string& s) {
 }
 } // anon
 
-// ─── Singleton ──────────────────────────────────────────────────────────────
 ClassBrowser& ClassBrowser::instance() { static ClassBrowser i; return i; }
 ClassBrowser::ClassBrowser() { registerEvents(); }
 ClassBrowser::~ClassBrowser() = default;
@@ -60,9 +57,8 @@ void ClassBrowser::registerEvents() {
         std::lock_guard<std::mutex> lk(mu_);
         classes_.clear();
         auto* a = ev.data.get("classes");
-        if (a && a->is_arr()) {
+        if (a && a->is_arr())
             for (auto& e : a->arr_val) classes_.push_back(e.as_str());
-        }
         std::sort(classes_.begin(), classes_.end());
         loading_ = false;
         LOGI("CB: %zu classes", classes_.size());
@@ -79,15 +75,51 @@ void ClassBrowser::registerEvents() {
                 MethodInfo mi;
                 if (auto* n = it.get("name")) mi.name = n->as_str();
                 if (auto* r = it.get("ret"))  mi.ret  = r->as_str();
+                if (auto* rk = it.get("retKind")) mi.retKind = rk->as_str();
                 if (auto* is = it.get("isStatic")) mi.isStatic = is->as_bool(true);
                 if (auto* ar = it.get("args")) if (ar->is_arr()) {
                     for (auto& e : ar->arr_val) {
                         ParamInfo pi;
                         if (auto* tn = e.get("typeName")) pi.typeName = tn->as_str();
                         if (auto* kd = e.get("kind"))     pi.kind = kd->as_str();
-                        if (auto* ev2 = e.get("enumValues")) if (ev2->is_arr()) {
+                        if (auto* ge = e.get("generic"))  pi.generic = ge->as_str();
+                        if (auto* ev2 = e.get("enumValues")) if (ev2->is_arr())
                             for (auto& x : ev2->arr_val)
                                 pi.enumValues.push_back(x.as_str());
+                        // Initialize editor from defaultSpec
+                        if (auto* ds = e.get("defaultSpec")) {
+                            std::string k = pi.kind;
+                            if (k == "string" || k == "file") {
+                                if (auto* v = ds->get("value"))
+                                    std::strncpy(pi.scalar, v->as_str().c_str(),
+                                                 sizeof(pi.scalar)-1);
+                            } else if (k == "int" || k == "long" || k == "short"
+                                    || k == "byte") {
+                                if (auto* v = ds->get("value"))
+                                    std::snprintf(pi.scalar, sizeof(pi.scalar),
+                                                  "%lld", (long long)v->as_i64(0));
+                            } else if (k == "float" || k == "double") {
+                                if (auto* v = ds->get("value"))
+                                    std::snprintf(pi.scalar, sizeof(pi.scalar),
+                                                  "%g", v->as_f64(0));
+                            } else if (k == "boolean") {
+                                if (auto* v = ds->get("value"))
+                                    pi.booleanVal = v->as_bool(false);
+                            } else if (k == "char") {
+                                if (auto* v = ds->get("value")) {
+                                    std::string s = v->as_str("a");
+                                    pi.scalar[0] = s.empty() ? 'a' : s[0];
+                                    pi.scalar[1] = 0;
+                                }
+                            } else if (k == "enum") {
+                                if (auto* v = ds->get("enumName"))
+                                    std::strncpy(pi.scalar, v->as_str().c_str(),
+                                                 sizeof(pi.scalar)-1);
+                            } else {
+                                std::string j = ds->stringify();
+                                std::strncpy(pi.jsonSpec, j.c_str(),
+                                             sizeof(pi.jsonSpec)-1);
+                            }
                         }
                         mi.args.push_back(std::move(pi));
                     }
@@ -108,9 +140,10 @@ void ClassBrowser::registerEvents() {
         if (fs && fs->is_arr()) {
             for (auto& it : fs->arr_val) {
                 FieldInfo fi;
-                if (auto* n = it.get("name"))  fi.name  = n->as_str();
-                if (auto* t = it.get("type"))  fi.type  = t->as_str();
-                if (auto* v = it.get("value")) fi.value = v->as_str();
+                if (auto* n = it.get("name"))     fi.name     = n->as_str();
+                if (auto* t = it.get("type"))     fi.type     = t->as_str();
+                if (auto* tk = it.get("typeKind")) fi.typeKind = tk->as_str();
+                if (auto* v = it.get("value"))    fi.value    = v->as_str();
                 if (auto* s = it.get("isStatic")) fi.isStatic = s->as_bool(false);
                 fl.push_back(std::move(fi));
             }
@@ -129,6 +162,30 @@ void ClassBrowser::registerEvents() {
                         ParamInfo pi;
                         if (auto* tn = e.get("typeName")) pi.typeName = tn->as_str();
                         if (auto* kd = e.get("kind"))     pi.kind = kd->as_str();
+                        if (auto* ds = e.get("defaultSpec")) {
+                            std::string k = pi.kind;
+                            if (k == "string") {
+                                if (auto* v = ds->get("value"))
+                                    std::strncpy(pi.scalar, v->as_str().c_str(),
+                                                 sizeof(pi.scalar)-1);
+                            } else if (k == "int" || k == "long" || k == "short"
+                                    || k == "byte") {
+                                if (auto* v = ds->get("value"))
+                                    std::snprintf(pi.scalar, sizeof(pi.scalar),
+                                                  "%lld", (long long)v->as_i64(0));
+                            } else if (k == "float" || k == "double") {
+                                if (auto* v = ds->get("value"))
+                                    std::snprintf(pi.scalar, sizeof(pi.scalar),
+                                                  "%g", v->as_f64(0));
+                            } else if (k == "boolean") {
+                                if (auto* v = ds->get("value"))
+                                    pi.booleanVal = v->as_bool(false);
+                            } else {
+                                std::string j = ds->stringify();
+                                std::strncpy(pi.jsonSpec, j.c_str(),
+                                             sizeof(pi.jsonSpec)-1);
+                            }
+                        }
                         ci.args.push_back(std::move(pi));
                     }
                 }
@@ -201,7 +258,7 @@ void ClassBrowser::registerEvents() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Trigger methods — one-line JSON commands
+// Command triggers
 // ═══════════════════════════════════════════════════════════════════════════
 void ClassBrowser::triggerLoadClasses() {
     loading_ = true;
@@ -212,31 +269,21 @@ void ClassBrowser::triggerLoadClasses() {
     }
     std::string f;
     { std::lock_guard<std::mutex> lk(mu_); f = filter_; }
-    std::string cmd;
-    cmd.reserve(128);
-    cmd += R"({"action":"jv_enumerate","filter":")";
-    cmd += jesc(f);
-    cmd += R"("})";
+    std::string cmd = R"({"action":"jv_enumerate","filter":")";
+    cmd += jesc(f); cmd += R"("})";
     sendCommand(cmd);
 }
 
 void ClassBrowser::triggerLoadMethods(const std::string& cls) {
     loading_ = true;
-    std::string cmd;
-    cmd.reserve(128);
-    cmd += R"({"action":"jv_detail","className":")";
-    cmd += jesc(cls);
-    cmd += R"("})";
+    std::string cmd = R"({"action":"jv_detail","className":")";
+    cmd += jesc(cls); cmd += R"("})";
     sendCommand(cmd);
 }
 
 void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
-    std::string cmd;
-    cmd.reserve(160);
-    cmd += R"({"action":"jv_trace","className":")";
-    cmd += jesc(cls);
-    cmd += R"(","methodName":")";
-    cmd += jesc(m.name);
+    std::string cmd = R"({"action":"jv_trace","className":")";
+    cmd += jesc(cls); cmd += R"(","methodName":")"; cmd += jesc(m.name);
     cmd += R"("})";
     sendCommand(cmd);
     std::lock_guard<std::mutex> lk(mu_);
@@ -245,12 +292,8 @@ void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
 }
 
 void ClassBrowser::triggerUntrace(const std::string& cls, MethodInfo& m) {
-    std::string cmd;
-    cmd.reserve(160);
-    cmd += R"({"action":"jv_untrace","className":")";
-    cmd += jesc(cls);
-    cmd += R"(","methodName":")";
-    cmd += jesc(m.name);
+    std::string cmd = R"({"action":"jv_untrace","className":")";
+    cmd += jesc(cls); cmd += R"(","methodName":")"; cmd += jesc(m.name);
     cmd += R"("})";
     sendCommand(cmd);
     std::lock_guard<std::mutex> lk(mu_);
@@ -258,8 +301,47 @@ void ClassBrowser::triggerUntrace(const std::string& cls, MethodInfo& m) {
     tracedMethods_.erase(cls + "::" + m.name);
 }
 
+std::string ClassBrowser::argsSpecFor(const std::vector<ParamInfo>& args) {
+    std::string out = "[";
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (i) out += ",";
+        const ParamInfo& p = args[i];
+        const std::string& k = p.kind;
+        if (k == "int" || k == "long" || k == "short" || k == "byte") {
+            out += R"({"kind":")"; out += k; out += R"(","value":)";
+            out += (p.scalar[0] ? p.scalar : "0"); out += "}";
+        } else if (k == "float" || k == "double") {
+            out += R"({"kind":")"; out += k; out += R"(","value":)";
+            out += (p.scalar[0] ? p.scalar : "0"); out += "}";
+        } else if (k == "boolean") {
+            out += R"({"kind":"boolean","value":)";
+            out += (p.booleanVal ? "true" : "false"); out += "}";
+        } else if (k == "char") {
+            out += R"({"kind":"char","value":")";
+            char ch = p.scalar[0] ? p.scalar[0] : 'a';
+            char tmp[3] = { ch, 0, 0 };
+            out += jesc(tmp); out += R"("})";
+        } else if (k == "string" || k == "file" || k == "boxed") {
+            out += R"({"kind":"string","value":")";
+            out += jesc(p.scalar); out += R"("})";
+        } else if (k == "enum") {
+            out += R"({"kind":"enum","className":")";
+            out += jesc(p.typeName);
+            out += R"(","enumName":")";
+            out += jesc(p.scalar);
+            out += R"("})";
+        } else {
+            // Complex: use jsonSpec (already valid JSON from preset)
+            if (p.jsonSpec[0]) out += p.jsonSpec;
+            else               out += R"({"kind":"null"})";
+        }
+    }
+    out += "]";
+    return out;
+}
+
 void ClassBrowser::triggerCall(const std::string& cls, MethodInfo& m) {
-    std::string args = buildArgsJSON(m);
+    std::string args = argsSpecFor(m.args);
     unsigned long long ih = 0;
     {
         std::lock_guard<std::mutex> lk(mu_);
@@ -268,94 +350,36 @@ void ClassBrowser::triggerCall(const std::string& cls, MethodInfo& m) {
             && selectedInstance_ < (int)it->second.size())
             ih = it->second[selectedInstance_].handle;
     }
-    std::string cmd;
-    cmd.reserve(256);
-    cmd += R"({"action":"jv_call","className":")";
+    std::string cmd = R"({"action":"jv_call","className":")";
     cmd += jesc(cls);
-    cmd += R"(","methodName":")";
-    cmd += jesc(m.name);
-    cmd += R"(","signature":")";
-    cmd += jesc(m.ret);
-    cmd += R"(","isStatic":)";
-    cmd += (m.isStatic ? "true" : "false");
-    cmd += R"(,"instanceHandle":)";
-    cmd += std::to_string(ih);
-    cmd += R"(,"argsSpec":)";
-    cmd += (args.empty() ? "[]" : args);
+    cmd += R"(","methodName":")"; cmd += jesc(m.name);
+    cmd += R"(","isStatic":)"; cmd += (m.isStatic ? "true" : "false");
+    cmd += R"(,"instanceHandle":)"; cmd += std::to_string(ih);
+    cmd += R"(,"argsSpec":)"; cmd += args;
     cmd += "}";
     sendCommand(cmd);
 }
 
 void ClassBrowser::triggerNewInstance(const std::string& cls, CtorInfo& c) {
-    std::string args;
-    args.reserve(128);
-    args += "[";
-    for (size_t i = 0; i < c.args.size(); ++i) {
-        if (i) args += ",";
-        ParamInfo& p = c.args[i];
-        const std::string& k = p.kind;
-        if (k == "int" || k == "long" || k == "short" || k == "byte"
-            || k == "float" || k == "double")
-            args += std::string(R"({"kind":")") + k + R"(","value":)" + (p.scalar[0] ? p.scalar : "0") + "}";
-        else if (k == "boolean")
-            args += std::string(R"({"kind":"boolean","value":)") + (p.booleanVal ? "true" : "false") + "}";
-        else
-            args += std::string(R"({"kind":"string","value":")") + jesc(p.scalar) + R"("})";
-    }
-    args += "]";
-    std::string cmd;
-    cmd.reserve(256);
-    cmd += R"({"action":"jv_new","className":")";
+    std::string args = argsSpecFor(c.args);
+    std::string cmd = R"({"action":"jv_new","className":")";
     cmd += jesc(cls);
-    cmd += R"(","argsSpec":)";
-    cmd += args;
+    cmd += R"(","argsSpec":)"; cmd += args;
     cmd += "}";
     sendCommand(cmd);
 }
 
 void ClassBrowser::findInstances(const std::string& cls) {
-    std::string cmd;
-    cmd.reserve(128);
-    cmd += R"({"action":"jv_instances","className":")";
-    cmd += jesc(cls);
-    cmd += R"("})";
+    std::string cmd = R"({"action":"jv_instances","className":")";
+    cmd += jesc(cls); cmd += R"("})";
     sendCommand(cmd);
-}
-
-std::string ClassBrowser::buildArgsJSON(const MethodInfo& m) {
-    std::string out;
-    out.reserve(128);
-    out += "[";
-    for (size_t i = 0; i < m.args.size(); ++i) {
-        if (i) out += ",";
-        const ParamInfo& p = m.args[i];
-        const std::string& k = p.kind;
-        if (k == "int" || k == "long" || k == "short" || k == "byte"
-            || k == "float" || k == "double")
-            out += std::string(R"({"kind":")") + k + R"(","value":)" + (p.scalar[0] ? p.scalar : "0") + "}";
-        else if (k == "boolean")
-            out += std::string(R"({"kind":"boolean","value":)") + (p.booleanVal ? "true" : "false") + "}";
-        else if (k == "char")
-            out += std::string(R"({"kind":"char","value":")") + jesc(p.scalar[0] ? p.scalar : "a") + R"("})";
-        else if (k == "enum")
-            out += std::string(R"({"kind":"enum","className":")") + jesc(p.typeName) + R"(","enumName":")" + jesc(p.scalar) + R"("})";
-        else if (k == "array")
-            out += std::string(R"({"kind":"arrayJson","elementType":")") + jesc(p.typeName) + R"(","json":")" + jesc(p.scalar) + R"("})";
-        else
-            out += std::string(R"({"kind":"string","value":")") + jesc(p.scalar) + R"("})";
-    }
-    out += "]";
-    return out;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Drawing
 // ═══════════════════════════════════════════════════════════════════════════
 void ClassBrowser::draw() {
-    if (!autoLoadTried_) {
-        autoLoadTried_ = true;
-        triggerLoadClasses();
-    }
+    if (!autoLoadTried_) { autoLoadTried_ = true; triggerLoadClasses(); }
     drawSearchBar();
     ImGui::Separator();
     ImGui::BeginChild("##TreePanel", ImVec2(0, 0), true);
@@ -369,7 +393,6 @@ void ClassBrowser::drawSearchBar() {
     ImGui::SameLine(); ImGui::Checkbox("Method", &searchMethod_);
     ImGui::SameLine(); ImGui::Checkbox("Field", &searchField_);
     ImGui::SameLine();
-
     ImGui::SetNextItemWidth(-100);
     if (ImGui::InputTextWithHint("##search", "search...",
                                   searchBuf_, sizeof(searchBuf_),
@@ -469,9 +492,8 @@ void ClassBrowser::drawClassNode(const std::string& cls) {
         }
     }
     auto mit = methods_.find(cls);
-    if (mit != methods_.end()) {
+    if (mit != methods_.end())
         for (auto& m : mit->second) drawMethodNode(cls, m);
-    }
 }
 
 void ClassBrowser::drawCtorNode(const std::string& cls, CtorInfo& c) {
@@ -479,8 +501,7 @@ void ClassBrowser::drawCtorNode(const std::string& cls, CtorInfo& c) {
     char label[512];
     std::snprintf(label, sizeof(label), "new %s(%zu)", cls.c_str(), c.args.size());
     if (ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_SpanAvailWidth)) {
-        for (size_t i = 0; i < c.args.size(); ++i)
-            drawParamWidget(cls, *(MethodInfo*)nullptr, c.args[i], (int)i);
+        for (size_t i = 0; i < c.args.size(); ++i) drawParamWidget(c.args[i], (int)i);
         ImGui::Separator();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.16f, 0.04f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.24f, 0.08f, 1.0f));
@@ -507,16 +528,16 @@ void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
     std::snprintf(label, sizeof(label), "%s  %s(%zu)",
                   m.ret.c_str(), m.name.c_str(), m.args.size());
     ImGui::PushStyleColor(ImGuiCol_Text,
-        m.tracing ? ImVec4(0.92f, 0.92f, 0.94f, 1.0f) : ImVec4(0.82f, 0.82f, 0.85f, 1.0f));
+        m.tracing ? ImVec4(0.92f, 0.92f, 0.94f, 1.0f)
+                  : ImVec4(0.82f, 0.82f, 0.85f, 1.0f));
     ImGui::PushTextWrapPos(0.0f);
     bool open = ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_SpanAvailWidth);
     ImGui::PopTextWrapPos();
     ImGui::PopStyleColor();
     if (open) {
-        for (size_t i = 0; i < m.args.size(); ++i)
-            drawParamWidget(cls, m, m.args[i], (int)i);
+        for (size_t i = 0; i < m.args.size(); ++i) drawParamWidget(m.args[i], (int)i);
         ImGui::Separator();
-        if (!m.isStatic) drawInstancePicker(cls, m);
+        if (!m.isStatic) drawInstancePicker(cls);
         if (m.tracing) {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.32f, 0.16f, 1.0f));
             if (ImGui::Button("STOP", ImVec2(110, 40))) triggerUntrace(cls, m);
@@ -536,15 +557,35 @@ void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
     ImGui::PopID();
 }
 
-void ClassBrowser::drawParamWidget(const std::string&,
-                                     MethodInfo&, ParamInfo& p, int idx) {
+void ClassBrowser::drawParamWidget(ParamInfo& p, int idx) {
     ImGui::PushID(idx);
     ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextWrapped("arg%d %s", idx, p.typeName.c_str());
+    if (!p.generic.empty())
+        ImGui::TextWrapped("arg%d %s <%s>", idx, p.typeName.c_str(),
+                            p.generic.c_str());
+    else
+        ImGui::TextWrapped("arg%d (%s) [%s]", idx, p.typeName.c_str(),
+                            p.kind.c_str());
     ImGui::PopTextWrapPos();
     const std::string& k = p.kind;
-    if (k == "boolean") ImGui::Checkbox("##b", &p.booleanVal);
-    else if (k == "enum") {
+
+    if (k == "boolean") {
+        ImGui::Checkbox("##b", &p.booleanVal);
+    } else if (k == "int" || k == "long" || k == "short" || k == "byte") {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputText("##v", p.scalar, sizeof(p.scalar),
+                          ImGuiInputTextFlags_CharsDecimal);
+    } else if (k == "float" || k == "double") {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputText("##v", p.scalar, sizeof(p.scalar),
+                          ImGuiInputTextFlags_CharsDecimal);
+    } else if (k == "char") {
+        ImGui::SetNextItemWidth(60);
+        ImGui::InputText("##c", p.scalar, 2);
+    } else if (k == "string" || k == "file") {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputText("##s", p.scalar, sizeof(p.scalar));
+    } else if (k == "enum") {
         ImGui::SetNextItemWidth(-1);
         if (ImGui::BeginCombo("##e", p.scalar[0] ? p.scalar : "")) {
             for (auto& v : p.enumValues)
@@ -552,14 +593,24 @@ void ClassBrowser::drawParamWidget(const std::string&,
                     std::strncpy(p.scalar, v.c_str(), sizeof(p.scalar)-1);
             ImGui::EndCombo();
         }
+    } else if (k == "handle") {
+        ImGui::SetNextItemWidth(120);
+        ImGui::InputText("##h", p.scalar, sizeof(p.scalar),
+                          ImGuiInputTextFlags_CharsDecimal);
     } else {
+        // Complex: JSON editor (Map/List/Set/Array/JSON/Color/Date/...)
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.72f, 0.90f, 1.0f));
+        ImGui::TextWrapped("JSON spec (edit freely):");
+        ImGui::PopStyleColor();
         ImGui::SetNextItemWidth(-1);
-        ImGui::InputText("##v", p.scalar, sizeof(p.scalar));
+        ImGui::InputTextMultiline("##js", p.jsonSpec, sizeof(p.jsonSpec),
+                                   ImVec2(-1, 90),
+                                   ImGuiInputTextFlags_AllowTabInput);
     }
     ImGui::PopID();
 }
 
-void ClassBrowser::drawInstancePicker(const std::string& cls, MethodInfo&) {
+void ClassBrowser::drawInstancePicker(const std::string& cls) {
     auto it = instances_.find(cls);
     if (it == instances_.end() || it->second.empty()) {
         if (ImGui::Button("Find Instances", ImVec2(180, 36))) findInstances(cls);
@@ -568,7 +619,8 @@ void ClassBrowser::drawInstancePicker(const std::string& cls, MethodInfo&) {
     for (size_t i = 0; i < it->second.size(); ++i) {
         ImGui::PushID((int)i);
         char lbl[256];
-        std::snprintf(lbl, sizeof(lbl), "#%zu %s", i, it->second[i].className.c_str());
+        std::snprintf(lbl, sizeof(lbl), "#%zu %s", i,
+                      it->second[i].className.c_str());
         bool sel = ((int)i == selectedInstance_);
         ImGui::PushTextWrapPos(0.0f);
         if (ImGui::Selectable(lbl, sel)) selectedInstance_ = (int)i;

@@ -20,23 +20,28 @@ private:
     ClassBrowser(const ClassBrowser&) = delete;
     ClassBrowser& operator=(const ClassBrowser&) = delete;
 
-    struct KeyValue { char k[128]; char v[256]; };
     struct ParamInfo {
         std::string typeName;
-        std::string kind;
+        std::string kind;              // int/string/enum/list/map/... 
+        std::string generic;           // e.g. Map<String,Foo>
         std::vector<std::string> enumValues;
+        // Simple editors
         char scalar[512]{0};
         bool booleanVal{false};
-        std::vector<KeyValue> kvs;
+        // Complex editor (JSON text, prefilled with preset)
+        char jsonSpec[4096]{0};
     };
     struct MethodInfo {
-        std::string name, ret;
+        std::string name, ret, retKind;
         bool isStatic{true};
         bool tracing{false};
         std::vector<ParamInfo> args;
     };
-    struct FieldInfo { std::string name, type, value; bool isStatic{false}; };
-    struct CtorInfo { std::string sig; std::vector<ParamInfo> args; };
+    struct FieldInfo {
+        std::string name, type, typeKind, value;
+        bool isStatic{false};
+    };
+    struct CtorInfo { std::vector<ParamInfo> args; };
     struct InstanceEntry {
         unsigned long long handle{0};
         std::string className;
@@ -52,16 +57,18 @@ private:
     void triggerCall(const std::string& cls, MethodInfo& m);
     void triggerNewInstance(const std::string& cls, CtorInfo& c);
     void findInstances(const std::string& cls);
-    std::string buildArgsJSON(const MethodInfo& m);
 
     void drawSearchBar();
     void drawTree();
-    void drawPackageGroup(const std::string& pkg, std::vector<std::string>& members);
+    void drawPackageGroup(const std::string& pkg,
+                          std::vector<std::string>& members);
     void drawClassNode(const std::string& cls);
     void drawMethodNode(const std::string& cls, MethodInfo& m);
     void drawCtorNode(const std::string& cls, CtorInfo& c);
-    void drawParamWidget(const std::string& cls, MethodInfo& m, ParamInfo& p, int idx);
-    void drawInstancePicker(const std::string& cls, MethodInfo& m);
+    void drawParamWidget(ParamInfo& p, int idx);
+    void drawInstancePicker(const std::string& cls);
+
+    std::string argsSpecFor(const std::vector<ParamInfo>& args);
 
     mutable std::mutex mu_;
     std::vector<std::string> classes_;
