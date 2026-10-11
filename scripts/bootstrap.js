@@ -1073,8 +1073,14 @@
     } catch (e) {}
 
     // ─── ModView loader ──────────────────────────────────────────────
+    // CRITICAL: classFactory.loader is a GLOBAL that affects every Java.use.
+    // We must NOT leave it set to our InMemoryDexClassLoader globally —
+    // that would prevent Java.use from finding classes in the system
+    // PathClassLoader (e.g. UnityPlayer, ActivityThread, WindowManager).
+    // We only swap it temporarily, then restore.
     var g_targetLoader = null;
     var g_modViewClass = null;
+
     function resolveLoader() {
         if (g_targetLoader !== null) return g_targetLoader;
         try {
@@ -1085,10 +1091,10 @@
                     if (cn.indexOf("InMemoryDexClassLoader") < 0 &&
                         cn.indexOf("DexClassLoader") < 0 &&
                         cn.indexOf("PathClassLoader") < 0) continue;
+                    // Try loading ModView via this loader's loadClass
                     var cls = loaders[i].loadClass("com.yamgg.modview.ModView");
                     if (cls) {
                         g_targetLoader = loaders[i];
-                        Java.classFactory.loader = g_targetLoader;
                         send({type:"loader_resolved", index:i, total:loaders.length});
                         return g_targetLoader;
                     }
@@ -1097,16 +1103,25 @@
         } catch (e) { send({type:"loader_scan_err", message:""+e}); }
         return null;
     }
+
     function getModViewClass() {
         if (g_modViewClass !== null) return g_modViewClass;
         var ldr = resolveLoader();
         if (!ldr) return null;
+
+        // Temporarily swap classFactory.loader to resolve ModView,
+        // then restore so other Java.use calls work normally.
+        var saved = null;
+        try { saved = Java.classFactory.loader; } catch (e) {}
         try {
+            Java.classFactory.loader = ldr;
             g_modViewClass = Java.use("com.yamgg.modview.ModView");
             send({type:"modview_class_ok"});
         } catch (e) {
             send({type:"modview_class_err", message:""+e});
             return null;
+        } finally {
+            try { Java.classFactory.loader = saved; } catch (e) {}
         }
         return g_modViewClass;
     }
