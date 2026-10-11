@@ -1120,13 +1120,15 @@ static const char kBootstrapSrc[] = R"YAMJS(
         return g_modViewClass;
     }
 
-    // ─── Attach ──────────────────────────────────────────────────────
+    // ─── Attach (performNow-safe) ─────────────────────────────────────
     var attachDone = false;
     var attachAttempts = 0;
+
     function tryOne(tag, act) {
         if (!act || attachDone) return false;
         var Mv = getModViewClass();
-        if (!Mv) return false;
+        if (!Mv) { send({type:"attach_skip", tag:tag, reason:"no_class"});
+                   return false; }
         try { if (act.isFinishing()) return false; } catch (e) {}
         try {
             Mv.attach(act);
@@ -1140,14 +1142,43 @@ static const char kBootstrapSrc[] = R"YAMJS(
             return false;
         }
     }
+
+    // ── Strategy 1: UnityPlayer.currentActivity / mActivity ─────────
     function tryUnityPlayer() {
+        var tried = false;
         try {
             var UP = Java.use("com.unity3d.player.UnityPlayer");
-            var ca = UP.currentActivity.value;
-            if (ca && tryOne("UnityPlayer", ca)) return true;
+            tried = true;
+            // currentActivity (public static field)
+            try {
+                var ca = UP.currentActivity.value;
+                if (ca && tryOne("UnityPlayer.currentActivity", ca)) return true;
+            } catch (e) {}
+            // mActivity (older versions)
+            try {
+                var ma = UP.mActivity.value;
+                if (ma && tryOne("UnityPlayer.mActivity", ma)) return true;
+            } catch (e) {}
+        } catch (e) {
+            send({type:"attach_skip", tag:"UnityPlayer", reason:""+e});
+        }
+        return false;
+    }
+
+    // ── Strategy 2: UnityPlayerActivity via Java.choose ──────────────
+    function tryUnityPlayerActivity() {
+        try {
+            var found = null;
+            Java.choose("com.unity3d.player.UnityPlayerActivity", {
+                onMatch: function(x) { found = x; return "stop"; },
+                onComplete: function() {}
+            });
+            if (found && tryOne("UnityPlayerActivity.choose", found)) return true;
         } catch (e) {}
         return false;
     }
+
+    // ── Strategy 3: ActivityThread.mActivities ──────────────────────
     function tryMActivities() {
         try {
             var AT = Java.use("android.app.ActivityThread");
@@ -1178,18 +1209,76 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     if (tryOne("mActivities", act)) return true;
                 } catch (e) {}
             }
-        } catch (e) {}
+        } catch (e) {
+            send({type:"attach_skip", tag:"mActivities", reason:""+e});
+        }
         return false;
     }
-    function tryAttachOnce() {
-        attachAttempts++;
-        Java.performNow(function () {
-            if (attachDone) return;
-            if (tryUnityPlayer()) return;
-            if (tryMActivities()) return;
-        });
+
+    // ── Strategy 4: WindowManagerGlobal.mRoots ──────────────────────
+    function tryWindowManager() {
+        try {
+            var WMG = Java.use("android.view.WindowManagerGlobal");
+            var inst = WMG.getInstance();
+            var roots = inst.mRoots.value;
+            if (!roots) return false;
+            var n = roots.size();
+            var ActCls = Java.use("android.app.Activity");
+            for (var i = 0; i < n; i++) {
+                try {
+                    var ri = roots.get(i);
+                    var view = ri.mView.value;
+                    if (!view) continue;
+                    var ctx = view.getContext();
+                    try {
+                        var act = Java.cast(ctx, ActCls);
+                        if (act && tryOne("WindowManager"+i, act)) return true;
+                    } catch (e) {}
+                } catch (e) {}
+            }
+        } catch (e) {
+            send({type:"attach_skip", tag:"WindowManager", reason:""+e});
+        }
+        return false;
     }
 
+    // ── Strategy 5: Java.choose on android.app.Activity ────────────
+    function tryJavaChoose() {
+        var found = false;
+        try {
+            Java.choose("android.app.Activity", {
+                onMatch: function(a) {
+                    if (found || attachDone) return "stop";
+                    if (tryOne("Java.choose", a)) { found = true; return "stop"; }
+                },
+                onComplete: function() {}
+            });
+        } catch (e) {}
+        return found;
+    }
+
+    // ── Inner: run strategies, MUST be called inside a Java context ──
+    function tryAttachOnce_inner() {
+        if (attachDone) return true;
+        if (tryUnityPlayer())          return true;
+        if (tryUnityPlayerActivity())  return true;
+        if (tryMActivities())          return true;
+        if (tryWindowManager())        return true;
+        if (attachAttempts % 5 === 0)  { if (tryJavaChoose()) return true; }
+        return false;
+    }
+
+    // ── Outer: wraps with performNow for callers OUTSIDE Java ctx ──
+    function tryAttachOnce() {
+        attachAttempts++;
+        try {
+            Java.performNow(function () { tryAttachOnce_inner(); });
+        } catch (e) {
+            send({type:"attach_outer_err", message:""+e});
+        }
+    }
+
+    // ── onResume hook: pure Java context, call inner directly ──────
     var hooksInstalled = false;
     function installAllHooks() {
         if (hooksInstalled) return;
@@ -1202,7 +1291,12 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     Activity.onResume.implementation = function () {
                         try { origOnResume.call(this); } catch (e) {}
                         if (!attachDone) {
-                            try { tryOne("onResume", this); } catch (e) {}
+                            attachAttempts++;
+                            try { tryAttachOnce_inner(); }
+                            catch (e) {
+                                send({type:"onresume_attach_err",
+                                      message:""+e});
+                            }
                         }
                     };
                     send({type:"hook_installed"});
@@ -1228,10 +1322,11 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     booted = true;
                     try { send({type:"boot_poller_v7"}); } catch (e) {}
                     installAllHooks();
-                    tryAttachOnce();
+                    attachAttempts++;
+                    try { tryAttachOnce_inner(); } catch (e) {}
                     try { send({type:"boot_poller_done_v7"}); } catch (e) {}
                 }
-                if (!attachDone) { try { tryAttachOnce(); } catch (e) {} }
+                if (!attachDone) { attachAttempts++; try { tryAttachOnce_inner(); } catch (e) { send({type:"poll_attach_err", message:""+e}); } }
                 var drained = 0;
                 for (var i = 0; i < 128; i++) {
                     var raw;
