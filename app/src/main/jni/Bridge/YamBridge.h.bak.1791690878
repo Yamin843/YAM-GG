@@ -30,21 +30,14 @@ public:
     void shutdown();
     bool isReady() const { return ready_.load(); }
 
-    // Blocking eval — do NOT call from UI thread.
-    EvalResult evaluate(const std::string& code);
+    // Blocking eval — do NOT call from UI thread. Timeout default 10s.
+    EvalResult evaluate(const std::string& code, int timeout_ms = 10000);
 
-    // Fire-and-forget eval — safe from UI thread. Results arrive via
-    // events::on("eval_result").
+    // Fire-and-forget eval — safe from UI thread. Returns immediately.
+    // Results arrive via events::on("eval_result").
     void postEval(const std::string& code);
 
-    // Non-blocking: launches JS load and returns immediately.
-    // Result arrives via events::on("user_script_loaded").
     LoadResult loadScript(const std::string& name, const std::string& code);
-
-    // Blocking with timeout — used when caller needs the boolean result.
-    LoadResult loadScriptSync(const std::string& name, const std::string& code,
-                              int timeout_ms = 8000);
-
     bool unloadScript(const std::string& name);
     bool unloadAllScripts();
     std::vector<std::string> listScripts() const;
