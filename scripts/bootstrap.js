@@ -556,16 +556,44 @@
     // ═══════════════════════════════════════════════════════════════
     //  MODVIEW CACHE (avoid Java.use per poll tick)
     // ═══════════════════════════════════════════════════════════════
+    var g_targetLoader = null;
     var g_modViewClass = null;
+
+    function resolveLoader() {
+        if (g_targetLoader !== null) return g_targetLoader;
+        try {
+            var loaders = Java.enumerateClassLoadersSync();
+            for (var i = 0; i < loaders.length; i++) {
+                try {
+                    var cn = String(loaders[i].getClass().getName());
+                    if (cn.indexOf("InMemoryDexClassLoader") < 0 &&
+                        cn.indexOf("DexClassLoader") < 0 &&
+                        cn.indexOf("PathClassLoader") < 0) continue;
+                    var cls = loaders[i].loadClass("com.yamgg.modview.ModView");
+                    if (cls) {
+                        g_targetLoader = loaders[i];
+                        Java.classFactory.loader = g_targetLoader;
+                        send({type:"loader_resolved", index:i, total:loaders.length});
+                        return g_targetLoader;
+                    }
+                } catch (e) {}
+            }
+        } catch (e) { send({type:"loader_scan_err", message:""+e}); }
+        return null;
+    }
 
     function getModViewClass() {
         if (g_modViewClass !== null) return g_modViewClass;
+        var ldr = resolveLoader();
+        if (!ldr) return null;
         try {
             g_modViewClass = Java.use("com.yamgg.modview.ModView");
-            return g_modViewClass;
+            send({type:"modview_class_ok"});
         } catch (e) {
+            send({type:"modview_class_err", message:""+e});
             return null;
         }
+        return g_modViewClass;
     }
 
     // ═══════════════════════════════════════════════════════════════
