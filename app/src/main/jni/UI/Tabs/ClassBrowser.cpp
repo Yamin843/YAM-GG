@@ -85,6 +85,8 @@ void ClassBrowser::registerEvents() {
             for (auto& e : a->arr_val) classes_.push_back(e.as_str());
         std::sort(classes_.begin(), classes_.end());
         loading_ = false;
+        // Force drawTree to rebuild filtered_ on next frame
+        lastQuery_ = "\x01INVALIDATE\x01";
         LOGI("CB: %zu classes", classes_.size());
     });
 
