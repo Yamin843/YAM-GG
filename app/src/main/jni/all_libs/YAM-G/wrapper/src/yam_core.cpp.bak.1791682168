@@ -22,7 +22,6 @@
 // ===========================================================================
 
 extern "C" void yamgg_postCommand(const char* json);
-extern "C" void yamgg_postCommand_raw(const char* data, int size);
 
 namespace yam {
 
@@ -743,8 +742,8 @@ Result<void> Script::unload() { Cancellable c; return unload(c); }
 
 
 void Script::post(const String& msg) {
-    // C→JS via queue polled by JS. Binary-safe: length, not c_str().
-    ::yamgg_postCommand_raw(msg.data(), (int)msg.size());
+    // C→JS via queue polled by JS. yam_script_post is unreliable after load.
+    ::yamgg_postCommand(msg.c_str());
 }
 
 Result<void> Script::unload(Cancellable& c) {

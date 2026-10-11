@@ -30,14 +30,12 @@ public:
     void shutdown();
     bool isReady() const { return ready_.load(); }
 
-    // Blocking eval — do NOT call from UI thread. Timeout default 10s.
-    EvalResult evaluate(const std::string& code, int timeout_ms = 10000);
-
-    // Fire-and-forget eval — safe from UI thread. Returns immediately.
-    // Results arrive via events::on("eval_result").
+    EvalResult evaluate(const std::string& code);
     void postEval(const std::string& code);
 
     LoadResult loadScript(const std::string& name, const std::string& code);
+    LoadResult loadScriptSync(const std::string& name, const std::string& code,
+                              int timeout_ms = 8000);
     bool unloadScript(const std::string& name);
     bool unloadAllScripts();
     std::vector<std::string> listScripts() const;
@@ -46,10 +44,14 @@ public:
     void setOutputSink(void (*sink)(const std::string&));
     void setErrorSink(void (*sink)(const std::string&));
 
+    // Bridge hook lifecycle (enter / leave / exception)
     using HookCb = std::function<void(
-        std::int64_t, const std::string&,
-        const std::vector<std::uint64_t>&, std::uint64_t,
-        std::uint64_t, bool, const std::string&)>;
+        std::int64_t /*cbId*/, const std::string& /*phase*/,
+        const std::vector<std::uint64_t>& /*args*/,
+        std::uint64_t /*thisH*/,
+        std::uint64_t /*retH*/,
+        bool /*isVoid*/,
+        const std::string& /*exMsg*/)>;
     void setHookCb(HookCb cb) { hookCb_ = std::move(cb); }
 
 private:

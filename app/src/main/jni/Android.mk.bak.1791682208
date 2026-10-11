@@ -66,9 +66,7 @@ LOCAL_CPPFLAGS := \
     -DNDEBUG \
     -DIMGUI_IMPL_OPENGL_ES3=1 \
     -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1 \
-    -Wno-error \
-    -ffunction-sections \
-    -fdata-sections
+    -Wno-error
 
 LOCAL_CFLAGS := -w -O2 -DNDEBUG
 
@@ -87,7 +85,8 @@ LOCAL_LDLIBS := \
     -ldl \
     -lz \
     -lm \
-        -lunwind
+    -lc++_static \
+    -lunwind
 
 LOCAL_STATIC_LIBRARIES := \
     asmjit \

@@ -1175,7 +1175,6 @@ public:
                          const String& sig, bool is_static, u64 inst,
                          const String& args, i32 times = 1,
                          i32 interleave_ms = 0, bool stop_on_error = false);
-    Result<void> post_eval(const String& c);  // fire-and-forget
     Result<JavaReply> eval(const String& c);
 
     Result<void> wait_cpp_ready(i64 timeout_ms = 15000);

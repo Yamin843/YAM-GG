@@ -20,8 +20,7 @@ ClassBrowser& ClassBrowser::instance() { static ClassBrowser i; return i; }
 ClassBrowser::ClassBrowser() { registerEvents(); }
 ClassBrowser::~ClassBrowser() = default;
 
-void ClassBrowser::sendJSAsync(const std::string& js) {
-    // Post async — never blocks UI. Result arrives via events.
+void ClassBrowser::sendJS(const std::string& js) {
     YamBridge::instance().postEval(js);
 }
 
@@ -252,7 +251,7 @@ void ClassBrowser::triggerLoadClasses() {
         "}catch(e){"
         "send({type:'classes_list',count:0,classes:[],error:''+e});"
         "}})();";
-    sendJSAsync(js);
+    sendJS(js);
 }
 
 // ─── triggerLoadMethods — reflection dump ───
@@ -288,7 +287,7 @@ void ClassBrowser::triggerLoadMethods(const std::string& cls) {
         "type:String(f.getType().getName()),value:''});}catch(e){}}"
         "send({type:'class_detail_result',className:" + cn + ",methods:methods,fields:fields});"
         "}catch(e){send({type:'class_detail_error',message:''+e});}})();";
-    sendJSAsync(js);
+    sendJS(js);
 }
 
 // ─── triggerTrace — idempotent ───
@@ -310,7 +309,7 @@ void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
         "};})(MM.overloads[i]);}"
         "send({type:'trace_on_ok'});"
         "}catch(e){send({type:'trace_err',message:''+e});}})();";
-    sendJSAsync(js);
+    sendJS(js);
     std::lock_guard<std::mutex> lk(mu_);
     m.tracing = true;
     tracedMethods_.insert(cls + "::" + m.name);
@@ -328,7 +327,7 @@ void ClassBrowser::triggerUntrace(const std::string& cls, MethodInfo& m) {
         "ov.implementation=ov.__ygg;delete ov.__ygg;}"
         "}"
         "send({type:'trace_off_ok'});}catch(e){}})();";
-    sendJSAsync(js);
+    sendJS(js);
     std::lock_guard<std::mutex> lk(mu_);
     m.tracing = false;
     tracedMethods_.erase(cls + "::" + m.name);
@@ -362,7 +361,7 @@ void ClassBrowser::triggerCall(const std::string& cls, MethodInfo& m) {
         "var r=(isS?ov.apply(null,a):ov.apply(inst,a));"
         "send({type:'call_result',result:describe(r)});"
         "}catch(e){send({type:'call_result',result:'ERR: '+e});}})();";
-    sendJSAsync(js);
+    sendJS(js);
 }
 
 void ClassBrowser::findInstances(const std::string& cls) {
@@ -381,7 +380,7 @@ void ClassBrowser::findInstances(const std::string& cls) {
         "},onComplete:function(){"
         "send({type:'instances_result',className:" + cn + ",items:items});}});"
         "}catch(e){send({type:'instances_result',className:" + cn + ",items:[]});}})();";
-    sendJSAsync(js);
+    sendJS(js);
 }
 
 std::string ClassBrowser::buildArgsJSON(const MethodInfo& m) {
@@ -433,11 +432,6 @@ std::string ClassBrowser::buildArgsJSON(const MethodInfo& m) {
 
 // ─── Draw ───
 void ClassBrowser::draw() {
-    // Auto-load classes on the very first draw (async, non-blocking).
-    if (!autoLoadTried_) {
-        autoLoadTried_ = true;
-        triggerLoadClasses();
-    }
     drawSearchBar();
     ImGui::Separator();
     ImGui::BeginChild("##TreePanel", ImVec2(0, 0), true);

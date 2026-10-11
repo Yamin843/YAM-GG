@@ -60,10 +60,7 @@ void JSConsole::registerEvents() {
 void JSConsole::pushOutput(const std::string& line) {
     std::lock_guard<std::mutex> lk(mu_);
     output_.push_back(line);
-    // Cap to protect memory; ImGui clipper handles the visible slice.
-    if (output_.size() > 20000) {
-        output_.erase(output_.begin(), output_.begin() + 4000);
-    }
+    // No cap — clipper virtualizes rendering.
 }
 
 void JSConsole::evaluate(const std::string& code) {

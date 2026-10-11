@@ -41,7 +41,6 @@ static std::queue<std::string> g_cmdQueue;
 extern "C" int  yamgg_popPendingCmd(char* out, int maxLen);
 extern "C" int  yamgg_peekPendingCmdSize(void);
 extern "C" void yamgg_postCommand(const char* json);
-extern "C" void yamgg_postCommand_raw(const char* data, int size);
 
 // ===========================================================================
 // Command queue (C++ → JS bridge)
@@ -73,12 +72,6 @@ extern "C" void yamgg_postCommand(const char* json) {
     if (!json) return;
     std::lock_guard<std::mutex> lk(g_cmdMutex);
     g_cmdQueue.push(std::string(json));
-}
-
-extern "C" void yamgg_postCommand_raw(const char* data, int size) {
-    if (!data || size <= 0) return;
-    std::lock_guard<std::mutex> lk(g_cmdMutex);
-    g_cmdQueue.emplace(data, static_cast<size_t>(size));
 }
 
 // ===========================================================================
@@ -213,7 +206,86 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
     Runtime::instance().shutdown();
 }
 
-// JNI methods live in JNI/NativeMethods.cpp (registered via RegisterNatives).
+// ===========================================================================
+// JNI bridges for ModView native methods
+// ===========================================================================
+extern "C" JNIEXPORT void JNICALL
+Java_com_yamgg_modview_ModView_nativeOnSurfaceCreated(JNIEnv* env, jclass clazz) {
+    jni::onSurfaceCreated(env, clazz);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_yamgg_modview_ModView_nativeOnSurfaceChanged(
+    JNIEnv* env, jclass clazz, jint w, jint h) {
+    jni::onSurfaceChanged(env, clazz, w, h);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_yamgg_modview_ModView_nativeOnDrawFrame(
+    JNIEnv* env, jclass clazz, jint w, jint h) {
+    jni::onDrawFrame(env, clazz, w, h);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_yamgg_modview_ModView_nativeOnTouch(
+    JNIEnv* env, jclass clazz, jint action, jfloat x, jfloat y, jint pointerId) {
+    jni::onTouch(env, clazz, action, x, y, pointerId);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_yamgg_modview_ModView_nativeOnKey(
+    JNIEnv* env, jclass clazz, jint keyCode, jint action) {
+    jni::onKey(env, clazz, keyCode, action);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_yamgg_modview_ModView_nativeOnChar(
+    JNIEnv* env, jclass clazz, jint codepoint) {
+    jni::onChar(env, clazz, codepoint);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_yamgg_modview_ModView_nativeOnScroll(
+    JNIEnv* env, jclass clazz, jfloat dx, jfloat dy) {
+    jni::onScroll(env, clazz, dx, dy);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_yamgg_modview_ModView_nativeWantCaptureMouse(
+    JNIEnv* env, jclass clazz) {
+    return jni::wantCaptureMouse(env, clazz);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_yamgg_modview_ModView_nativeWantTextInput(
+    JNIEnv* env, jclass clazz) {
+    return jni::wantTextInput(env, clazz);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_yamgg_modview_ModView_nativeHitTest(
+    JNIEnv* env, jclass clazz, jfloat x, jfloat y) {
+    return jni::hitTest(env, clazz, x, y);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_yamgg_modview_ModView_nativeGetPendingCmd(
+    JNIEnv* env, jclass clazz) {
+    (void)clazz;
+    int needed = yamgg_peekPendingCmdSize();
+    if (needed <= 0) return nullptr;
+
+    std::vector<char> buf(needed + 16);
+    int n = yamgg_popPendingCmd(buf.data(),
+                                static_cast<int>(buf.size()));
+    if (n < 0) {
+        buf.resize(-n);
+        n = yamgg_popPendingCmd(buf.data(),
+                                static_cast<int>(buf.size()));
+    }
+    if (n <= 0) return nullptr;
+    return env->NewStringUTF(buf.data());
+}
 
 // ===========================================================================
 // Constructor / Destructor

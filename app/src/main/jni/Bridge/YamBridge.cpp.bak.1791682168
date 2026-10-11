@@ -319,7 +319,7 @@ std::vector<std::string> YamBridge::listScripts() const {
 
 void YamBridge::postEval(const std::string& code) {
     if (!ready_.load()) return;
-    try { yam::JavaScriptBridge::instance().post_eval(code); } catch (...) {}
+    try { yam::JavaScriptBridge::instance().eval(code); } catch (...) {}
 }
 
 void YamBridge::setOutputSink(void (*sink)(const std::string&)) {
