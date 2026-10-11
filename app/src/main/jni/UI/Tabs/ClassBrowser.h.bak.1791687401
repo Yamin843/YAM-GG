@@ -58,9 +58,8 @@ private:
                           std::vector<std::string>& members);
     void drawClassNode(const std::string& cls);
     void drawMethodNode(const std::string& cls, MethodInfo& m);
-    void drawParamWidget(const std::string& cls, MethodInfo& m,
-                          ParamInfo& p, int idx);
-    void drawInstancePicker(const std::string& cls, MethodInfo& m);
+    void drawParamWidget(MethodInfo& m, ParamInfo& p, int idx);
+    void drawInstancePicker(const std::string& cls);
 
     mutable std::mutex mu_;
     std::vector<std::string> classes_;
