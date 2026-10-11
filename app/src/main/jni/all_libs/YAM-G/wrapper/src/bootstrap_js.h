@@ -43,7 +43,20 @@ static const char kBootstrapSrc[] = R"YAMJS(
     // ═══════════════════════════════════════════════════════════════
     //  TYPE CLASSIFIER — every Java type we know
     // ═══════════════════════════════════════════════════════════════
-    function classifyType(typeName) {
+    function primitiveKind(tn) {
+        if (tn === "int" || tn === "long" || tn === "short" ||
+            tn === "byte" || tn === "float" || tn === "double" ||
+            tn === "boolean" || tn === "char" || tn === "void") return tn;
+        if (tn === "java.lang.String") return "string";
+        if (tn.charAt(0) === "[") return "array";
+        if (tn.indexOf("Map") >= 0) return "map";
+        if (tn.indexOf("List") >= 0) return "list";
+        if (tn.indexOf("Set") >= 0) return "set";
+        if (tn.indexOf("Collection") >= 0) return "list";
+        return "object";
+    }
+
+function classifyType(typeName) {
         if (!typeName) return "object";
         switch (typeName) {
             case "void": return "void";
@@ -665,71 +678,43 @@ static const char kBootstrapSrc[] = R"YAMJS(
                         var m = ms[i];
                         m.setAccessible(true);
                         var pts = m.getParameterTypes();
-                        var genTypes = null;
-                        try { genTypes = m.getGenericParameterTypes(); }
-                        catch (e) {}
                         var args = [];
                         for (var j = 0; j < pts.length; j++) {
                             var tn = String(pts[j].getName());
-                            var kd = classifyType(tn);
-                            var ev = [];
-                            if (kd === "enum") {
-                                try {
-                                    var pc = Java.use(tn);
-                                    var vals = pc.values();
-                                    for (var e2 = 0; e2 < vals.length; e2++)
-                                        ev.push(String(vals[e2].name()));
-                                } catch (ex) {}
-                            }
-                            var gen = null;
-                            if (genTypes && genTypes[j]) {
-                                try { gen = String(genTypes[j].toString()); }
-                                catch (e) {}
-                            }
-                            var defSpec = null;
-                            try { defSpec = presetForKind(kd, tn); }
-                            catch (e) { defSpec = {kind:"null"}; }
-                            args.push({
-                                typeName: tn, kind: kd, enumValues: ev,
-                                generic: gen, defaultSpec: defSpec
-                            });
+                            args.push({typeName: tn, kind: primitiveKind(tn),
+                                       enumValues: []});
                         }
                         var mods = m.getModifiers();
                         methods.push({
                             name: String(m.getName()),
                             ret: String(m.getReturnType().getName()),
-                            retKind: classifyType(
-                                String(m.getReturnType().getName())),
                             isStatic: (mods & 8) !== 0,
-                            isAbstract: (mods & 1024) !== 0,
                             args: args
                         });
                     } catch (e) {}
                 }
-
                 var fields = [];
                 var fs = jcls.getDeclaredFields();
                 for (var k = 0; k < fs.length; k++) {
                     try {
                         var f = fs[k];
                         f.setAccessible(true);
+                        var ftype = String(f.getType().getName());
                         var isStatic = (f.getModifiers() & 8) !== 0;
                         var fval = "";
-                        var ftype = String(f.getType().getName());
                         if (isStatic) {
                             try { fval = describe(f.get(null)); }
-                            catch (e) { fval = "<read err>"; }
+                            catch (e) { fval = "<err>"; }
                         }
                         fields.push({
                             name: String(f.getName()),
                             type: ftype,
-                            typeKind: classifyType(ftype),
+                            typeKind: primitiveKind(ftype),
                             isStatic: isStatic,
                             value: fval
                         });
                     } catch (e) {}
                 }
-
                 var ctors = [];
                 var cs = jcls.getDeclaredConstructors();
                 for (var q = 0; q < cs.length; q++) {
@@ -739,15 +724,15 @@ static const char kBootstrapSrc[] = R"YAMJS(
                         var cargs = [];
                         for (var w = 0; w < cpts.length; w++) {
                             var ctn = String(cpts[w].getName());
-                            var ck = classifyType(ctn);
-                            var cdef = presetForKind(ck, ctn);
-                            cargs.push({typeName: ctn, kind: ck,
-                                        enumValues: [], defaultSpec: cdef});
+                            cargs.push({typeName: ctn,
+                                        kind: primitiveKind(ctn),
+                                        enumValues: []});
                         }
                         ctors.push({args: cargs});
                     } catch (e) {}
                 }
-
+                send({type:"jv_detail_start", className:cmd.className,
+                      methodCount:methods.length, fieldCount:fields.length});
                 sendMaybeChunked({
                     type:"class_detail_result",
                     className: cmd.className,
@@ -1032,13 +1017,9 @@ static const char kBootstrapSrc[] = R"YAMJS(
         run_user_script: function (cmd) {
             var nm = cmd.name || "anon";
             var code = cmd.code || "";
-            // Defer execution: the poller thread must not block on the
-            // user's script (which may do slow Java calls and stall the
-            // ART watchdog). We schedule on the next tick and use
-            // Java.perform (async) instead of performNow.
             setTimeout(function() {
                 try {
-                    Java.perform(function() {
+                    Java.performNow(function() {
                         try {
                             (new Function(code))();
                             send({type:"user_script_loaded", name:nm,
@@ -1053,7 +1034,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
                     send({type:"user_script_loaded", name:nm, ok:false,
                           error:"outer: "+e});
                 }
-            }, 0);
+            }, 30);
         },
         enumerate_classes: function (cmd) {
             try {

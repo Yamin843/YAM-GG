@@ -222,6 +222,10 @@ void ClassBrowser::registerEvents() {
 
         selectedClass_ = cls;
         loading_ = false;
+        pendingClasses_.erase(cls);
+        LOGI("CB: class_detail %s methods=%zu fields=%zu ctors=%zu",
+             cls.c_str(),
+             methods_[cls].size(), fields_[cls].size(), ctors_[cls].size());
     });
 
     yam::events::on("instances_result", [this](const yam::Event& ev) {
@@ -302,6 +306,7 @@ void ClassBrowser::triggerLoadClasses() {
 
 void ClassBrowser::triggerLoadMethods(const std::string& cls) {
     loading_ = true;
+    LOGI("CB: triggerLoadMethods %s", cls.c_str());
     std::string cmd = R"({"action":"jv_detail","className":")";
     cmd += jesc(cls); cmd += R"("})";
     sendCommand(cmd);
@@ -506,19 +511,47 @@ void ClassBrowser::drawPackageGroup(const std::string& pkg,
         bool cOpen = ImGui::TreeNodeEx(simple.c_str(), cf);
         ImGui::PopTextWrapPos();
         ImGui::PopStyleColor();
-        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-            if (selectedClass_ != full) triggerLoadMethods(full);
+        if (cOpen) {
+            if (methods_.find(full) == methods_.end() &&
+                !pendingClasses_.count(full)) {
+                pendingClasses_.insert(full);
+                selectedClass_ = full;
+                triggerLoadMethods(full);
+            }
+            drawClassNode(full);
+            ImGui::TreePop();
         }
-        if (cOpen) { drawClassNode(full); ImGui::TreePop(); }
         ImGui::PopID();
     }
     ImGui::TreePop();
 }
 
 void ClassBrowser::drawClassNode(const std::string& cls) {
+    // Member search box (filters methods + fields by substring, ci)
+    ImGui::PushID((cls + "#ms").c_str());
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##ms", "filter members (methods/fields)...",
+                              memberSearch_, sizeof(memberSearch_));
+    ImGui::PopID();
+
+    std::string q = memberSearch_;
+    for (auto& c : q) c = (char)std::tolower((unsigned char)c);
+    auto match = [&](const std::string& name) -> bool {
+        if (q.empty()) return true;
+        std::string n = name;
+        for (auto& c : n) c = (char)std::tolower((unsigned char)c);
+        return n.find(q) != std::string::npos;
+    };
+
+    // ── Fields ────────────────────────────────────────────────────
     auto fit = fields_.find(cls);
     if (fit != fields_.end() && !fit->second.empty()) {
-        if (ImGui::TreeNodeEx("Fields", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        size_t shown = 0;
+        for (auto& f : fit->second) if (match(f.name)) shown++;
+        char hdr[64];
+        std::snprintf(hdr, sizeof(hdr), "Fields (%zu/%zu)###fld",
+                      shown, fit->second.size());
+        if (ImGui::TreeNodeEx(hdr, ImGuiTreeNodeFlags_SpanAvailWidth)) {
             if (ImGui::BeginTable("##fields", 4,
                     ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
                 ImGui::TableSetupColumn("name");
@@ -527,27 +560,58 @@ void ClassBrowser::drawClassNode(const std::string& cls) {
                 ImGui::TableSetupColumn("static");
                 ImGui::TableHeadersRow();
                 for (auto& f : fit->second) {
+                    if (!match(f.name)) continue;
                     ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::TextWrapped("%s", f.name.c_str());
-                    ImGui::TableSetColumnIndex(1); ImGui::TextWrapped("%s", f.type.c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::TextWrapped("%s", f.value.c_str());
-                    ImGui::TableSetColumnIndex(3); ImGui::TextWrapped("%s", f.isStatic ? "yes" : "");
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextWrapped("%s", f.name.c_str());
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TextWrapped("%s", f.type.c_str());
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::TextWrapped("%s", f.value.c_str());
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::TextWrapped("%s", f.isStatic ? "yes" : "");
                 }
                 ImGui::EndTable();
             }
             ImGui::TreePop();
         }
     }
+
+    // ── Constructors ─────────────────────────────────────────────
     auto cit = ctors_.find(cls);
     if (cit != ctors_.end() && !cit->second.empty()) {
-        if (ImGui::TreeNodeEx("Constructors", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        char hdr[64];
+        std::snprintf(hdr, sizeof(hdr), "Constructors (%zu)###ctr",
+                      cit->second.size());
+        if (ImGui::TreeNodeEx(hdr, ImGuiTreeNodeFlags_SpanAvailWidth)) {
             for (auto& c : cit->second) drawCtorNode(cls, c);
             ImGui::TreePop();
         }
     }
+
+    // ── Methods ──────────────────────────────────────────────────
     auto mit = methods_.find(cls);
-    if (mit != methods_.end())
-        for (auto& m : mit->second) drawMethodNode(cls, m);
+    if (mit != methods_.end() && !mit->second.empty()) {
+        size_t shown = 0;
+        for (auto& m : mit->second) if (match(m.name)) shown++;
+        char hdr[64];
+        std::snprintf(hdr, sizeof(hdr), "Methods (%zu/%zu)###mth",
+                      shown, mit->second.size());
+        if (ImGui::TreeNodeEx(hdr, ImGuiTreeNodeFlags_DefaultOpen
+                                    | ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            for (auto& m : mit->second) {
+                if (!match(m.name)) continue;
+                drawMethodNode(cls, m);
+            }
+            ImGui::TreePop();
+        }
+    }
+
+    if (methods_.find(cls) == methods_.end()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("loading members...");
+        ImGui::PopTextWrapPos();
+    }
 }
 
 void ClassBrowser::drawCtorNode(const std::string& cls, CtorInfo& c) {

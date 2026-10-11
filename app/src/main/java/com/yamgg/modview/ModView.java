@@ -342,7 +342,12 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                                             for (int i = start; i < start + count && i < s.length(); i++) {
                                                 int cp = (int) s.charAt(i);
                                                 if (cp == 0x200B) continue;
-                                                nativeOnChar(cp);
+                                                if (cp == '\n') {
+                                                    nativeOnKey(KeyEvent.KEYCODE_ENTER, 0);
+                                                    nativeOnKey(KeyEvent.KEYCODE_ENTER, 1);
+                                                } else {
+                                                    nativeOnChar(cp);
+                                                }
                                             }
                                         }
                                         int deleted = before - count;

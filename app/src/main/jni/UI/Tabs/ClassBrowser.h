@@ -79,6 +79,7 @@ private:
     std::map<std::string, std::vector<CtorInfo>> ctors_;
     std::map<std::string, std::vector<InstanceEntry>> instances_;
     std::set<std::string> tracedMethods_;
+    std::set<std::string> pendingClasses_;   // jv_detail in-flight
 
     std::string filter_;
     std::string selectedClass_;
@@ -92,6 +93,7 @@ private:
     bool searchMethod_{false};
     bool searchField_{false};
     char searchBuf_[256]{0};
+    char memberSearch_[128]{0};
 };
 
 #define YAMGG_CLASSBROWSER yamgg::ClassBrowser::instance()
