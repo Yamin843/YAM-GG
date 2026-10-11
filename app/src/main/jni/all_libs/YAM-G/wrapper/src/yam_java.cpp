@@ -330,6 +330,16 @@ void JavaScriptBridge::on_event_json(const JsonValue& ev) {
             cb(id, ok, result, error);
         }
     }
+    // Diagnostic: log every event with a boot_ or diag_ prefix
+    if (type.rfind("boot_", 0) == 0 || type.rfind("diag_", 0) == 0
+        || type == "attach_ok" || type == "attach_try_err"
+        || type == "loader_resolved" || type == "modview_class_ok"
+        || type == "modview_class_err" || type == "loader_scan_err"
+        || type == "hook_installed" || type == "hook_error"
+        || type == "poller_started" || type == "poller_alive") {
+        YAM_LOG_INFO() << "js event: " << type;
+    }
+
     Event e;
     e.type = type;
     e.data = ev;

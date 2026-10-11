@@ -19,6 +19,7 @@ static const char kBootstrapSrc[] = R"YAMJS(
 // ===========================================================================
 (function () {
     "use strict";
+    try { send({type:"boot_top_v4"}); } catch (e) {}
 
     // ─── Handle registry ───────────────────────────────────────────────
     var table = Object.create(null);
@@ -842,10 +843,22 @@ static const char kBootstrapSrc[] = R"YAMJS(
     var ALIVE_EVERY_MS = 30000;
     var lastAliveAt = 0;
 
+    var __bootAttempted = false;
     function pollerOnce() {
         Java.performNow(function () {
             var MV = getModViewClass();
             if (!MV) return;
+
+            // Run boot once on first poll tick — independent of setTimeout
+            if (!__bootAttempted) {
+                __bootAttempted = true;
+                try { send({type:"boot_from_poller_v4"}); } catch (e) {}
+                try { installAllHooks(); } catch (e) { send({type:"boot_hooks_err_v4", message:""+e}); }
+                try { tryAttachOnce(); } catch (e) { send({type:"boot_attach_err_v4", message:""+e}); }
+                try { loopAttach(); } catch (e) { send({type:"boot_loop_err_v4", message:""+e}); }
+                try { send({type:"boot_from_poller_done_v4"}); } catch (e) {}
+            }
+
             var drained = 0;
             for (var i = 0; i < 64; i++) {
                 var raw;
@@ -908,15 +921,27 @@ static const char kBootstrapSrc[] = R"YAMJS(
     // ═══════════════════════════════════════════════════════════════
     try { send({ type: "cpp_ready" }); }       catch (e) {}
     try { send({ type: "cpp_ready_final" }); } catch (e) {}
+    try { send({type:"boot_pre_timeout_v4"}); } catch (e) {}
 
-    setTimeout(function () {
-        try { send({type:"boot_running"}); } catch (e) {}
-        try { installAllHooks(); } catch (e) {}
-        try { installPoller(); }   catch (e) {}
-        try { tryAttachOnce(); }   catch (e) {}
-        try { loopAttach(); }      catch (e) {}
-        try { send({ type: "boot_done" }); } catch (e) {}
-    }, 800);
+    // Install poller immediately — no setTimeout dependency
+    try { installPoller(); }
+    catch (e) { send({type:"poller_install_err_v4", message:""+e}); }
+
+    // Also schedule a classic boot via setTimeout (belt + braces)
+    try {
+        setTimeout(function () {
+            try { send({type:"boot_timer_fired_v4"}); } catch (e) {}
+            try { installAllHooks(); }
+            catch (e) { send({type:"boot_timer_hooks_err_v4", message:""+e}); }
+            try { tryAttachOnce(); }
+            catch (e) { send({type:"boot_timer_attach_err_v4", message:""+e}); }
+            try { loopAttach(); } catch (e) {}
+            try { send({type:"boot_timer_done_v4"}); } catch (e) {}
+        }, 700);
+        try { send({type:"boot_timeout_scheduled_v4"}); } catch (e) {}
+    } catch (e) {
+        try { send({type:"setTimeout_err_v4", message:""+e}); } catch (e2) {}
+    }
 })();
 )YAMJS";
 
