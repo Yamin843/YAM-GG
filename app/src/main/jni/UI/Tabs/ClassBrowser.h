@@ -42,6 +42,14 @@ private:
         bool isStatic{false};
     };
     struct CtorInfo { std::vector<ParamInfo> args; };
+    struct MemberMatch {
+        std::string className;
+        std::string name;
+        std::string kind;   // method | field
+        std::string ret;
+        int  argCount{0};
+        bool isStatic{false};
+    };
     struct InstanceEntry {
         unsigned long long handle{0};
         std::string className;
@@ -57,6 +65,7 @@ private:
     void triggerCall(const std::string& cls, MethodInfo& m);
     void triggerNewInstance(const std::string& cls, CtorInfo& c);
     void findInstances(const std::string& cls);
+    void triggerMemberSearch();
 
     void drawSearchBar();
     void drawTree();
@@ -79,7 +88,9 @@ private:
     std::map<std::string, std::vector<CtorInfo>> ctors_;
     std::map<std::string, std::vector<InstanceEntry>> instances_;
     std::set<std::string> tracedMethods_;
-    std::set<std::string> pendingClasses_;   // jv_detail in-flight
+    std::set<std::string> pendingClasses_;
+    std::vector<MemberMatch> memberMatches_;
+    std::string memberSearchQuery_;
 
     std::string filter_;
     std::string selectedClass_;

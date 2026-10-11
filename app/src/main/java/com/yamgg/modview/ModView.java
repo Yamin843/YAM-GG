@@ -14,6 +14,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.view.inputmethod.InputConnectionWrapper;
+import android.view.inputmethod.InputConnection;
 import android.widget.EditText;
 
 import javax.microedition.khronos.egl.EGLConfig;
@@ -309,7 +311,63 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
 
                     try {
                         if (sHiddenInput == null) {
-                            final EditText et = new EditText(activity);
+                            final EditText et = new EditText(activity) {
+                                @Override
+                                public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+                                    InputConnection ic = super.onCreateInputConnection(outAttrs);
+                                    if (ic == null) return null;
+                                    outAttrs.inputType = InputType.TYPE_CLASS_TEXT
+                                        | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                                        | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+                                    outAttrs.imeOptions |= EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                                        | EditorInfo.IME_FLAG_NO_FULLSCREEN
+                                        | EditorInfo.IME_FLAG_NO_ENTER_ACTION;
+                                    return new InputConnectionWrapper(ic, false) {
+                                        @Override
+                                        public boolean commitText(CharSequence text, int newCursor) {
+                                            try {
+                                                for (int i = 0; i < text.length(); i++) {
+                                                    int cp = (int) text.charAt(i);
+                                                    if (cp == '\n') {
+                                                        nativeOnKey(KeyEvent.KEYCODE_ENTER, 0);
+                                                        nativeOnKey(KeyEvent.KEYCODE_ENTER, 1);
+                                                    } else {
+                                                        nativeOnChar(cp);
+                                                    }
+                                                }
+                                            } catch (Throwable t) {}
+                                            return true;
+                                        }
+                                        @Override
+                                        public boolean setComposingText(CharSequence text, int newCursor) {
+                                            return commitText(text, newCursor);
+                                        }
+                                        @Override
+                                        public boolean deleteSurroundingText(int before, int after) {
+                                            try {
+                                                for (int i = 0; i < before; i++) {
+                                                    nativeOnKey(KeyEvent.KEYCODE_DEL, 0);
+                                                    nativeOnKey(KeyEvent.KEYCODE_DEL, 1);
+                                                }
+                                            } catch (Throwable t) {}
+                                            return true;
+                                        }
+                                        @Override
+                                        public boolean sendKeyEvent(KeyEvent event) {
+                                            int code = event.getKeyCode();
+                                            if (code == KeyEvent.KEYCODE_ENTER
+                                                || code == KeyEvent.KEYCODE_DEL
+                                                || code == KeyEvent.KEYCODE_TAB
+                                                || code == KeyEvent.KEYCODE_ESCAPE) {
+                                                int act = event.getAction();
+                                                nativeOnKey(code, act == KeyEvent.ACTION_DOWN ? 0 : 1);
+                                                return true;
+                                            }
+                                            return super.sendKeyEvent(event);
+                                        }
+                                    };
+                                }
+                            };
                             et.setLayoutParams(new ViewGroup.LayoutParams(1, 1));
                             et.setAlpha(0.01f);
                             et.setBackground(null);
@@ -320,78 +378,12 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                             et.setInputType(InputType.TYPE_CLASS_TEXT
                                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                                 | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-                            et.setImeOptions(
-                                EditorInfo.IME_ACTION_NONE
+                            et.setImeOptions(EditorInfo.IME_ACTION_NONE
                                 | EditorInfo.IME_FLAG_NO_EXTRACT_UI
                                 | EditorInfo.IME_FLAG_NO_FULLSCREEN
                                 | EditorInfo.IME_FLAG_NO_ENTER_ACTION);
                             et.setFocusable(true);
                             et.setFocusableInTouchMode(true);
-
-                            final String SENTINEL = "\u200B";
-                            et.setText(SENTINEL);
-                            et.setSelection(SENTINEL.length());
-
-                            final boolean[] resetting = new boolean[]{ false };
-                            et.addTextChangedListener(new TextWatcher() {
-                                @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
-                                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                                    try {
-                                        if (resetting[0]) return;
-                                        if (count > 0) {
-                                            for (int i = start; i < start + count && i < s.length(); i++) {
-                                                int cp = (int) s.charAt(i);
-                                                if (cp == 0x200B) continue;
-                                                if (cp == '\n') {
-                                                    nativeOnKey(KeyEvent.KEYCODE_ENTER, 0);
-                                                    nativeOnKey(KeyEvent.KEYCODE_ENTER, 1);
-                                                } else {
-                                                    nativeOnChar(cp);
-                                                }
-                                            }
-                                        }
-                                        int deleted = before - count;
-                                        if (deleted > 0) {
-                                            for (int i = 0; i < deleted; i++) {
-                                                nativeOnKey(KeyEvent.KEYCODE_DEL, 0);
-                                                nativeOnKey(KeyEvent.KEYCODE_DEL, 1);
-                                            }
-                                        }
-                                        resetting[0] = true;
-                                        et.post(new Runnable() {
-                                            @Override public void run() {
-                                                try {
-                                                    et.setText(SENTINEL);
-                                                    et.setSelection(SENTINEL.length());
-                                                } catch (Throwable t) {}
-                                                resetting[0] = false;
-                                            }
-                                        });
-                                    } catch (Throwable t) {}
-                                }
-                                @Override public void afterTextChanged(Editable s) {}
-                            });
-
-                            et.setOnKeyListener(new View.OnKeyListener() {
-                                @Override public boolean onKey(View v, int keyCode, KeyEvent event) {
-                                    int act = event.getAction();
-                                    if (act == KeyEvent.ACTION_DOWN
-                                        || act == KeyEvent.ACTION_MULTIPLE) {
-                                        nativeOnKey(keyCode, 0);
-                                    } else if (act == KeyEvent.ACTION_UP) {
-                                        nativeOnKey(keyCode, 1);
-                                    }
-                                    if (act == KeyEvent.ACTION_DOWN) {
-                                        if (keyCode == KeyEvent.KEYCODE_ENTER
-                                            || keyCode == KeyEvent.KEYCODE_TAB
-                                            || keyCode == KeyEvent.KEYCODE_ESCAPE) {
-                                            return true;
-                                        }
-                                    }
-                                    return false;
-                                }
-                            });
-
                             decor.addView(et);
                             sHiddenInput = et;
                         }

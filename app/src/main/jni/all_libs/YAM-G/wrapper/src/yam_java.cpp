@@ -334,7 +334,9 @@ void JavaScriptBridge::on_event_json(const JsonValue& ev) {
     if (type.rfind("boot_", 0) == 0 || type.rfind("diag_", 0) == 0
         || type == "attach_ok"
         || type == "attach_skip"
-        || type == "jv_detail_start" || type == "attach_try_err"
+        || type == "jv_detail_start"
+        || type == "members_search_result"
+        || type == "members_search_err" || type == "attach_try_err"
         || type == "loader_resolved" || type == "modview_class_ok"
         || type == "modview_class_err" || type == "loader_scan_err"
         || type == "hook_installed" || type == "hook_error"

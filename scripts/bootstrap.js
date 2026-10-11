@@ -983,6 +983,84 @@ function classifyType(typeName) {
             } catch (e) {}
         },
 
+        jv_search_members: function (cmd) {
+            var q = (cmd.query || "").toLowerCase();
+            if (q.length < 2) {
+                send({type:"members_search_result", query:cmd.query,
+                      matches:[], totalClasses:0, truncated:false});
+                return;
+            }
+            var wantMethod = cmd.wantMethod === true;
+            var wantField  = cmd.wantField === true;
+            var classes = Java.enumerateLoadedClassesSync();
+            var matches = [];
+            var idx = 0;
+            var CAP = 500;
+
+            function step() {
+                try {
+                    Java.performNow(function() {
+                        var processed = 0;
+                        while (idx < classes.length && processed < 150
+                               && matches.length < CAP) {
+                            var cn = classes[idx++];
+                            try {
+                                var C = Java.use(cn);
+                                if (wantMethod) {
+                                    var ms = C.class.getDeclaredMethods();
+                                    for (var i = 0; i < ms.length; i++) {
+                                        var mn = String(ms[i].getName()).toLowerCase();
+                                        if (mn.indexOf(q) >= 0) {
+                                            matches.push({
+                                                className: cn,
+                                                name: String(ms[i].getName()),
+                                                kind: "method",
+                                                ret: String(ms[i].getReturnType().getName()),
+                                                argCount: ms[i].getParameterTypes().length,
+                                                isStatic: (ms[i].getModifiers() & 8) !== 0
+                                            });
+                                            if (matches.length >= CAP) break;
+                                        }
+                                    }
+                                }
+                                if (wantField && matches.length < CAP) {
+                                    var fs = C.class.getDeclaredFields();
+                                    for (var j = 0; j < fs.length; j++) {
+                                        var fn = String(fs[j].getName()).toLowerCase();
+                                        if (fn.indexOf(q) >= 0) {
+                                            matches.push({
+                                                className: cn,
+                                                name: String(fs[j].getName()),
+                                                kind: "field",
+                                                ret: String(fs[j].getType().getName()),
+                                                argCount: 0,
+                                                isStatic: (fs[j].getModifiers() & 8) !== 0
+                                            });
+                                            if (matches.length >= CAP) break;
+                                        }
+                                    }
+                                }
+                            } catch (e) {}
+                            processed++;
+                        }
+                    });
+                } catch (e) {
+                    send({type:"members_search_err", error:""+e});
+                }
+                if (idx < classes.length && matches.length < CAP) {
+                    setTimeout(step, 0);
+                } else {
+                    sendMaybeChunked({
+                        type:"members_search_result",
+                        query: cmd.query,
+                        totalClasses: classes.length,
+                        truncated: matches.length >= CAP,
+                        matches: matches
+                    });
+                }
+            }
+            setTimeout(step, 0);
+        },
         jv_eval: function (cmd) {
             try {
                 var fn = new Function("Java", "return ("+cmd.code+");");

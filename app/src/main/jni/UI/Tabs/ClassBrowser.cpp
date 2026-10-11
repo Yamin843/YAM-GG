@@ -253,6 +253,26 @@ void ClassBrowser::registerEvents() {
         selectedInstance_ = 0;
     });
 
+    yam::events::on("members_search_result", [this](const yam::Event& ev) {
+        std::lock_guard<std::mutex> lk(mu_);
+        memberMatches_.clear();
+        auto* arr = ev.data.get("matches");
+        if (arr && arr->is_arr()) {
+            for (auto& m : arr->arr_val) {
+                MemberMatch mm;
+                if (auto* v = m.get("className")) mm.className = v->as_str();
+                if (auto* v = m.get("name"))      mm.name      = v->as_str();
+                if (auto* v = m.get("kind"))      mm.kind      = v->as_str();
+                if (auto* v = m.get("ret"))       mm.ret       = v->as_str();
+                if (auto* v = m.get("argCount"))  mm.argCount  = (int)v->as_i64(0);
+                if (auto* v = m.get("isStatic"))  mm.isStatic  = v->as_bool(false);
+                memberMatches_.push_back(std::move(mm));
+            }
+        }
+        LOGI("CB: members_search %s -> %zu matches",
+             ev.get_str("query").c_str(), memberMatches_.size());
+    });
+
     yam::events::on("call_result", [](const yam::Event& ev) {
         std::string result = ev.get_str("result");
         std::string err = ev.get_str("error");
@@ -291,6 +311,14 @@ void ClassBrowser::registerEvents() {
 // Command triggers
 // ═══════════════════════════════════════════════════════════════════════════
 void ClassBrowser::triggerLoadClasses() {
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (!classes_.empty()) {
+            // Already loaded — just invalidate filter cache.
+            lastQuery_ = "\x01INVALIDATE\x01";
+            return;
+        }
+    }
     loading_ = true;
     {
         std::lock_guard<std::mutex> lk(mu_);
@@ -298,8 +326,6 @@ void ClassBrowser::triggerLoadClasses() {
         filtered_.clear();
         lastQuery_.clear();
     }
-    // Always fetch ALL classes — filtering happens locally in drawTree
-    // (case-insensitive substring, live per keystroke).
     std::string cmd = R"({"action":"jv_enumerate","filter":""})";
     sendCommand(cmd);
 }
@@ -406,6 +432,22 @@ void ClassBrowser::findInstances(const std::string& cls) {
     sendCommand(cmd);
 }
 
+void ClassBrowser::triggerMemberSearch() {
+    std::string q;
+    { std::lock_guard<std::mutex> lk(mu_); q = searchBuf_; }
+    if (q.size() < 2) return;
+    std::string cmd = R"({"action":"jv_search_members","query":")";
+    cmd += jesc(q);
+    cmd += R"(","wantMethod":)";
+    cmd += (searchMethod_ ? "true" : "false");
+    cmd += R"(,"wantField":)";
+    cmd += (searchField_ ? "true" : "false");
+    cmd += "}";
+    LOGI("CB: triggerMemberSearch q=%s wantM=%d wantF=%d",
+         q.c_str(), (int)searchMethod_, (int)searchField_);
+    sendCommand(cmd);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Drawing
 // ═══════════════════════════════════════════════════════════════════════════
@@ -420,22 +462,22 @@ void ClassBrowser::draw() {
 
 void ClassBrowser::drawSearchBar() {
     ImGui::Spacing();
-    ImGui::Checkbox("Class", &searchClass_);
+    ImGui::Checkbox("Class",  &searchClass_);
     ImGui::SameLine(); ImGui::Checkbox("Method", &searchMethod_);
-    ImGui::SameLine(); ImGui::Checkbox("Field", &searchField_);
+    ImGui::SameLine(); ImGui::Checkbox("Field",  &searchField_);
     ImGui::SameLine();
+
     ImGui::SetNextItemWidth(-100);
-    if (ImGui::InputTextWithHint("##search", "search...",
-                                  searchBuf_, sizeof(searchBuf_),
-                                  ImGuiInputTextFlags_EnterReturnsTrue)) {
-        filter_ = searchBuf_;
-        if (filter_.empty()) filter_ = "com.";
-        triggerLoadClasses();
-    }
+    bool enter = ImGui::InputTextWithHint("##search", "search...",
+                                           searchBuf_, sizeof(searchBuf_),
+                                           ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
-    if (ImGui::Button("Find", ImVec2(80, 0))) {
-        filter_ = (searchBuf_[0] == 0) ? "com." : std::string(searchBuf_);
+    bool find = ImGui::Button("Find", ImVec2(80, 0));
+
+    if (enter || find) {
+        filter_ = searchBuf_;
         triggerLoadClasses();
+        if (searchMethod_ || searchField_) triggerMemberSearch();
     }
     if (loading_) { ImGui::SameLine(); ImGui::TextDisabled("..."); }
 }
@@ -443,7 +485,43 @@ void ClassBrowser::drawSearchBar() {
 void ClassBrowser::drawTree() {
     std::lock_guard<std::mutex> lk(mu_);
 
-    // Rebuild filtered list only when the query changes
+    // ── Member matches (Method/Field search) ─────────────────────
+    if (!memberMatches_.empty()) {
+        char hdr[96];
+        std::snprintf(hdr, sizeof(hdr), "MEMBER MATCHES (%zu)",
+                      memberMatches_.size());
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.86f, 0.42f, 1.0f));
+        ImGui::TextUnformatted(hdr);
+        ImGui::PopStyleColor();
+        ImGui::BeginChild("##memmatches", ImVec2(0, 220), true);
+        for (size_t i = 0; i < memberMatches_.size(); ++i) {
+            MemberMatch& m = memberMatches_[i];
+            ImGui::PushID((int)i);
+            char label[512];
+            if (m.kind == "method") {
+                std::snprintf(label, sizeof(label), "[M] %s::%s(%d) -> %s",
+                              m.className.c_str(), m.name.c_str(),
+                              m.argCount, m.ret.c_str());
+            } else {
+                std::snprintf(label, sizeof(label), "[F] %s::%s : %s",
+                              m.className.c_str(), m.name.c_str(),
+                              m.ret.c_str());
+            }
+            if (ImGui::Selectable(label)) {
+                selectedClass_ = m.className;
+                if (methods_.find(m.className) == methods_.end() &&
+                    !pendingClasses_.count(m.className)) {
+                    pendingClasses_.insert(m.className);
+                    triggerLoadMethods(m.className);
+                }
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndChild();
+        ImGui::Separator();
+    }
+
+    // ── Classes tree (filtered) ──────────────────────────────────
     std::string q = searchBuf_;
     if (q != lastQuery_) {
         lastQuery_ = q;
@@ -472,18 +550,21 @@ void ClassBrowser::drawTree() {
         if (classes_.empty())
             ImGui::TextWrapped("Loading classes...");
         else
-            ImGui::TextWrapped("No match (type any part, case-insensitive)");
+            ImGui::TextWrapped("No class match");
         ImGui::PopTextWrapPos();
         return;
     }
     std::string lastPkg;
     std::vector<std::string> members;
     auto flush = [&]() {
-        if (!members.empty()) { drawPackageGroup(lastPkg, members); members.clear(); }
+        if (!members.empty()) {
+            drawPackageGroup(lastPkg, members); members.clear();
+        }
     };
     for (auto& c : filtered_) {
         size_t dot = c.find_last_of('.');
-        std::string pkg = (dot == std::string::npos) ? "<default>" : c.substr(0, dot);
+        std::string pkg = (dot == std::string::npos)
+                        ? "<default>" : c.substr(0, dot);
         if (pkg != lastPkg) { flush(); lastPkg = pkg; }
         members.push_back(c);
     }
@@ -499,8 +580,7 @@ void ClassBrowser::drawPackageGroup(const std::string& pkg,
     for (auto& full : members) {
         size_t dot = full.find_last_of('.');
         std::string simple = (dot == std::string::npos) ? full : full.substr(dot + 1);
-        ImGuiTreeNodeFlags cf = ImGuiTreeNodeFlags_SpanAvailWidth
-                              | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+        ImGuiTreeNodeFlags cf = ImGuiTreeNodeFlags_SpanAvailWidth;
         if (selectedClass_ == full) cf |= ImGuiTreeNodeFlags_Selected;
         ImGui::PushID(full.c_str());
         if (selectedClass_ == full)
