@@ -53,6 +53,30 @@ void ClassBrowser::registerEvents() {
     if (eventsRegistered_) return;
     eventsRegistered_ = true;
 
+    // ── Chunk reassembly: when JS sends >128KB payload, bootstrap splits
+    //    it into chunk_begin/data/end. The chunks module in yam_events.cpp
+    //    reassembles, then calls the registered "full handler". We
+    //    re-dispatch as a normal event so existing handlers fire.
+    if (!chunksRegistered_) {
+        chunksRegistered_ = true;
+        yam::chunks::set_full_handler(
+            [](const std::string& kind, const std::string& json) {
+                auto parsed = yam::JsonValue::parse(json);
+                if (!parsed) {
+                    LOGI("CB: chunk parse FAILED kind=%s size=%zu",
+                         kind.c_str(), json.size());
+                    return;
+                }
+                LOGI("CB: chunk dispatched kind=%s size=%zu",
+                     kind.c_str(), json.size());
+                yam::Event ev;
+                ev.type = kind;
+                ev.data = std::move(parsed.value());
+                ev.timestamp = yam::time_util::now_ms();
+                yam::events::dispatch(ev);
+            });
+    }
+
     yam::events::on("classes_list", [this](const yam::Event& ev) {
         std::lock_guard<std::mutex> lk(mu_);
         classes_.clear();

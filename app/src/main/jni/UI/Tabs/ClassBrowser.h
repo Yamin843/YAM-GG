@@ -83,6 +83,7 @@ private:
     int  selectedInstance_{0};
     volatile bool loading_{false};
     bool eventsRegistered_{false};
+    bool chunksRegistered_{false};
     bool autoLoadTried_{false};
 
     bool searchClass_{true};

@@ -1028,12 +1028,18 @@
             var nm = cmd.name || "anon";
             var code = cmd.code || "";
             try {
-                Java.performNow(function () { (new Function(code))(); });
+                // CRITICAL: do NOT wrap in Java.performNow. If the user's
+                // script contains its own Java.perform(...) — the frida
+                // idiom — nesting would deadlock the JS thread and freeze
+                // the host app. Let the user script schedule its own
+                // Java.perform on the ART thread asynchronously.
+                (new Function(code))();
                 send({type:"user_script_loaded", name:nm,
                       size:code.length, ok:true});
             } catch (e) {
                 send({type:"user_script_loaded", name:nm,
                       ok:false, error:""+e});
+                send({type:"script_failed", name:nm, error:""+e});
             }
         },
         enumerate_classes: function (cmd) {
