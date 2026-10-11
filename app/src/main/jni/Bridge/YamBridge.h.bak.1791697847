@@ -1,0 +1,85 @@
+#ifndef YAMGG_BRIDGE_YAMBRIDGE_H
+#define YAMGG_BRIDGE_YAMBRIDGE_H
+
+#include <string>
+#include <mutex>
+#include <atomic>
+#include <vector>
+#include <cstdint>
+#include <functional>
+#include <condition_variable>
+
+namespace yamgg {
+
+class YamBridge {
+public:
+    struct EvalResult {
+        bool ok{false};
+        std::string output;
+        std::string error;
+    };
+
+    struct LoadResult {
+        bool ok{false};
+        std::string error;
+    };
+
+    static YamBridge& instance();
+
+    bool initialize();
+    void shutdown();
+    bool isReady() const { return ready_.load(); }
+
+    // Blocking eval — do NOT call from UI thread.
+    EvalResult evaluate(const std::string& code);
+
+    // Fire-and-forget eval — safe from UI thread. Results arrive via
+    // events::on("eval_result").
+    void postEval(const std::string& code);
+
+    // Non-blocking: launches JS load and returns immediately.
+    // Result arrives via events::on("user_script_loaded").
+    LoadResult loadScript(const std::string& name, const std::string& code);
+
+    // Blocking with timeout — used when caller needs the boolean result.
+    LoadResult loadScriptSync(const std::string& name, const std::string& code,
+                              int timeout_ms = 8000);
+
+    bool unloadScript(const std::string& name);
+    bool unloadAllScripts();
+    std::vector<std::string> listScripts() const;
+
+    void installEventRouter();
+    void setOutputSink(void (*sink)(const std::string&));
+    void setErrorSink(void (*sink)(const std::string&));
+
+    using HookCb = std::function<void(
+        std::int64_t, const std::string&,
+        const std::vector<std::uint64_t>&, std::uint64_t,
+        std::uint64_t, bool, const std::string&)>;
+    void setHookCb(HookCb cb) { hookCb_ = std::move(cb); }
+
+private:
+    YamBridge();
+    ~YamBridge();
+    YamBridge(const YamBridge&) = delete;
+    YamBridge& operator=(const YamBridge&) = delete;
+
+    void onEvalResult(unsigned long long id, bool ok,
+                      const std::string& result, const std::string& error);
+    void onConsole(const std::string& level, const std::string& line);
+
+    std::atomic<bool> ready_{false};
+    std::atomic<bool> initialized_{false};
+    mutable std::mutex mu_;
+    std::vector<std::string> scriptNames_;
+    HookCb hookCb_;
+    void (*outputSink_)(const std::string&){nullptr};
+    void (*errorSink_)(const std::string&){nullptr};
+};
+
+#define YAMGG_YAMBRIDGE yamgg::YamBridge::instance()
+
+} // namespace yamgg
+
+#endif

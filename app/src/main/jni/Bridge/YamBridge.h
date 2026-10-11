@@ -37,6 +37,10 @@ public:
     // events::on("eval_result").
     void postEval(const std::string& code);
 
+    // Post a raw JSON command through the queue.
+    // poller reads it, dispatchCmd handles it via nativeHandlers.
+    void postCommand(const std::string& json);
+
     // Non-blocking: launches JS load and returns immediately.
     // Result arrives via events::on("user_script_loaded").
     LoadResult loadScript(const std::string& name, const std::string& code);

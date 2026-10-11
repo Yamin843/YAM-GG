@@ -20,9 +20,25 @@ ClassBrowser& ClassBrowser::instance() { static ClassBrowser i; return i; }
 ClassBrowser::ClassBrowser() { registerEvents(); }
 ClassBrowser::~ClassBrowser() = default;
 
-void ClassBrowser::sendJSAsync(const std::string& js) {
-    // Post async — never blocks UI. Result arrives via events.
-    YamBridge::instance().postEval(js);
+std::string ClassBrowser::jsonEscape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (char c : s) {
+        switch (c) {
+        case '"':  out += "\\""; break;
+        case '\': out += "\\"; break;
+        case '
+': out += "\n"; break;
+        case '': out += "\r"; break;
+        case '	': out += "\t"; break;
+        default:   out += c;
+        }
+    }
+    return out;
+}
+
+void ClassBrowser::sendCommand(const std::string& json) {
+    YamBridge::instance().postCommand(json);
 }
 
 // ─── Safe helpers ───
@@ -57,7 +73,13 @@ void ClassBrowser::registerEvents() {
     }
 
     // ── classes_list (from JS or from a reassembled chunk) ──
-    yam::events::on("classes_list", [this](const yam::Event& ev) {
+        // trace_line: from jv_trace handler; push to JSConsole log
+    yam::events::on("trace_line", [](const yam::Event& ev) {
+        std::string line = ev.get_str("line");
+        if (!line.empty()) JSConsole::instance().pushOutput(line);
+    });
+
+yam::events::on("classes_list", [this](const yam::Event& ev) {
         std::lock_guard<std::mutex> lk(mu_);
         classes_.clear();
         auto* a = ev.data.get("classes");
@@ -232,113 +254,45 @@ void ClassBrowser::triggerLoadClasses() {
         std::lock_guard<std::mutex> lk(mu_);
         classes_.clear();
     }
-
     std::string f;
-    {
-        std::lock_guard<std::mutex> lk(mu_);
-        f = filter_;
-    }
+    { std::lock_guard<std::mutex> lk(mu_); f = filter_; }
 
-    std::string fjson = yam::JsonValue(f).stringify();
-    std::string js =
-        "(function(){try{"
-        "var all=Java.enumerateLoadedClassesSync();"
-        "var f=" + fjson + ";"
-        "var out=[];"
-        "for(var i=0;i<all.length;i++){"
-        "if(all[i].indexOf(f)>=0)out.push(all[i]);"
-        "}"
-        "send({type:'classes_list',count:out.length,classes:out});"
-        "}catch(e){"
-        "send({type:'classes_list',count:0,classes:[],error:''+e});"
-        "}})();";
-    sendJSAsync(js);
+    std::string cmd = "{\"action\":\"jv_enumerate\","
+                      "\"filter\":\"" + jsonEscape(f) + "\"}";
+    sendCommand(cmd);
 }
 
 // ─── triggerLoadMethods — reflection dump ───
 void ClassBrowser::triggerLoadMethods(const std::string& cls) {
     loading_ = true;
-    std::string cn = yam::JsonValue(cls).stringify();
-    std::string js =
-        "(function(){try{var c=Java.use(" + cn + ");"
-        "var methods=[];var ms=c.class.getDeclaredMethods();"
-        "for(var i=0;i<ms.length;i++){try{var m=ms[i];m.setAccessible(true);"
-        "var pts=m.getParameterTypes();var args=[];"
-        "for(var j=0;j<pts.length;j++){var tn=String(pts[j].getName());"
-        "var kd='object',ev=[];"
-        "if(tn==='int')kd='int';else if(tn==='long')kd='long';"
-        "else if(tn==='short')kd='short';else if(tn==='byte')kd='byte';"
-        "else if(tn==='float')kd='float';else if(tn==='double')kd='double';"
-        "else if(tn==='boolean')kd='boolean';else if(tn==='char')kd='char';"
-        "else if(tn==='java.lang.String')kd='string';"
-        "else if(tn.charAt(0)==='[')kd='array';"
-        "else if(tn.indexOf('Map')>=0)kd='map';"
-        "else{try{var pc=Java.use(tn);if(pc.class.isEnum()){kd='enum';"
-        "var vals=pc.values();"
-        "for(var e2=0;e2<vals.length;e2++)ev.push(String(vals[e2].name()));}"
-        "}catch(ex){}}"
-        "args.push({typeName:tn,kind:kd,enumValues:ev});}"
-        "var mods=m.getModifiers();var isStatic=(mods&8)!==0;"
-        "methods.push({name:String(m.getName()),"
-        "ret:String(m.getReturnType().getName()),isStatic:isStatic,args:args});"
-        "}catch(e){}}"
-        "var fields=[];var flds=c.class.getDeclaredFields();"
-        "for(var k=0;k<flds.length;k++){try{var f=flds[k];f.setAccessible(true);"
-        "fields.push({name:String(f.getName()),"
-        "type:String(f.getType().getName()),value:''});}catch(e){}}"
-        "send({type:'class_detail_result',className:" + cn + ",methods:methods,fields:fields});"
-        "}catch(e){send({type:'class_detail_error',message:''+e});}})();";
-    sendJSAsync(js);
+    std::string cmd = "{\"action\":\"jv_detail\","
+                      "\"className\":\"" + jsonEscape(cls) + "\"}";
+    sendCommand(cmd);
 }
 
 // ─── triggerTrace — idempotent ───
 void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
-    std::string cn = yam::JsonValue(cls).stringify();
-    std::string mn = yam::JsonValue(m.name).stringify();
-    std::string js =
-        "(function(){try{var C=Java.use(" + cn + ");var MM=C[" + mn + "];"
-        "if(!MM||!MM.overloads)throw new Error('no overloads');"
-        "for(var i=0;i<MM.overloads.length;i++){(function(ov){"
-        "if(ov.__ygg!==undefined)return;"
-        "ov.__ygg=ov.implementation||null;"
-        "ov.implementation=function(){"
-        "var a=Array.prototype.slice.call(arguments);"
-        "var s=[];for(var k=0;k<a.length;k++)s.push(describe(a[k]));"
-        "send({type:'console',level:'log',"
-        "line:'[trace] " + cls + "." + m.name + " ('+s.join(', ')+')'});"
-        "return ov.__ygg ? ov.__ygg.apply(this,a) : null;"
-        "};})(MM.overloads[i]);}"
-        "send({type:'trace_on_ok'});"
-        "}catch(e){send({type:'trace_err',message:''+e});}})();";
-    sendJSAsync(js);
+    std::string cmd = "{\"action\":\"jv_trace\","
+                      "\"className\":\"" + jsonEscape(cls) + "\","
+                      "\"methodName\":\"" + jsonEscape(m.name) + "\"}";
+    sendCommand(cmd);
     std::lock_guard<std::mutex> lk(mu_);
     m.tracing = true;
     tracedMethods_.insert(cls + "::" + m.name);
 }
 
 void ClassBrowser::triggerUntrace(const std::string& cls, MethodInfo& m) {
-    std::string cn = yam::JsonValue(cls).stringify();
-    std::string mn = yam::JsonValue(m.name).stringify();
-    std::string js =
-        "(function(){try{var C=Java.use(" + cn + ");"
-        "var MM=C[" + mn + "];"
-        "if(MM&&MM.overloads)for(var i=0;i<MM.overloads.length;i++){"
-        "var ov=MM.overloads[i];"
-        "if(ov.__ygg!==undefined){"
-        "ov.implementation=ov.__ygg;delete ov.__ygg;}"
-        "}"
-        "send({type:'trace_off_ok'});}catch(e){}})();";
-    sendJSAsync(js);
+    std::string cmd = "{\"action\":\"jv_untrace\","
+                      "\"className\":\"" + jsonEscape(cls) + "\","
+                      "\"methodName\":\"" + jsonEscape(m.name) + "\"}";
+    sendCommand(cmd);
     std::lock_guard<std::mutex> lk(mu_);
     m.tracing = false;
     tracedMethods_.erase(cls + "::" + m.name);
 }
 
 void ClassBrowser::triggerCall(const std::string& cls, MethodInfo& m) {
-    std::string cn = yam::JsonValue(cls).stringify();
-    std::string mn = yam::JsonValue(m.name).stringify();
     std::string args = buildArgsJSON(m);
-
     unsigned long long ih = 0;
     {
         std::lock_guard<std::mutex> lk(mu_);
@@ -347,41 +301,20 @@ void ClassBrowser::triggerCall(const std::string& cls, MethodInfo& m) {
             && selectedInstance_ < (int)it->second.size())
             ih = it->second[selectedInstance_].handle;
     }
-
-    std::string js =
-        "(function(){try{var C=Java.use(" + cn + ");var MM=C[" + mn + "];"
-        "if(!MM||!MM.overloads)throw new Error('no overloads');"
-        "var spec=" + args + ";var a=spec.map(mat);"
-        "var isS=" + std::string(m.isStatic ? "true" : "false") + ";"
-        "var instH=" + std::to_string(ih) + ";var inst=null;"
-        "if(!isS){if(instH>0){inst=get(instH);}"
-        "else{Java.choose(" + cn + ",{onMatch:function(x){inst=x;return 'stop';},"
-        "onComplete:function(){}});}"
-        "if(!inst)throw new Error('no instance');}"
-        "var ov=MM.overloads[0];"
-        "var r=(isS?ov.apply(null,a):ov.apply(inst,a));"
-        "send({type:'call_result',result:describe(r)});"
-        "}catch(e){send({type:'call_result',result:'ERR: '+e});}})();";
-    sendJSAsync(js);
+    std::string cmd = "{\"action\":\"jv_call\","
+                      "\"className\":\"" + jsonEscape(cls) + "\","
+                      "\"methodName\":\"" + jsonEscape(m.name) + "\","
+                      "\"isStatic\":" +
+                          std::string(m.isStatic ? "true" : "false") + ","
+                      "\"instanceHandle\":" + std::to_string(ih) + ","
+                      "\"argsSpec\":" + (args.empty() ? "[]" : args) + "}";
+    sendCommand(cmd);
 }
 
 void ClassBrowser::findInstances(const std::string& cls) {
-    std::string cn = yam::JsonValue(cls).stringify();
-    std::string js =
-        "(function(){try{var items=[];Java.choose(" + cn + ",{"
-        "onMatch:function(x){try{var h=createHandle(x,'java'," + cn + ");"
-        "var fields=[];"
-        "try{var cls=Java.use(String(x.$className));"
-        "var flds=cls.class.getDeclaredFields();"
-        "for(var i=0;i<flds.length;i++){var f=flds[i];"
-        "if((f.getModifiers()&8)!==0)continue;"
-        "try{f.setAccessible(true);var fv=f.get(x);"
-        "fields.push({name:String(f.getName()),value:describe(fv)});}catch(e){}}}catch(e){}"
-        "items.push({handle:h,className:String(x.$className),fields:fields});}catch(e){}"
-        "},onComplete:function(){"
-        "send({type:'instances_result',className:" + cn + ",items:items});}});"
-        "}catch(e){send({type:'instances_result',className:" + cn + ",items:[]});}})();";
-    sendJSAsync(js);
+    std::string cmd = "{\"action\":\"jv_instances\","
+                      "\"className\":\"" + jsonEscape(cls) + "\"}";
+    sendCommand(cmd);
 }
 
 std::string ClassBrowser::buildArgsJSON(const MethodInfo& m) {

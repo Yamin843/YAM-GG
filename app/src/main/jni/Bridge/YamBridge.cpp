@@ -317,6 +317,13 @@ std::vector<std::string> YamBridge::listScripts() const {
     return scriptNames_;
 }
 
+// Fire a raw JSON command through the queue. Poller picks it up,
+// dispatchCmd routes it to nativeHandlers[action].
+void YamBridge::postCommand(const std::string& json) {
+    if (!ready_.load()) return;
+    try { yam::JavaScriptBridge::instance().post_raw_json(json); } catch (...) {}
+}
+
 void YamBridge::postEval(const std::string& code) {
     if (!ready_.load()) return;
     try { yam::JavaScriptBridge::instance().post_eval(code); } catch (...) {}

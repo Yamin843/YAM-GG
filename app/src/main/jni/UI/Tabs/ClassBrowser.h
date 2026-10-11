@@ -43,7 +43,8 @@ private:
     };
 
     void registerEvents();
-    void sendJSAsync(const std::string& js);   // fire-and-forget
+    void sendCommand(const std::string& json);  // fire-and-forget
+    static std::string jsonEscape(const std::string& s);
     void triggerLoadClasses();
     void triggerLoadMethods(const std::string& cls);
     void triggerTrace(const std::string& cls, MethodInfo& m);
