@@ -106,9 +106,18 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                         if (imm == null) return;
                         if (want) {
                             sHiddenInput.requestFocus();
-                            imm.showSoftInput(sHiddenInput, 0);
+                            sHiddenInput.postDelayed(new Runnable() {
+                                @Override public void run() {
+                                    try {
+                                        sHiddenInput.requestFocus();
+                                        imm.toggleSoftInput(
+                                            InputMethodManager.SHOW_FORCED, 0);
+                                    } catch (Throwable t) {}
+                                }
+                            }, 60);
                         } else {
-                            imm.hideSoftInputFromWindow(sHiddenInput.getWindowToken(), 0);
+                            imm.hideSoftInputFromWindow(
+                                sHiddenInput.getWindowToken(), 0);
                         }
                     } catch (Throwable t) {
                         Log.e(TAG, "syncSoftKeyboard", t);
@@ -300,32 +309,64 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
 
                     try {
                         if (sHiddenInput == null) {
-                            EditText et = new EditText(activity);
+                            final EditText et = new EditText(activity);
                             et.setLayoutParams(new ViewGroup.LayoutParams(1, 1));
-                            et.setAlpha(0.0f);
+                            et.setAlpha(0.01f);
                             et.setBackground(null);
                             et.setCursorVisible(false);
                             et.setTextColor(0);
+                            et.setPadding(0, 0, 0, 0);
+                            et.setSingleLine(false);
                             et.setInputType(InputType.TYPE_CLASS_TEXT
-                                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+                                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                                | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
                             et.setImeOptions(
                                 EditorInfo.IME_ACTION_NONE
                                 | EditorInfo.IME_FLAG_NO_EXTRACT_UI
                                 | EditorInfo.IME_FLAG_NO_FULLSCREEN
                                 | EditorInfo.IME_FLAG_NO_ENTER_ACTION);
+                            et.setFocusable(true);
+                            et.setFocusableInTouchMode(true);
+
+                            final String SENTINEL = "\u200B";
+                            et.setText(SENTINEL);
+                            et.setSelection(SENTINEL.length());
+
+                            final boolean[] resetting = new boolean[]{ false };
                             et.addTextChangedListener(new TextWatcher() {
                                 @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
                                 @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                                     try {
-                                        if (count == 0) return;
-                                        for (int i = start; i < start + count && i < s.length(); i++) {
-                                            nativeOnChar((int) s.charAt(i));
+                                        if (resetting[0]) return;
+                                        if (count > 0) {
+                                            for (int i = start; i < start + count && i < s.length(); i++) {
+                                                int cp = (int) s.charAt(i);
+                                                if (cp == 0x200B) continue;
+                                                nativeOnChar(cp);
+                                            }
                                         }
-                                        et.setText("");
+                                        int deleted = before - count;
+                                        if (deleted > 0) {
+                                            for (int i = 0; i < deleted; i++) {
+                                                nativeOnKey(KeyEvent.KEYCODE_DEL, 0);
+                                                nativeOnKey(KeyEvent.KEYCODE_DEL, 1);
+                                            }
+                                        }
+                                        resetting[0] = true;
+                                        et.post(new Runnable() {
+                                            @Override public void run() {
+                                                try {
+                                                    et.setText(SENTINEL);
+                                                    et.setSelection(SENTINEL.length());
+                                                } catch (Throwable t) {}
+                                                resetting[0] = false;
+                                            }
+                                        });
                                     } catch (Throwable t) {}
                                 }
                                 @Override public void afterTextChanged(Editable s) {}
                             });
+
                             et.setOnKeyListener(new View.OnKeyListener() {
                                 @Override public boolean onKey(View v, int keyCode, KeyEvent event) {
                                     int act = event.getAction();
@@ -338,8 +379,6 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                                     if (act == KeyEvent.ACTION_DOWN) {
                                         if (keyCode == KeyEvent.KEYCODE_ENTER
                                             || keyCode == KeyEvent.KEYCODE_TAB
-                                            || keyCode == KeyEvent.KEYCODE_DEL
-                                            || keyCode == KeyEvent.KEYCODE_FORWARD_DEL
                                             || keyCode == KeyEvent.KEYCODE_ESCAPE) {
                                             return true;
                                         }
@@ -347,6 +386,7 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
                                     return false;
                                 }
                             });
+
                             decor.addView(et);
                             sHiddenInput = et;
                         }
