@@ -28,14 +28,19 @@ std::string ClassBrowser::jsonEscape(const std::string& s) {
         case '"':  out += "\\""; break;
         case '\': out += "\\"; break;
         case '
-': out += "\n"; break;
-        case '': out += "\r"; break;
-        case '	': out += "\t"; break;
+': out += "\n";  break;
+        case '': out += "\r";  break;
+        case '	': out += "\t";  break;
         default:   out += c;
         }
     }
     return out;
 }
+
+void ClassBrowser::sendCommand(const std::string& json) {
+    YamBridge::instance().postCommand(json);
+}
+
 
 void ClassBrowser::sendCommand(const std::string& json) {
     YamBridge::instance().postCommand(json);
