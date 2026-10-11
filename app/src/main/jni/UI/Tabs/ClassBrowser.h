@@ -35,7 +35,8 @@ private:
         bool tracing{false};
         std::vector<ParamInfo> args;
     };
-    struct FieldInfo { std::string name, type, value; };
+    struct FieldInfo { std::string name, type, value; bool isStatic{false}; };
+    struct CtorInfo { std::string sig; std::vector<ParamInfo> args; };
     struct InstanceEntry {
         unsigned long long handle{0};
         std::string className;
@@ -43,30 +44,30 @@ private:
     };
 
     void registerEvents();
-    void sendCommand(const std::string& json);  // fire-and-forget
-    static std::string jsonEscape(const std::string& s);
+    void sendCommand(const std::string& json);
     void triggerLoadClasses();
     void triggerLoadMethods(const std::string& cls);
     void triggerTrace(const std::string& cls, MethodInfo& m);
     void triggerUntrace(const std::string& cls, MethodInfo& m);
     void triggerCall(const std::string& cls, MethodInfo& m);
+    void triggerNewInstance(const std::string& cls, CtorInfo& c);
     void findInstances(const std::string& cls);
     std::string buildArgsJSON(const MethodInfo& m);
 
     void drawSearchBar();
     void drawTree();
-    void drawPackageGroup(const std::string& pkg,
-                          std::vector<std::string>& members);
+    void drawPackageGroup(const std::string& pkg, std::vector<std::string>& members);
     void drawClassNode(const std::string& cls);
     void drawMethodNode(const std::string& cls, MethodInfo& m);
-    void drawParamWidget(const std::string& cls, MethodInfo& m,
-                          ParamInfo& p, int idx);
+    void drawCtorNode(const std::string& cls, CtorInfo& c);
+    void drawParamWidget(const std::string& cls, MethodInfo& m, ParamInfo& p, int idx);
     void drawInstancePicker(const std::string& cls, MethodInfo& m);
 
     mutable std::mutex mu_;
     std::vector<std::string> classes_;
     std::map<std::string, std::vector<MethodInfo>> methods_;
     std::map<std::string, std::vector<FieldInfo>> fields_;
+    std::map<std::string, std::vector<CtorInfo>> ctors_;
     std::map<std::string, std::vector<InstanceEntry>> instances_;
     std::set<std::string> tracedMethods_;
 
@@ -75,7 +76,6 @@ private:
     int  selectedInstance_{0};
     volatile bool loading_{false};
     bool eventsRegistered_{false};
-    bool chunksRegistered_{false};
     bool autoLoadTried_{false};
 
     bool searchClass_{true};

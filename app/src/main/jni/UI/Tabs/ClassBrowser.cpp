@@ -1,3 +1,7 @@
+// ===========================================================================
+// ClassBrowser.cpp — JV tab. All Java logic lives in bootstrap.js (jv_*).
+// This file ONLY: builds JSON commands, receives events, draws the tree.
+// ===========================================================================
 #include "ClassBrowser.h"
 #include "JSConsole.h"
 #include "../../Bridge/YamBridge.h"
@@ -16,75 +20,43 @@
 
 namespace yamgg {
 
-ClassBrowser& ClassBrowser::instance() { static ClassBrowser i; return i; }
-ClassBrowser::ClassBrowser() { registerEvents(); }
-ClassBrowser::~ClassBrowser() = default;
-
-std::string ClassBrowser::jsonEscape(const std::string& s) {
+namespace {
+// JSON string escape. Uses C++ raw string literals to avoid any
+// backslash ambiguity between source, python, and bash.
+std::string jesc(const std::string& s) {
     std::string out;
     out.reserve(s.size() + 8);
     for (char c : s) {
         switch (c) {
-        case '"':  out += "\\""; break;
-        case '\': out += "\\"; break;
-        case '
-': out += "\n";  break;
-        case '': out += "\r";  break;
-        case '	': out += "\t";  break;
+        case '"':  out += R"(\")";  break;
+        case '\\': out += R"(\\)";  break;
+        case '\n': out += R"(\n)";  break;
+        case '\r': out += R"(\r)";  break;
+        case '\t': out += R"(\t)";  break;
         default:   out += c;
         }
     }
     return out;
 }
+} // anon
+
+// ─── Singleton ──────────────────────────────────────────────────────────────
+ClassBrowser& ClassBrowser::instance() { static ClassBrowser i; return i; }
+ClassBrowser::ClassBrowser() { registerEvents(); }
+ClassBrowser::~ClassBrowser() = default;
 
 void ClassBrowser::sendCommand(const std::string& json) {
     YamBridge::instance().postCommand(json);
 }
 
-
-void ClassBrowser::sendCommand(const std::string& json) {
-    YamBridge::instance().postCommand(json);
-}
-
-// ─── Safe helpers ───
-namespace {
-std::string lower_ext(const std::string& n) {
-    if (n.size() < 3) return "";
-    std::string e = n.substr(n.size() - 3);
-    for (auto& c : e) c = (char)std::tolower(c);
-    return e;
-}
-}
-
+// ═══════════════════════════════════════════════════════════════════════════
+// Event routing
+// ═══════════════════════════════════════════════════════════════════════════
 void ClassBrowser::registerEvents() {
     if (eventsRegistered_) return;
     eventsRegistered_ = true;
 
-    // ── Chunked reassembly: when JS sends > 256 KB payload, the bootstrap
-    //    splits it into chunk_begin/data/end. C++'s chunks module reassembles
-    //    and calls us back with (kind, json). We re-dispatch as a normal event.
-    if (!chunksRegistered_) {
-        chunksRegistered_ = true;
-        yam::chunks::set_full_handler([](const std::string& kind,
-                                          const std::string& json) {
-            auto parsed = yam::JsonValue::parse(json);
-            if (!parsed) return;
-            yam::Event ev;
-            ev.type = kind;
-            ev.data = std::move(parsed.value());
-            ev.timestamp = yam::time_util::now_ms();
-            yam::events::dispatch(ev);
-        });
-    }
-
-    // ── classes_list (from JS or from a reassembled chunk) ──
-        // trace_line: from jv_trace handler; push to JSConsole log
-    yam::events::on("trace_line", [](const yam::Event& ev) {
-        std::string line = ev.get_str("line");
-        if (!line.empty()) JSConsole::instance().pushOutput(line);
-    });
-
-yam::events::on("classes_list", [this](const yam::Event& ev) {
+    yam::events::on("classes_list", [this](const yam::Event& ev) {
         std::lock_guard<std::mutex> lk(mu_);
         classes_.clear();
         auto* a = ev.data.get("classes");
@@ -96,7 +68,6 @@ yam::events::on("classes_list", [this](const yam::Event& ev) {
         LOGI("CB: %zu classes", classes_.size());
     });
 
-    // ── class_detail_result (per-class method/field dump from JS) ──
     yam::events::on("class_detail_result", [this](const yam::Event& ev) {
         std::string cls = ev.get_str("className");
         std::lock_guard<std::mutex> lk(mu_);
@@ -124,17 +95,12 @@ yam::events::on("classes_list", [this](const yam::Event& ev) {
                 ml.push_back(std::move(mi));
             }
         }
-
-        // restore trace state from previous session
         for (auto& mi : ml) {
             std::string key = cls + "::" + mi.name;
             if (tracedMethods_.count(key)) mi.tracing = true;
         }
-
         std::sort(ml.begin(), ml.end(),
-            [](const MethodInfo& a, const MethodInfo& b) {
-                return a.name < b.name;
-            });
+            [](const MethodInfo& a, const MethodInfo& b) { return a.name < b.name; });
         methods_[cls] = std::move(ml);
 
         std::vector<FieldInfo> fl;
@@ -145,6 +111,7 @@ yam::events::on("classes_list", [this](const yam::Event& ev) {
                 if (auto* n = it.get("name"))  fi.name  = n->as_str();
                 if (auto* t = it.get("type"))  fi.type  = t->as_str();
                 if (auto* v = it.get("value")) fi.value = v->as_str();
+                if (auto* s = it.get("isStatic")) fi.isStatic = s->as_bool(false);
                 fl.push_back(std::move(fi));
             }
         }
@@ -152,60 +119,28 @@ yam::events::on("classes_list", [this](const yam::Event& ev) {
             [](const FieldInfo& a, const FieldInfo& b) { return a.name < b.name; });
         fields_[cls] = std::move(fl);
 
-        selectedClass_ = cls;
-        loading_ = false;
-    });
-
-    // ── class_probe (from C++ probe_class) ──
-    yam::events::on("class_probe", [this](const yam::Event& ev) {
-        std::string cls = ev.get_str("className");
-        if (cls.empty()) return;
-        std::lock_guard<std::mutex> lk(mu_);
-        std::vector<MethodInfo> ml;
-        auto* ms = ev.data.get("methods");
-        if (ms && ms->is_arr()) {
-            for (auto& it : ms->arr_val) {
-                MethodInfo mi;
-                if (auto* n = it.get("name")) mi.name = n->as_str();
-                if (auto* r = it.get("ret"))  mi.ret  = r->as_str();
-                if (auto* is = it.get("isStatic")) mi.isStatic = is->as_bool(true);
+        std::vector<CtorInfo> cl;
+        auto* cs = ev.data.get("constructors");
+        if (cs && cs->is_arr()) {
+            for (auto& it : cs->arr_val) {
+                CtorInfo ci;
                 if (auto* ar = it.get("args")) if (ar->is_arr()) {
                     for (auto& e : ar->arr_val) {
                         ParamInfo pi;
                         if (auto* tn = e.get("typeName")) pi.typeName = tn->as_str();
-                        mi.args.push_back(std::move(pi));
+                        if (auto* kd = e.get("kind"))     pi.kind = kd->as_str();
+                        ci.args.push_back(std::move(pi));
                     }
                 }
-                ml.push_back(std::move(mi));
+                cl.push_back(std::move(ci));
             }
         }
-        for (auto& mi : ml) {
-            std::string key = cls + "::" + mi.name;
-            if (tracedMethods_.count(key)) mi.tracing = true;
-        }
-        std::sort(ml.begin(), ml.end(),
-            [](const MethodInfo& a, const MethodInfo& b) {
-                return a.name < b.name;
-            });
-        methods_[cls] = std::move(ml);
+        ctors_[cls] = std::move(cl);
 
-        std::vector<FieldInfo> fl;
-        auto* fs = ev.data.get("fields");
-        if (fs && fs->is_arr()) {
-            for (auto& it : fs->arr_val) {
-                FieldInfo fi;
-                if (auto* n = it.get("name"))  fi.name  = n->as_str();
-                if (auto* t = it.get("type"))  fi.type  = t->as_str();
-                if (auto* v = it.get("value")) fi.value = v->as_str();
-                fl.push_back(std::move(fi));
-            }
-        }
-        fields_[cls] = std::move(fl);
         selectedClass_ = cls;
         loading_ = false;
     });
 
-    // ── instances_result ──
     yam::events::on("instances_result", [this](const yam::Event& ev) {
         std::string cls = ev.get_str("className");
         std::lock_guard<std::mutex> lk(mu_);
@@ -231,11 +166,28 @@ yam::events::on("classes_list", [this](const yam::Event& ev) {
         selectedInstance_ = 0;
     });
 
-    // ── call_result — show in JS console ──
     yam::events::on("call_result", [](const yam::Event& ev) {
         std::string result = ev.get_str("result");
-        std::string tag = "[call] ";
-        JSConsole::instance().pushOutput(tag + result);
+        std::string err = ev.get_str("error");
+        if (!err.empty()) JSConsole::instance().pushOutput("[call] ERR: " + err);
+        else              JSConsole::instance().pushOutput("[call] " + result);
+    });
+
+    yam::events::on("trace_line", [](const yam::Event& ev) {
+        std::string line = ev.get_str("line");
+        if (!line.empty()) JSConsole::instance().pushOutput(line);
+    });
+
+    yam::events::on("trace_ok", [](const yam::Event& ev) {
+        char buf[256];
+        std::snprintf(buf, sizeof(buf), "[trace] %s.%s (%d overloads)",
+            ev.get_str("className").c_str(),
+            ev.get_str("methodName").c_str(),
+            (int)ev.get_i64("count", 0));
+        JSConsole::instance().pushOutput(buf);
+    });
+    yam::events::on("trace_err", [](const yam::Event& ev) {
+        JSConsole::instance().pushOutput("[trace] ERR: " + ev.get_str("error"));
     });
 
     yam::events::on("classes_error", [this](const yam::Event&) {
@@ -248,38 +200,44 @@ yam::events::on("classes_list", [this](const yam::Event& ev) {
     });
 }
 
-// ─── triggerLoadClasses — full enumerate (no caps) ───
+// ═══════════════════════════════════════════════════════════════════════════
+// Trigger methods — one-line JSON commands
+// ═══════════════════════════════════════════════════════════════════════════
 void ClassBrowser::triggerLoadClasses() {
-    {
-        std::lock_guard<std::mutex> lk(mu_);
-        if (filter_.empty()) filter_ = "com.";
-    }
     loading_ = true;
     {
         std::lock_guard<std::mutex> lk(mu_);
         classes_.clear();
+        if (filter_.empty()) filter_ = "com.";
     }
     std::string f;
     { std::lock_guard<std::mutex> lk(mu_); f = filter_; }
-
-    std::string cmd = "{\"action\":\"jv_enumerate\","
-                      "\"filter\":\"" + jsonEscape(f) + "\"}";
+    std::string cmd;
+    cmd.reserve(128);
+    cmd += R"({"action":"jv_enumerate","filter":")";
+    cmd += jesc(f);
+    cmd += R"("})";
     sendCommand(cmd);
 }
 
-// ─── triggerLoadMethods — reflection dump ───
 void ClassBrowser::triggerLoadMethods(const std::string& cls) {
     loading_ = true;
-    std::string cmd = "{\"action\":\"jv_detail\","
-                      "\"className\":\"" + jsonEscape(cls) + "\"}";
+    std::string cmd;
+    cmd.reserve(128);
+    cmd += R"({"action":"jv_detail","className":")";
+    cmd += jesc(cls);
+    cmd += R"("})";
     sendCommand(cmd);
 }
 
-// ─── triggerTrace — idempotent ───
 void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
-    std::string cmd = "{\"action\":\"jv_trace\","
-                      "\"className\":\"" + jsonEscape(cls) + "\","
-                      "\"methodName\":\"" + jsonEscape(m.name) + "\"}";
+    std::string cmd;
+    cmd.reserve(160);
+    cmd += R"({"action":"jv_trace","className":")";
+    cmd += jesc(cls);
+    cmd += R"(","methodName":")";
+    cmd += jesc(m.name);
+    cmd += R"("})";
     sendCommand(cmd);
     std::lock_guard<std::mutex> lk(mu_);
     m.tracing = true;
@@ -287,9 +245,13 @@ void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
 }
 
 void ClassBrowser::triggerUntrace(const std::string& cls, MethodInfo& m) {
-    std::string cmd = "{\"action\":\"jv_untrace\","
-                      "\"className\":\"" + jsonEscape(cls) + "\","
-                      "\"methodName\":\"" + jsonEscape(m.name) + "\"}";
+    std::string cmd;
+    cmd.reserve(160);
+    cmd += R"({"action":"jv_untrace","className":")";
+    cmd += jesc(cls);
+    cmd += R"(","methodName":")";
+    cmd += jesc(m.name);
+    cmd += R"("})";
     sendCommand(cmd);
     std::lock_guard<std::mutex> lk(mu_);
     m.tracing = false;
@@ -306,72 +268,90 @@ void ClassBrowser::triggerCall(const std::string& cls, MethodInfo& m) {
             && selectedInstance_ < (int)it->second.size())
             ih = it->second[selectedInstance_].handle;
     }
-    std::string cmd = "{\"action\":\"jv_call\","
-                      "\"className\":\"" + jsonEscape(cls) + "\","
-                      "\"methodName\":\"" + jsonEscape(m.name) + "\","
-                      "\"isStatic\":" +
-                          std::string(m.isStatic ? "true" : "false") + ","
-                      "\"instanceHandle\":" + std::to_string(ih) + ","
-                      "\"argsSpec\":" + (args.empty() ? "[]" : args) + "}";
+    std::string cmd;
+    cmd.reserve(256);
+    cmd += R"({"action":"jv_call","className":")";
+    cmd += jesc(cls);
+    cmd += R"(","methodName":")";
+    cmd += jesc(m.name);
+    cmd += R"(","signature":")";
+    cmd += jesc(m.ret);
+    cmd += R"(","isStatic":)";
+    cmd += (m.isStatic ? "true" : "false");
+    cmd += R"(,"instanceHandle":)";
+    cmd += std::to_string(ih);
+    cmd += R"(,"argsSpec":)";
+    cmd += (args.empty() ? "[]" : args);
+    cmd += "}";
+    sendCommand(cmd);
+}
+
+void ClassBrowser::triggerNewInstance(const std::string& cls, CtorInfo& c) {
+    std::string args;
+    args.reserve(128);
+    args += "[";
+    for (size_t i = 0; i < c.args.size(); ++i) {
+        if (i) args += ",";
+        ParamInfo& p = c.args[i];
+        const std::string& k = p.kind;
+        if (k == "int" || k == "long" || k == "short" || k == "byte"
+            || k == "float" || k == "double")
+            args += std::string(R"({"kind":")") + k + R"(","value":)" + (p.scalar[0] ? p.scalar : "0") + "}";
+        else if (k == "boolean")
+            args += std::string(R"({"kind":"boolean","value":)") + (p.booleanVal ? "true" : "false") + "}";
+        else
+            args += std::string(R"({"kind":"string","value":")") + jesc(p.scalar) + R"("})";
+    }
+    args += "]";
+    std::string cmd;
+    cmd.reserve(256);
+    cmd += R"({"action":"jv_new","className":")";
+    cmd += jesc(cls);
+    cmd += R"(","argsSpec":)";
+    cmd += args;
+    cmd += "}";
     sendCommand(cmd);
 }
 
 void ClassBrowser::findInstances(const std::string& cls) {
-    std::string cmd = "{\"action\":\"jv_instances\","
-                      "\"className\":\"" + jsonEscape(cls) + "\"}";
+    std::string cmd;
+    cmd.reserve(128);
+    cmd += R"({"action":"jv_instances","className":")";
+    cmd += jesc(cls);
+    cmd += R"("})";
     sendCommand(cmd);
 }
 
 std::string ClassBrowser::buildArgsJSON(const MethodInfo& m) {
-    std::string out = "[";
+    std::string out;
+    out.reserve(128);
+    out += "[";
     for (size_t i = 0; i < m.args.size(); ++i) {
         if (i) out += ",";
         const ParamInfo& p = m.args[i];
         const std::string& k = p.kind;
         if (k == "int" || k == "long" || k == "short" || k == "byte"
             || k == "float" || k == "double")
-            out += "{\"kind\":\"" + k + "\",\"value\":"
-                 + (p.scalar[0] ? p.scalar : "0") + "}";
+            out += std::string(R"({"kind":")") + k + R"(","value":)" + (p.scalar[0] ? p.scalar : "0") + "}";
         else if (k == "boolean")
-            out += std::string("{\"kind\":\"boolean\",\"value\":")
-                 + (p.booleanVal ? "true" : "false") + "}";
+            out += std::string(R"({"kind":"boolean","value":)") + (p.booleanVal ? "true" : "false") + "}";
         else if (k == "char")
-            out += "{\"kind\":\"char\",\"value\":"
-                 + yam::JsonValue(std::string(p.scalar[0] ? p.scalar : "a")).stringify() + "}";
-        else if (k == "string")
-            out += "{\"kind\":\"string\",\"value\":"
-                 + yam::JsonValue(std::string(p.scalar)).stringify() + "}";
+            out += std::string(R"({"kind":"char","value":")") + jesc(p.scalar[0] ? p.scalar : "a") + R"("})";
         else if (k == "enum")
-            out += "{\"kind\":\"enum\",\"className\":"
-                 + yam::JsonValue(p.typeName).stringify()
-                 + ",\"enumName\":"
-                 + yam::JsonValue(std::string(p.scalar)).stringify() + "}";
-        else if (k == "map") {
-            out += "{\"kind\":\"map\",\"className\":"
-                 + yam::JsonValue(p.typeName).stringify() + ",\"entries\":[";
-            for (size_t j = 0; j < p.kvs.size(); ++j) {
-                if (j) out += ",";
-                out += "{\"k\":" + yam::JsonValue(std::string(p.kvs[j].k)).stringify()
-                     + ",\"v\":" + yam::JsonValue(std::string(p.kvs[j].v)).stringify()
-                     + "}";
-            }
-            out += "]}";
-        } else if (k == "array")
-            out += "{\"kind\":\"arrayJson\",\"className\":"
-                 + yam::JsonValue(p.typeName).stringify()
-                 + ",\"json\":\""
-                 + yam::str::escape_json(std::string(p.scalar)) + "\"}";
+            out += std::string(R"({"kind":"enum","className":")") + jesc(p.typeName) + R"(","enumName":")" + jesc(p.scalar) + R"("})";
+        else if (k == "array")
+            out += std::string(R"({"kind":"arrayJson","elementType":")") + jesc(p.typeName) + R"(","json":")" + jesc(p.scalar) + R"("})";
         else
-            out += "{\"kind\":\"expr\",\"value\":"
-                 + yam::JsonValue(std::string(p.scalar)).stringify() + "}";
+            out += std::string(R"({"kind":"string","value":")") + jesc(p.scalar) + R"("})";
     }
     out += "]";
     return out;
 }
 
-// ─── Draw ───
+// ═══════════════════════════════════════════════════════════════════════════
+// Drawing
+// ═══════════════════════════════════════════════════════════════════════════
 void ClassBrowser::draw() {
-    // Auto-load classes on the very first draw (async, non-blocking).
     if (!autoLoadTried_) {
         autoLoadTried_ = true;
         triggerLoadClasses();
@@ -417,10 +397,7 @@ void ClassBrowser::drawTree() {
     std::string lastPkg;
     std::vector<std::string> members;
     auto flush = [&]() {
-        if (!members.empty()) {
-            drawPackageGroup(lastPkg, members);
-            members.clear();
-        }
+        if (!members.empty()) { drawPackageGroup(lastPkg, members); members.clear(); }
     };
     for (auto& c : classes_) {
         size_t dot = c.find_last_of('.');
@@ -444,23 +421,18 @@ void ClassBrowser::drawPackageGroup(const std::string& pkg,
                               | ImGuiTreeNodeFlags_OpenOnDoubleClick;
         if (selectedClass_ == full) cf |= ImGuiTreeNodeFlags_Selected;
         ImGui::PushID(full.c_str());
-        if (selectedClass_ == full) {
+        if (selectedClass_ == full)
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.86f, 0.35f, 1.0f));
-        } else {
+        else
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.88f, 0.88f, 0.90f, 1.0f));
-        }
         ImGui::PushTextWrapPos(0.0f);
         bool cOpen = ImGui::TreeNodeEx(simple.c_str(), cf);
         ImGui::PopTextWrapPos();
         ImGui::PopStyleColor();
-
         if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
             if (selectedClass_ != full) triggerLoadMethods(full);
         }
-        if (cOpen) {
-            drawClassNode(full);
-            ImGui::TreePop();
-        }
+        if (cOpen) { drawClassNode(full); ImGui::TreePop(); }
         ImGui::PopID();
     }
     ImGui::TreePop();
@@ -470,20 +442,29 @@ void ClassBrowser::drawClassNode(const std::string& cls) {
     auto fit = fields_.find(cls);
     if (fit != fields_.end() && !fit->second.empty()) {
         if (ImGui::TreeNodeEx("Fields", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-            if (ImGui::BeginTable("##fields", 3,
+            if (ImGui::BeginTable("##fields", 4,
                     ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
                 ImGui::TableSetupColumn("name");
                 ImGui::TableSetupColumn("type");
                 ImGui::TableSetupColumn("value");
+                ImGui::TableSetupColumn("static");
                 ImGui::TableHeadersRow();
                 for (auto& f : fit->second) {
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::TextWrapped("%s", f.name.c_str());
                     ImGui::TableSetColumnIndex(1); ImGui::TextWrapped("%s", f.type.c_str());
                     ImGui::TableSetColumnIndex(2); ImGui::TextWrapped("%s", f.value.c_str());
+                    ImGui::TableSetColumnIndex(3); ImGui::TextWrapped("%s", f.isStatic ? "yes" : "");
                 }
                 ImGui::EndTable();
             }
+            ImGui::TreePop();
+        }
+    }
+    auto cit = ctors_.find(cls);
+    if (cit != ctors_.end() && !cit->second.empty()) {
+        if (ImGui::TreeNodeEx("Constructors", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            for (auto& c : cit->second) drawCtorNode(cls, c);
             ImGui::TreePop();
         }
     }
@@ -493,68 +474,63 @@ void ClassBrowser::drawClassNode(const std::string& cls) {
     }
 }
 
+void ClassBrowser::drawCtorNode(const std::string& cls, CtorInfo& c) {
+    ImGui::PushID(&c);
+    char label[512];
+    std::snprintf(label, sizeof(label), "new %s(%zu)", cls.c_str(), c.args.size());
+    if (ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        for (size_t i = 0; i < c.args.size(); ++i)
+            drawParamWidget(cls, *(MethodInfo*)nullptr, c.args[i], (int)i);
+        ImGui::Separator();
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.16f, 0.04f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.24f, 0.08f, 1.0f));
+        if (ImGui::Button("NEW", ImVec2(110, 40))) triggerNewInstance(cls, c);
+        ImGui::PopStyleColor(2);
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
+}
+
 void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
     ImGui::PushID(&m);
-
-    // trace status dot
     {
         ImVec2 p = ImGui::GetCursorScreenPos();
         float lineH = ImGui::GetTextLineHeight();
-        ImU32 dotColor = m.tracing
-            ? IM_COL32(0x66, 0xBB, 0x6A, 255)
-            : IM_COL32(0x62, 0x62, 0x68, 200);
+        ImU32 dotColor = m.tracing ? IM_COL32(0x66, 0xBB, 0x6A, 255)
+                                    : IM_COL32(0x62, 0x62, 0x68, 200);
         ImGui::GetWindowDrawList()->AddCircleFilled(
             ImVec2(p.x + 6.0f, p.y + lineH * 0.5f), 4.0f, dotColor);
         ImGui::Dummy(ImVec2(18.0f, 0.0f));
         ImGui::SameLine(0, 0);
     }
-
-    char label[4096];
-    int n = std::snprintf(label, sizeof(label), "%s  %s(%zu)",
-                          m.ret.c_str(), m.name.c_str(), m.args.size());
-    if (n < 0) label[0] = 0;
-    else if (n >= (int)sizeof(label)) {
-        const char* ellipsis = "...";
-        size_t elen = std::strlen(ellipsis);
-        if (sizeof(label) > elen + 1) {
-            std::memcpy(label + sizeof(label) - 1 - elen, ellipsis, elen);
-            label[sizeof(label) - 1] = 0;
-        }
-    }
-
+    char label[2048];
+    std::snprintf(label, sizeof(label), "%s  %s(%zu)",
+                  m.ret.c_str(), m.name.c_str(), m.args.size());
     ImGui::PushStyleColor(ImGuiCol_Text,
-        m.tracing ? ImVec4(0.92f, 0.92f, 0.94f, 1.0f)
-                  : ImVec4(0.82f, 0.82f, 0.85f, 1.0f));
+        m.tracing ? ImVec4(0.92f, 0.92f, 0.94f, 1.0f) : ImVec4(0.82f, 0.82f, 0.85f, 1.0f));
     ImGui::PushTextWrapPos(0.0f);
     bool open = ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_SpanAvailWidth);
     ImGui::PopTextWrapPos();
     ImGui::PopStyleColor();
-
     if (open) {
         for (size_t i = 0; i < m.args.size(); ++i)
             drawParamWidget(cls, m, m.args[i], (int)i);
         ImGui::Separator();
-
         if (!m.isStatic) drawInstancePicker(cls, m);
-
         if (m.tracing) {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.32f, 0.16f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.42f, 0.22f, 1.0f));
             if (ImGui::Button("STOP", ImVec2(110, 40))) triggerUntrace(cls, m);
-            ImGui::PopStyleColor(2);
+            ImGui::PopStyleColor();
         } else {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.16f, 0.04f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.22f, 0.06f, 1.0f));
             if (ImGui::Button("TRACE", ImVec2(110, 40))) triggerTrace(cls, m);
-            ImGui::PopStyleColor(2);
+            ImGui::PopStyleColor();
         }
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.16f, 0.04f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.24f, 0.08f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.86f, 0.42f, 1.0f));
         if (ImGui::Button("CALL", ImVec2(110, 40))) triggerCall(cls, m);
-        ImGui::PopStyleColor(3);
-
+        ImGui::PopStyleColor(2);
         ImGui::TreePop();
     }
     ImGui::PopID();
@@ -567,7 +543,6 @@ void ClassBrowser::drawParamWidget(const std::string&,
     ImGui::TextWrapped("arg%d %s", idx, p.typeName.c_str());
     ImGui::PopTextWrapPos();
     const std::string& k = p.kind;
-
     if (k == "boolean") ImGui::Checkbox("##b", &p.booleanVal);
     else if (k == "enum") {
         ImGui::SetNextItemWidth(-1);
@@ -577,26 +552,6 @@ void ClassBrowser::drawParamWidget(const std::string&,
                     std::strncpy(p.scalar, v.c_str(), sizeof(p.scalar)-1);
             ImGui::EndCombo();
         }
-    } else if (k == "map") {
-        for (size_t i = 0; i < p.kvs.size(); ++i) {
-            ImGui::PushID((int)i);
-            ImGui::SetNextItemWidth(140);
-            ImGui::InputText("##k", p.kvs[i].k, sizeof(p.kvs[i].k));
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(-60);
-            ImGui::InputText("##v", p.kvs[i].v, sizeof(p.kvs[i].v));
-            ImGui::SameLine();
-            if (ImGui::SmallButton("X")) {
-                p.kvs.erase(p.kvs.begin() + i);
-                ImGui::PopID();
-                break;
-            }
-            ImGui::PopID();
-        }
-        if (ImGui::SmallButton("+ add")) p.kvs.push_back(KeyValue{});
-    } else if (k == "array") {
-        ImGui::SetNextItemWidth(-1);
-        ImGui::InputTextMultiline("##arr", p.scalar, sizeof(p.scalar), ImVec2(-1, 50));
     } else {
         ImGui::SetNextItemWidth(-1);
         ImGui::InputText("##v", p.scalar, sizeof(p.scalar));
@@ -613,8 +568,7 @@ void ClassBrowser::drawInstancePicker(const std::string& cls, MethodInfo&) {
     for (size_t i = 0; i < it->second.size(); ++i) {
         ImGui::PushID((int)i);
         char lbl[256];
-        std::snprintf(lbl, sizeof(lbl), "#%zu %s",
-                      i, it->second[i].className.c_str());
+        std::snprintf(lbl, sizeof(lbl), "#%zu %s", i, it->second[i].className.c_str());
         bool sel = ((int)i == selectedInstance_);
         ImGui::PushTextWrapPos(0.0f);
         if (ImGui::Selectable(lbl, sel)) selectedInstance_ = (int)i;
@@ -625,10 +579,8 @@ void ClassBrowser::drawInstancePicker(const std::string& cls, MethodInfo&) {
             ImGui::TableSetupColumn("value");
             for (auto& f : it->second[i].fields) {
                 ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::TextWrapped("%s", f.first.c_str());
-                ImGui::TableSetColumnIndex(1);
-                ImGui::TextWrapped("%s", f.second.c_str());
+                ImGui::TableSetColumnIndex(0); ImGui::TextWrapped("%s", f.first.c_str());
+                ImGui::TableSetColumnIndex(1); ImGui::TextWrapped("%s", f.second.c_str());
             }
             ImGui::EndTable();
         }
