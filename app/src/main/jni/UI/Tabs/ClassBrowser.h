@@ -72,7 +72,7 @@ private:
     void registerEvents();
     void sendCommand(const std::string& json);
 
-    void triggerLoadClasses();
+    void triggerLoadClasses(bool force = false);
     void triggerLoadMethods(const std::string& cls);
     void triggerTrace(const std::string& cls, MethodInfo& m);
     void triggerTraceArg(const std::string& cls, MethodInfo& m, int idx);

@@ -267,14 +267,23 @@ void ClassBrowser::registerEvents() {
 // ═══════════════════════════════════════════════════════════════════════════
 // Command triggers
 // ═══════════════════════════════════════════════════════════════════════════
-void ClassBrowser::triggerLoadClasses() {
+void ClassBrowser::triggerLoadClasses(bool force) {
+    if (!force) {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (!classes_.empty()) {
+            lastQuery_ = "\x01INVALIDATE\x01";
+            return;
+        }
+    }
     {
         std::lock_guard<std::mutex> lk(mu_);
-        if (!classes_.empty()) { lastQuery_ = "\x01INVALIDATE\x01"; return; }
+        classes_.clear();
+        filtered_.clear();
+        lastQuery_.clear();
     }
     loading_ = true;
-    std::string cmd = R"({"action":"jv_enumerate","filter":""})";
-    sendCommand(cmd);
+    LOGI("CB: triggerLoadClasses force=%d", (int)force);
+    sendCommand(R"({"action":"jv_enumerate","filter":""})");
 }
 
 void ClassBrowser::triggerLoadMethods(const std::string& cls) {
@@ -573,7 +582,7 @@ void ClassBrowser::drawSearchBar() {
 
     if (enter || find) {
         filter_ = searchBuf_;
-        triggerLoadClasses();
+        triggerLoadClasses(true);
         if (searchMethod_ || searchField_) triggerMemberSearch();
         autoSearchLast_ = searchBuf_;
     }

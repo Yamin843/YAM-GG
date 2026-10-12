@@ -49,6 +49,10 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
     private long    lastScrollSentMs = 0L;
     private float   smoothedDy = 0f;
     private boolean touchOwned = false;
+    private boolean swipeActive = false;
+    private float   swipeStartX = 0f;
+    private float   swipeStartY = 0f;
+    private float   swipeLastY = 0f;
     private volatile boolean keyboardShown = false;
 
     public ModView(Context context) {
@@ -177,34 +181,69 @@ public class ModView extends GLSurfaceView implements GLSurfaceView.Renderer {
             if (twoFingerScrollActive) return true;
         }
 
+        // ── Single-finger ────────────────────────────────────────
         if (action == MotionEvent.ACTION_DOWN) {
             twoFingerScrollActive = false;
             smoothedDy = 0f;
+            swipeActive = false;
             float x = event.getX();
             float y = event.getY();
+            swipeStartX = x;
+            swipeStartY = y;
+            swipeLastY = y;
             boolean inside = false;
             try { inside = nativeHitTest(x, y); }
             catch (Throwable t) { inside = false; }
             touchOwned = inside;
             if (!touchOwned) return false;
+            try { nativeOnTouch(action, x, y, 0); } catch (Throwable t) {}
+            return true;
         }
 
         if (!touchOwned) return false;
 
-        try {
-            int pointerIndex = event.getActionIndex();
-            int pointerId = event.getPointerId(pointerIndex);
-            float x = event.getX(pointerIndex);
-            float y = event.getY(pointerIndex);
-            nativeOnTouch(action, x, y, pointerId);
-        } catch (Throwable t) {
-            Log.e(TAG, "dispatchTouchEvent failed", t);
+        if (action == MotionEvent.ACTION_MOVE) {
+            float x = event.getX();
+            float y = event.getY();
+
+            if (!swipeActive) {
+                float totalDy = y - swipeStartY;
+                float totalDx = x - swipeStartX;
+                // Enter swipe mode if motion is dominantly vertical and > 40 px
+                if (Math.abs(totalDy) > 40f &&
+                    Math.abs(totalDy) > Math.abs(totalDx) * 1.4f) {
+                    try { nativeOnTouch(MotionEvent.ACTION_CANCEL, x, y, 0); }
+                    catch (Throwable t) {}
+                    swipeActive = true;
+                    swipeLastY = y;
+                    return true;
+                }
+            }
+
+            if (swipeActive) {
+                float dy = y - swipeLastY;
+                swipeLastY = y;
+                // Convert to scroll: drag down = content moves down = wheel -dy
+                float scroll = -dy * 0.06f;
+                try { nativeOnScroll(0f, scroll); } catch (Throwable t) {}
+                return true;
+            }
+
+            try { nativeOnTouch(action, x, y, 0); } catch (Throwable t) {}
+            return true;
         }
 
         if (action == MotionEvent.ACTION_UP
             || action == MotionEvent.ACTION_CANCEL) {
+            if (!swipeActive) {
+                try { nativeOnTouch(action, event.getX(), event.getY(), 0); }
+                catch (Throwable t) {}
+            }
+            swipeActive = false;
             touchOwned = false;
+            return true;
         }
+
         return true;
     }
 

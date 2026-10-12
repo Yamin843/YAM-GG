@@ -33,7 +33,7 @@ static const ImVec4 kTextDim     = rgba(0xA8, 0xA8, 0xAE);
 static const ImVec4 kTextFaint   = rgba(0x62, 0x62, 0x68);
 } // namespace
 
-float g_fontSize = 30.0f;
+float g_fontSize = 34.0f;
 
 void Theme::apply() {
     ImGuiStyle& style = ImGui::GetStyle();
@@ -62,8 +62,8 @@ void Theme::apply() {
     style.ItemSpacing        = ImVec2(10.0f, 10.0f);
     style.ItemInnerSpacing   = ImVec2(8.0f, 6.0f);
     style.IndentSpacing      = 20.0f;
-    style.ScrollbarSize      = 16.0f;
-    style.GrabMinSize        = 24.0f;
+    style.ScrollbarSize = 32.0f;
+    style.GrabMinSize = 48.0f;
 
     // Alignment
     style.WindowTitleAlign        = ImVec2(0.5f, 0.5f);
