@@ -20,78 +20,94 @@ private:
     ClassBrowser(const ClassBrowser&) = delete;
     ClassBrowser& operator=(const ClassBrowser&) = delete;
 
-    struct KVPair {
-        char key[256]{0};
-        char value[256]{0};
-        int  valueType{0};  // 0=str,1=int,2=long,3=double,4=bool,5=null
-    };
+    struct KVPair { char key[256]{0}; char value[256]{0}; int valueType{0}; };
     struct ParamInfo {
         std::string typeName;
-        std::string kind;              // int/string/enum/list/map/... 
-        std::string generic;           // e.g. Map<String,Foo>
+        std::string kind;        // int/string/list/map/date/class/atomic/optional/...
+        std::string generic;
         std::vector<std::string> enumValues;
-        // Simple editors
         char scalar[512]{0};
         char dateStr[32]{0};
         char nestedClass[256]{0};
         bool booleanVal{false};
-        // Complex editor (JSON text, prefilled with preset)
-        char jsonSpec[4096]{0};
         std::vector<KVPair> kvPairs;
         std::vector<std::string> listItems;
         int  listItemType{0};
+        char jsonSpec[4096]{0};
     };
     struct MethodInfo {
         std::string name, ret, retKind;
         bool isStatic{true};
         bool tracing{false};
+        int  argTraceIdx{-1};
         std::vector<ParamInfo> args;
     };
     struct FieldInfo {
         std::string name, type, typeKind, value;
         bool isStatic{false};
+        bool watching{false};
     };
     struct CtorInfo { std::vector<ParamInfo> args; };
-    struct MemberMatch {
-        std::string className;
-        std::string name;
-        std::string kind;   // method | field
-        std::string ret;
-        int  argCount{0};
-        bool isStatic{false};
-    };
     struct InstanceEntry {
         unsigned long long handle{0};
         std::string className;
         std::vector<std::pair<std::string, std::string>> fields;
     };
+    struct MemberMatch {
+        std::string className, name, kind, ret;
+        int  argCount{0};
+        bool isStatic{false};
+    };
+    struct CallState {
+        bool active{false};
+        bool isCtor{false};
+        std::string className, methodName, returnType;
+        bool isStatic{true};
+        std::vector<ParamInfo> args;
+        std::string lastResult;
+        bool lastOk{false};
+        bool haveResult{false};
+    };
 
     void registerEvents();
     void sendCommand(const std::string& json);
+
     void triggerLoadClasses();
     void triggerLoadMethods(const std::string& cls);
     void triggerTrace(const std::string& cls, MethodInfo& m);
+    void triggerTraceArg(const std::string& cls, MethodInfo& m, int idx);
     void triggerUntrace(const std::string& cls, MethodInfo& m);
-    void triggerCall(const std::string& cls, MethodInfo& m);
-    void triggerNewInstance(const std::string& cls, CtorInfo& c);
+    void triggerFieldRead(const std::string& cls, FieldInfo& f);
+    void triggerFieldWatch(const std::string& cls, FieldInfo& f);
+    void triggerFieldUnwatch(const std::string& cls, FieldInfo& f);
     void findInstances(const std::string& cls);
     void triggerMemberSearch();
 
-    void drawSearchBar();
-    void drawTree();
-    void drawPackageGroup(const std::string& pkg,
-                          std::vector<std::string>& members);
-    void drawClassNode(const std::string& cls);
-    void drawMethodNode(const std::string& cls, MethodInfo& m);
-    void drawCtorNode(const std::string& cls, CtorInfo& c);
-    void drawParamWidget(ParamInfo& p, int idx);
-    void drawInstancePicker(const std::string& cls);
+    void pushTraceLog(const std::string& line);
+    void activateCall(const std::string& cls, MethodInfo& m);
+    void activateCallCtor(const std::string& cls, CtorInfo& c);
+    void fireCall();
 
     std::string argsSpecFor(const std::vector<ParamInfo>& args);
 
+    void drawClassesTab();
+    void drawTraceLogTab();
+    void drawCallMethodTab();
+
+    void drawSearchBar();
+    void drawMemberMatches();
+    void drawTree();
+    void drawPackageGroup(const std::string& pkg, std::vector<std::string>& members);
+    void drawClassNode(const std::string& cls);
+    void drawMethodNode(const std::string& cls, MethodInfo& m);
+    void drawCtorNode(const std::string& cls, CtorInfo& c);
+    void drawFieldNode(const std::string& cls, FieldInfo& f);
+    void drawParamWidget(ParamInfo& p, int idx);
+    void drawInstancePicker(const std::string& cls);
+
     mutable std::mutex mu_;
-    std::vector<std::string> classes_;   // ALL
-    std::vector<std::string> filtered_;  // cached filter result
+    std::vector<std::string> classes_;
+    std::vector<std::string> filtered_;
     std::string lastQuery_;
     std::map<std::string, std::vector<MethodInfo>> methods_;
     std::map<std::string, std::vector<FieldInfo>> fields_;
@@ -100,7 +116,13 @@ private:
     std::set<std::string> tracedMethods_;
     std::set<std::string> pendingClasses_;
     std::vector<MemberMatch> memberMatches_;
-    std::string memberSearchQuery_;
+
+    int  activeSubTab_{0};
+    bool pendingSwitchToCall_{false};
+    CallState callState_;
+    std::vector<std::string> traceLog_;
+    bool traceLogAutoScroll_{true};
+    bool traceLogPaused_{false};
 
     std::string filter_;
     std::string selectedClass_;

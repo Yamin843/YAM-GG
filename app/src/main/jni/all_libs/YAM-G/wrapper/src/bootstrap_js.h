@@ -44,19 +44,75 @@ static const char kBootstrapSrc[] = R"YAMJS(
     //  TYPE CLASSIFIER — every Java type we know
     // ═══════════════════════════════════════════════════════════════
     function primitiveKind(tn) {
-        if (tn === "int" || tn === "long" || tn === "short" ||
-            tn === "byte" || tn === "float" || tn === "double" ||
-            tn === "boolean" || tn === "char" || tn === "void") return tn;
+        if (tn === "int") return "int";
+        if (tn === "long") return "long";
+        if (tn === "short") return "short";
+        if (tn === "byte") return "byte";
+        if (tn === "float") return "float";
+        if (tn === "double") return "double";
+        if (tn === "boolean") return "boolean";
+        if (tn === "char") return "char";
+        if (tn === "void") return "void";
         if (tn === "java.lang.String") return "string";
-        if (tn === "java.util.Date" ||
-            tn === "java.sql.Date" ||
+        if (tn === "java.lang.CharSequence") return "string";
+        if (tn === "java.lang.StringBuilder" ||
+            tn === "java.lang.StringBuffer") return "charbuf";
+        if (tn === "java.lang.Integer" || tn === "java.lang.Short" ||
+            tn === "java.lang.Byte" || tn === "java.lang.Long") return "boxed";
+        if (tn === "java.lang.Float" || tn === "java.lang.Double") return "boxed";
+        if (tn === "java.lang.Boolean" || tn === "java.lang.Character") return "boxed";
+        if (tn === "java.lang.Number") return "boxed";
+        if (tn === "java.util.concurrent.atomic.AtomicInteger") return "atomic_int";
+        if (tn === "java.util.concurrent.atomic.AtomicLong") return "atomic_long";
+        if (tn === "java.util.concurrent.atomic.AtomicBoolean") return "atomic_bool";
+        if (tn === "java.util.concurrent.atomic.AtomicReference") return "object";
+        if (tn === "java.math.BigInteger") return "bignum";
+        if (tn === "java.math.BigDecimal") return "bigdec";
+        if (tn === "java.util.Date" || tn === "java.sql.Date" ||
             tn === "java.sql.Timestamp") return "date";
+        if (tn === "java.util.Calendar" || tn === "java.util.GregorianCalendar")
+            return "date";
+        if (tn === "java.time.LocalDate" || tn === "java.time.LocalDateTime" ||
+            tn === "java.time.Instant" || tn === "java.time.Duration" ||
+            tn === "java.time.ZonedDateTime") return "date";
+        if (tn === "java.util.UUID") return "uuid";
+        if (tn === "java.util.regex.Pattern") return "pattern";
+        if (tn === "java.net.URL" || tn === "java.net.URI") return "url";
+        if (tn === "java.io.File") return "file";
+        if (tn === "java.nio.ByteBuffer" || tn === "java.nio.CharBuffer" ||
+            tn === "java.nio.ShortBuffer" || tn === "java.nio.IntBuffer" ||
+            tn === "java.nio.LongBuffer" || tn === "java.nio.FloatBuffer" ||
+            tn === "java.nio.DoubleBuffer") return "byte_array";
         if (tn === "java.lang.Class") return "class";
-        if (tn.charAt(0) === "[") return "array";
+        if (tn === "java.lang.reflect.Method" ||
+            tn === "java.lang.reflect.Field" ||
+            tn === "java.lang.reflect.Constructor") return "reflect";
+        if (tn === "java.util.Properties") return "properties";
+        if (tn === "android.graphics.Color") return "color";
+        if (tn === "android.net.Uri") return "uri";
+        if (tn === "android.util.SparseArray" ||
+            tn === "android.util.SparseIntArray" ||
+            tn === "android.util.SparseBooleanArray" ||
+            tn === "androidx.collection.ArrayMap" ||
+            tn === "androidx.collection.ArraySet") return "map";
+        if (tn === "android.util.Pair") return "map";
+        if (tn === "[B") return "byte_array";
+        if (tn === "[I" || tn === "[S" || tn === "[J" ||
+            tn === "[F" || tn === "[D" || tn === "[C" ||
+            tn === "[Z") return "prim_array";
+        if (tn.charAt(0) === "[") return "object_array";
         if (tn.indexOf("Map") >= 0) return "map";
-        if (tn.indexOf("List") >= 0) return "list";
         if (tn.indexOf("Set") >= 0) return "set";
+        if (tn.indexOf("Queue") >= 0 || tn.indexOf("Deque") >= 0) return "queue";
+        if (tn.indexOf("List") >= 0) return "list";
         if (tn.indexOf("Collection") >= 0) return "list";
+        if (tn.indexOf("Iterable") >= 0) return "iterable";
+        if (tn.indexOf("Optional") >= 0) return "optional";
+        if (tn.indexOf("Runnable") >= 0 || tn.indexOf("Callable") >= 0 ||
+            tn.indexOf("Listener") >= 0 || tn.indexOf("Callback") >= 0 ||
+            tn.indexOf("Function") >= 0 || tn.indexOf("Supplier") >= 0 ||
+            tn.indexOf("Consumer") >= 0 || tn.indexOf("Predicate") >= 0 ||
+            tn.indexOf("Comparator") >= 0) return "object";
         return "object";
     }
 
@@ -576,6 +632,8 @@ function classifyType(typeName) {
                 Java.performNow(function() {
                     try {
                         var job = pendingTraceQueue[0];
+                        if (job.idx === undefined && job.argIndex === undefined)
+                            job.argIndex = job.cmd && job.cmd.argIndex;
                         if (!job.started) {
                             job.started = true;
                             var C = Java.use(job.className);
@@ -594,6 +652,7 @@ function classifyType(typeName) {
                             var ov = job.overloads[job.idx];
                             if (ov.__ygg_trace === undefined) {
                                 ov.__ygg_trace = ov.implementation || null;
+                                job.__lastImpl = ov.__ygg_trace;
                                 ov.implementation = makeTraceWrapper(job);
                             }
                             job.idx++;
@@ -612,36 +671,44 @@ function classifyType(typeName) {
     }
 
     function makeTraceWrapper(job) {
+        var onlyArg = (typeof job.argIndex === "number") ? job.argIndex : -1;
         return function() {
             var a = Array.prototype.slice.call(arguments);
-            var parts = [];
-            for (var k = 0; k < a.length; k++) {
-                try { parts.push(describe(a[k], 2)); }
-                catch (e) { parts.push("<err>"); }
+            if (onlyArg >= 0) {
+                if (onlyArg < a.length) {
+                    var v = null;
+                    try { v = describe(a[onlyArg], 3); }
+                    catch (e) { v = "<err>"; }
+                    try { send({type:"trace_line", level:"log",
+                          line: JSON.stringify({
+                              t:"trace", cls:job.className, m:job.methodName,
+                              i:onlyArg, v:v
+                          })}); }
+                    catch (e) {}
+                }
+            } else {
+                var parts = [];
+                for (var k = 0; k < a.length; k++) {
+                    try { parts.push(describe(a[k], 2)); }
+                    catch (e) { parts.push("<err>"); }
+                }
+                try { send({type:"trace_line", level:"log",
+                      line: JSON.stringify({
+                          t:"trace", cls:job.className, m:job.methodName,
+                          args:parts
+                      })}); }
+                catch (e) {}
             }
-            var jsonLine = JSON.stringify({
-                tag: "trace",
-                cls: job.className,
-                m: job.methodName,
-                args: parts
-            });
-            try { send({type:"trace_line", level:"log", line:jsonLine}); }
-            catch (e) {}
-
-            var self = this;
-            var ov = arguments.callee;   // not used; keep scope
             var r;
             try {
-                r = job.__lastImpl
-                    ? job.__lastImpl.apply(self, a) : undefined;
+                r = job.__lastImpl ? job.__lastImpl.apply(this, a) : undefined;
             } catch (ex) {
-                try {
-                    send({type:"trace_line", level:"error",
-                          line: JSON.stringify({
-                              tag:"trace_err", cls: job.className,
-                              m: job.methodName, error:""+ex
-                          })});
-                } catch (e) {}
+                try { send({type:"trace_line", level:"error",
+                      line: JSON.stringify({
+                          t:"trace_err", cls:job.className, m:job.methodName,
+                          err:""+ex
+                      })}); }
+                catch (e) {}
                 throw ex;
             }
             return r;
@@ -843,7 +910,9 @@ function classifyType(typeName) {
         jv_trace: function (cmd) {
             pendingTraceQueue.push({
                 className: cmd.className,
-                methodName: cmd.methodName
+                methodName: cmd.methodName,
+                argIndex: (typeof cmd.argIndex === "number") ? cmd.argIndex : -1,
+                __lastImpl: null
             });
             if (!pendingTraceDraining) drainTraceQueue();
         },
@@ -869,6 +938,79 @@ function classifyType(typeName) {
             } catch (e) { send({type:"untrace_err", error:""+e}); }
         },
 
+        jv_field_read: function (cmd) {
+            try {
+                Java.performNow(function() {
+                    try {
+                        var C = Java.use(cmd.className);
+                        var f = C[cmd.fieldName];
+                        if (!f) throw new Error("no field");
+                        // Read static value (or require instance)
+                        var v = null;
+                        try { v = f.value; } catch (e) { v = "<static? " + e + ">"; }
+                        send({type:"field_read", className:cmd.className,
+                              fieldName:cmd.fieldName,
+                              value: describe(v, 3)});
+                    } catch (e) {
+                        send({type:"field_read", className:cmd.className,
+                              fieldName:cmd.fieldName, value:"<err: "+e+">"});
+                    }
+                });
+            } catch (e) {}
+        },
+        jv_field_watch: function (cmd) {
+            try {
+                Java.performNow(function() {
+                    try {
+                        var C = Java.use(cmd.className);
+                        var f = C[cmd.fieldName];
+                        if (!f) throw new Error("no field");
+                        // Poll-based watch on the static value
+                        var last = "";
+                        try { last = describe(f.value, 3); } catch (e) { last = "null"; }
+                        var interval = cmd.intervalMs || 500;
+                        var timer = setInterval(function() {
+                            try {
+                                Java.performNow(function() {
+                                    var cur = describe(f.value, 3);
+                                    if (cur !== last) {
+                                        send({type:"field_write",
+                                              className:cmd.className,
+                                              fieldName:cmd.fieldName,
+                                              value:cur});
+                                        last = cur;
+                                    }
+                                });
+                            } catch (e) {}
+                        }, interval);
+                        // Store for unwatch
+                        if (!globalThis.__ygg_field_watchers)
+                            globalThis.__ygg_field_watchers = {};
+                        var key = cmd.className + "::" + cmd.fieldName;
+                        if (globalThis.__ygg_field_watchers[key])
+                            clearInterval(globalThis.__ygg_field_watchers[key]);
+                        globalThis.__ygg_field_watchers[key] = timer;
+                        send({type:"field_read", className:cmd.className,
+                              fieldName:cmd.fieldName,
+                              value:"watch started: " + last});
+                    } catch (e) {}
+                });
+            } catch (e) {}
+        },
+        jv_field_unwatch: function (cmd) {
+            try {
+                Java.performNow(function() {
+                    var key = cmd.className + "::" + cmd.fieldName;
+                    if (globalThis.__ygg_field_watchers &&
+                        globalThis.__ygg_field_watchers[key]) {
+                        clearInterval(globalThis.__ygg_field_watchers[key]);
+                        delete globalThis.__ygg_field_watchers[key];
+                    }
+                    send({type:"field_read", className:cmd.className,
+                          fieldName:cmd.fieldName, value:"watch stopped"});
+                });
+            } catch (e) {}
+        },
         jv_instances: function (cmd) {
             setTimeout(function() {
                 try {
