@@ -84,6 +84,7 @@ private:
         bool haveResult{false};
         std::vector<Sample> samples;   // history for this method
         int  sampleIdx{-1};            // chosen sample for recall
+        int  focusArg{-1};             // -1 = whole method; >=0 = only this arg
         std::vector<int> argSampleIdx; // per-arg chosen sample (-1 = none)
     };
 

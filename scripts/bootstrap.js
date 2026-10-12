@@ -738,8 +738,10 @@ function classifyType(typeName) {
     var SAMPLE_CAP = 10;
     var sampleStore = Object.create(null);   // "cls::m" -> [sample...]
 
-    function safeName(cls, m) {
-        var s = (cls + "__" + m).replace(/[^A-Za-z0-9_.$]/g, "_");
+    function safeName(cls, m, focusArg) {
+        if (typeof focusArg !== "number") focusArg = -1;
+        var suffix = (focusArg < 0) ? "" : ("__arg" + focusArg);
+        var s = (cls + "__" + m + suffix).replace(/[^A-Za-z0-9_.$]/g, "_");
         if (s.length > 120) s = s.substring(0, 120);
         return s + ".json";
     }
@@ -773,7 +775,8 @@ function classifyType(typeName) {
                     br.close();
                     var obj = JSON.parse(String(sb.toString()));
                     if (!obj || !obj.cls || !obj.m || !obj.samples) continue;
-                    var key = obj.cls + "::" + obj.m;
+                    var fa = (typeof obj.focusArg === "number") ? obj.focusArg : -1;
+                    var key = obj.cls + "::" + obj.m + "#" + fa;
                     sampleStore[key] = obj.samples;
                 } catch (e) {}
             }
@@ -783,16 +786,17 @@ function classifyType(typeName) {
         }
     }
 
-    function persistSamples(cls, m) {
+    function persistSamples(cls, m, focusArg) {
+        if (typeof focusArg !== "number") focusArg = -1;
         try {
             ensureDir();
-            var key = cls + "::" + m;
+            var key = cls + "::" + m + "#" + focusArg;
             var arr = sampleStore[key] || [];
-            var obj = { cls: cls, m: m, samples: arr };
+            var obj = { cls: cls, m: m, focusArg: focusArg, samples: arr };
             var json = JSON.stringify(obj);
             var File = Java.use("java.io.File");
             var FileWriter = Java.use("java.io.FileWriter");
-            var f = File.$new(CALLS_DIR + "/" + safeName(cls, m));
+            var f = File.$new(CALLS_DIR + "/" + safeName(cls, m, focusArg));
             var fw = FileWriter.$new(f, false);
             fw.write(json);
             fw.close();
@@ -903,15 +907,15 @@ function classifyType(typeName) {
         }
     }
 
-    function recordSample(cls, m, args) {
-        var key = cls + "::" + m;
+    function recordSample(cls, m, args, focusArg) {
+        if (typeof focusArg !== "number") focusArg = -1;
+        var key = cls + "::" + m + "#" + focusArg;
         if (!sampleStore[key]) sampleStore[key] = [];
         var arr = sampleStore[key];
-        var sample = { ts: Date.now(), args: args };
+        var sample = { ts: Date.now(), focusArg: focusArg, args: args };
         arr.push(sample);
         while (arr.length > SAMPLE_CAP) arr.shift();
-        // Persist async (once per capture — cheap)
-        try { persistSamples(cls, m); } catch (e) {}
+        try { persistSamples(cls, m, focusArg); } catch (e) {}
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1056,7 +1060,7 @@ function classifyType(typeName) {
                                                 try { encoded.push(encodeArg(a[kk])); }
                                                 catch (e) { encoded.push({kind:"null"}); }
                                             }
-                                            recordSample(tagCls, tagM, encoded);
+                                            recordSample(tagCls, tagM, encoded, onlyArg);
                                             send({type:"trace_sample", cls:tagCls,
                                                   m:tagM, args:encoded, ts:Date.now()});
                                         } catch (e) {}
@@ -1489,34 +1493,37 @@ function classifyType(typeName) {
         jv_samples_get: function (cmd) {
             queueJava(function() {
                 try {
-                    var key = cmd.className + "::" + cmd.methodName;
+                    var fa = (typeof cmd.argIndex === "number") ? cmd.argIndex : -1;
+                    var key = cmd.className + "::" + cmd.methodName + "#" + fa;
                     var arr = sampleStore[key] || [];
                     send({type:"samples_result",
                           className: cmd.className,
                           methodName: cmd.methodName,
+                          focusArg: fa,
                           samples: arr});
                 } catch (e) {
                     send({type:"samples_result", samples:[],
                           className:cmd.className, methodName:cmd.methodName,
-                          error:""+e});
+                          focusArg:-1, error:""+e});
                 }
             });
         },
         jv_samples_clear: function (cmd) {
             queueJava(function() {
                 try {
-                    var key = cmd.className + "::" + cmd.methodName;
+                    var fa = (typeof cmd.argIndex === "number") ? cmd.argIndex : -1;
+                    var key = cmd.className + "::" + cmd.methodName + "#" + fa;
                     delete sampleStore[key];
                     try {
                         var File = Java.use("java.io.File");
                         var f = File.$new(CALLS_DIR + "/" +
-                                          safeName(cmd.className, cmd.methodName));
+                                          safeName(cmd.className, cmd.methodName, fa));
                         if (f.exists()) f.delete();
                     } catch (e) {}
                     send({type:"samples_result",
                           className: cmd.className,
                           methodName: cmd.methodName,
-                          samples:[]});
+                          focusArg: fa, samples:[]});
                 } catch (e) {}
             });
         },
