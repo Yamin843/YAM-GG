@@ -307,6 +307,7 @@ void ClassBrowser::triggerLoadMethods(const std::string& cls) {
 }
 
 void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
+    LOGI("CB: triggerTrace %s::%s", cls.c_str(), m.name.c_str());
     std::string cmd = R"({"action":"jv_trace","className":")";
     cmd += jesc(cls); cmd += R"(","methodName":")"; cmd += jesc(m.name);
     cmd += R"(","argIndex":-1})";
@@ -317,6 +318,7 @@ void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
 }
 
 void ClassBrowser::triggerTraceArg(const std::string& cls, MethodInfo& m, int idx) {
+    LOGI("CB: triggerTraceArg %s::%s arg=%d", cls.c_str(), m.name.c_str(), idx);
     std::string cmd = R"({"action":"jv_trace","className":")";
     cmd += jesc(cls); cmd += R"(","methodName":")"; cmd += jesc(m.name);
     cmd += R"(","argIndex":)"; cmd += std::to_string(idx); cmd += "}";
@@ -371,6 +373,8 @@ void ClassBrowser::triggerMemberSearch() {
     std::string q;
     { std::lock_guard<std::mutex> lk(mu_); q = searchBuf_; }
     if (q.size() < 2) return;
+    LOGI("CB: triggerMemberSearch q=%s wantM=%d wantF=%d",
+         q.c_str(), (int)searchMethod_, (int)searchField_);
     std::string cmd = R"({"action":"jv_search_members","query":")";
     cmd += jesc(q);
     cmd += R"(","wantMethod":)"; cmd += (searchMethod_ ? "true" : "false");
@@ -638,13 +642,25 @@ void ClassBrowser::drawSearchBar() {
 }
 
 void ClassBrowser::drawMemberMatches() {
-    if (memberMatches_.empty()) return;
-    char hdr[64];
-    std::snprintf(hdr, sizeof(hdr), "MEMBER MATCHES (%zu)", memberMatches_.size());
+    // Show when method/field search is on
+    if (!(searchMethod_ || searchField_)) return;
+    if (memberMatches_.empty() && !memberSearchRunning_ &&
+        memberSearchTotal_ == 0) return;
+
+    char hdr[128];
+    if (memberSearchRunning_) {
+        std::snprintf(hdr, sizeof(hdr),
+            "MEMBER MATCHES (%d)  —  searching %d/%d",
+            memberSearchMatches_, memberSearchVisited_, memberSearchTotal_);
+    } else {
+        std::snprintf(hdr, sizeof(hdr),
+            "MEMBER MATCHES (%zu)  —  visited %d/%d",
+            memberMatches_.size(), memberSearchVisited_, memberSearchTotal_);
+    }
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.86f, 0.42f, 1.0f));
     ImGui::TextUnformatted(hdr);
     ImGui::PopStyleColor();
-    ImGui::BeginChild("##memmatches", ImVec2(0, 200), true);
+    ImGui::BeginChild("##memmatches", ImVec2(0, 260), true);
     for (size_t i = 0; i < memberMatches_.size(); ++i) {
         MemberMatch& m = memberMatches_[i];
         ImGui::PushID((int)i);
@@ -672,28 +688,37 @@ void ClassBrowser::drawMemberMatches() {
 
 void ClassBrowser::drawTree() {
     std::lock_guard<std::mutex> lk(mu_);
-    std::string q = searchBuf_;
-    if (q != lastQuery_) {
-        lastQuery_ = q;
-        filtered_.clear();
-        filtered_.reserve(classes_.size());
-        std::string qlow = q;
-        for (auto& ch : qlow) ch = (char)std::tolower((unsigned char)ch);
-        if (qlow.empty()) filtered_ = classes_;
-        else {
-            for (auto& c : classes_) {
-                std::string cl = c;
-                for (auto& ch : cl) ch = (char)std::tolower((unsigned char)ch);
-                if (cl.find(qlow) != std::string::npos) filtered_.push_back(c);
+
+    // If Class is unchecked → no class filtering at all
+    if (!searchClass_) {
+        filtered_ = classes_;
+        lastQuery_ = searchBuf_;
+    } else {
+        std::string q = searchBuf_;
+        if (q != lastQuery_) {
+            lastQuery_ = q;
+            filtered_.clear();
+            filtered_.reserve(classes_.size());
+            std::string qlow = q;
+            for (auto& ch : qlow) ch = (char)std::tolower((unsigned char)ch);
+            if (qlow.empty()) filtered_ = classes_;
+            else {
+                for (auto& c : classes_) {
+                    std::string cl = c;
+                    for (auto& ch : cl) ch = (char)std::tolower((unsigned char)ch);
+                    if (cl.find(qlow) != std::string::npos)
+                        filtered_.push_back(c);
+                }
             }
+            LOGI("CB: classfilter %zu / %zu (q=%s)", filtered_.size(),
+                 classes_.size(), q.c_str());
         }
-        LOGI("CB: filtered %zu / %zu (q=%s)", filtered_.size(),
-             classes_.size(), q.c_str());
     }
+
     if (filtered_.empty()) {
         ImGui::PushTextWrapPos(0.0f);
         if (classes_.empty()) ImGui::TextWrapped("Loading classes...");
-        else ImGui::TextWrapped("No match");
+        else if (searchClass_) ImGui::TextWrapped("No class match");
         ImGui::PopTextWrapPos();
         return;
     }

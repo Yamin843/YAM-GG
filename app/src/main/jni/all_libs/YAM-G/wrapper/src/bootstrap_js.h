@@ -618,109 +618,8 @@ function classifyType(typeName) {
     // ─── Async trace install queue ────────────────────────────────────
     // Each overload of a method is installed in its own JS turn, 25ms
     // apart, so the ART watchdog never sees a long performNow block.
-    var pendingTraceQueue = [];
-    var pendingTraceDraining = false;
 
-    function drainTraceQueue() {
-        if (pendingTraceQueue.length === 0) {
-            pendingTraceDraining = false;
-            return;
-        }
-        pendingTraceDraining = true;
-        setTimeout(function() {
-            queueJava(function() {
-                try {
-                    var job = pendingTraceQueue[0];
-                    if (!job.started) {
-                        job.started = true;
-                        var C = Java.use(job.className);
-                        var MM = C[job.methodName];
-                        if (!MM || !MM.overloads)
-                            throw new Error("no overloads for " + job.methodName);
-                        job.overloads = MM.overloads;
-                        job.idx = 0;
-                    }
-                    if (job.idx >= job.overloads.length) {
-                        send({type:"trace_ok", className:job.className,
-                              methodName:job.methodName,
-                              count:job.overloads.length});
-                        pendingTraceQueue.shift();
-                    } else {
-                        var ov = job.overloads[job.idx];
-                        if (ov.__ygg_trace === undefined) {
-                            // Capture per-overload original — no shared state
-                            var original = ov.implementation;
-                            ov.__ygg_trace = original || null;
-                            ov.implementation = makeTraceWrapper(job, original);
-                        }
-                        job.idx++;
-                    }
-                } catch (e) {
-                    send({type:"trace_err", error:""+e});
-                    pendingTraceQueue.shift();
-                }
-            });
-            // 300ms between overloads: give ART time to settle after deopt
-            setTimeout(drainTraceQueue, 300);
-        }, 0);
-    }
 
-    function makeTraceWrapper(job, original) {
-        var onlyArg = (typeof job.argIndex === "number") ? job.argIndex : -1;
-        var lastFire = 0;
-        var MIN_MS = 500;   // 2 events per second per overload, max
-        return function() {
-            var now = Date.now();
-            // Cheap path when throttled: bypass everything
-            if (now - lastFire < MIN_MS) {
-                return original ? original.apply(this, arguments) : undefined;
-            }
-            lastFire = now;
-
-            var a = Array.prototype.slice.call(arguments);
-            if (onlyArg >= 0) {
-                if (onlyArg < a.length) {
-                    var v = null;
-                    try { v = describe(a[onlyArg], 3); }
-                    catch (e) { v = "<err>"; }
-                    try {
-                        send({type:"trace_line", level:"log",
-                              line: JSON.stringify({
-                                  t:"trace", cls:job.className,
-                                  m:job.methodName, i:onlyArg, v:v
-                              })});
-                    } catch (e) {}
-                }
-            } else {
-                var parts = [];
-                for (var k = 0; k < a.length; k++) {
-                    try { parts.push(describe(a[k], 2)); }
-                    catch (e) { parts.push("<err>"); }
-                }
-                try {
-                    send({type:"trace_line", level:"log",
-                          line: JSON.stringify({
-                              t:"trace", cls:job.className,
-                              m:job.methodName, args:parts
-                          })});
-                } catch (e) {}
-            }
-            var r;
-            try {
-                r = original ? original.apply(this, a) : undefined;
-            } catch (ex) {
-                try {
-                    send({type:"trace_line", level:"error",
-                          line: JSON.stringify({
-                              t:"trace_err", cls:job.className,
-                              m:job.methodName, err:""+ex
-                          })});
-                } catch (e) {}
-                throw ex;
-            }
-            return r;
-        };
-    }
 
     // ─── Java access serialization ────────────────────────────────────
     // ALL Java work must go through queueJava. Calling Java.performNow
@@ -951,34 +850,98 @@ function classifyType(typeName) {
         },
 
         jv_trace: function (cmd) {
-            pendingTraceQueue.push({
-                className: cmd.className,
-                methodName: cmd.methodName,
-                argIndex: (typeof cmd.argIndex === "number") ? cmd.argIndex : -1,
-                __lastImpl: null
+            queueJava(function() {
+                try {
+                    var C = Java.use(cmd.className);
+                    var MM = C[cmd.methodName];
+                    if (!MM || !MM.overloads)
+                        throw new Error("no overloads for " + cmd.methodName);
+                    var onlyArg = (typeof cmd.argIndex === "number")
+                                  ? cmd.argIndex : -1;
+                    var tagCls = cmd.className, tagM = cmd.methodName;
+                    var n = 0;
+                    for (var i = 0; i < MM.overloads.length; i++) {
+                        (function(ov) {
+                            if (ov.__ygg_trace !== undefined) return;
+                            var original = ov.implementation;
+                            ov.__ygg_trace = original || null;
+                            var lastFire = 0;
+                            ov.implementation = function() {
+                                var now = Date.now();
+                                if (now - lastFire > 500) {
+                                    lastFire = now;
+                                    try {
+                                        var a = Array.prototype.slice.call(arguments);
+                                        if (onlyArg >= 0) {
+                                            if (onlyArg < a.length) {
+                                                var sv;
+                                                try { sv = String(a[onlyArg]); }
+                                                catch (e) { sv = "<e>"; }
+                                                send({type:"trace_line",
+                                                      level:"log",
+                                                      line: JSON.stringify({
+                                                          t:"trace", cls:tagCls,
+                                                          m:tagM, i:onlyArg, v:sv
+                                                      })});
+                                            }
+                                        } else {
+                                            var parts = [];
+                                            for (var k = 0; k < a.length; k++) {
+                                                try { parts.push(String(a[k])); }
+                                                catch (e) { parts.push("<e>"); }
+                                            }
+                                            send({type:"trace_line", level:"log",
+                                                  line: JSON.stringify({
+                                                      t:"trace", cls:tagCls,
+                                                      m:tagM, args:parts
+                                                  })});
+                                        }
+                                    } catch (e) {}
+                                }
+                                var r;
+                                try {
+                                    r = original ? original.apply(this, arguments)
+                                                 : undefined;
+                                } catch (ex) {
+                                    try {
+                                        send({type:"trace_line", level:"error",
+                                              line: JSON.stringify({
+                                                  t:"trace_err", cls:tagCls,
+                                                  m:tagM, err:""+ex
+                                              })});
+                                    } catch (e) {}
+                                    throw ex;
+                                }
+                                return r;
+                            };
+                            n++;
+                        })(MM.overloads[i]);
+                    }
+                    send({type:"trace_ok", className:cmd.className,
+                          methodName:cmd.methodName, count:n});
+                } catch (e) {
+                    send({type:"trace_err", error:""+e});
+                }
             });
-            if (!pendingTraceDraining) drainTraceQueue();
         },
 
         jv_untrace: function (cmd) {
-            try {
-                Java.performNow(function() {
-                    try {
-                        var C = Java.use(cmd.className);
-                        var MM = C[cmd.methodName];
-                        if (MM && MM.overloads) {
-                            for (var i = 0; i < MM.overloads.length; i++) {
-                                var ov = MM.overloads[i];
-                                if (ov.__ygg_trace !== undefined) {
-                                    ov.implementation = ov.__ygg_trace;
-                                    delete ov.__ygg_trace;
-                                }
+            queueJava(function() {
+                try {
+                    var C = Java.use(cmd.className);
+                    var MM = C[cmd.methodName];
+                    if (MM && MM.overloads) {
+                        for (var i = 0; i < MM.overloads.length; i++) {
+                            var ov = MM.overloads[i];
+                            if (ov.__ygg_trace !== undefined) {
+                                ov.implementation = ov.__ygg_trace;
+                                delete ov.__ygg_trace;
                             }
                         }
-                        send({type:"untrace_ok"});
-                    } catch (e) { send({type:"untrace_err", error:""+e}); }
-                });
-            } catch (e) { send({type:"untrace_err", error:""+e}); }
+                    }
+                    send({type:"untrace_ok"});
+                } catch (e) { send({type:"untrace_err", error:""+e}); }
+            });
         },
 
         jv_field_read: function (cmd) {
