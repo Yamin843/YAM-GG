@@ -729,6 +729,192 @@ function classifyType(typeName) {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    //  Sample store — persistent per (class, method) history
+    // ═══════════════════════════════════════════════════════════════
+    // File: /storage/emulated/0/YAM-GG/calls/<class>__<method>.json
+    // Each file: { cls, m, samples:[ {ts, args:[typedSpec...]} ] }
+    // Cap: 10 samples per method (FIFO).
+    var CALLS_DIR = "/storage/emulated/0/YAM-GG/calls";
+    var SAMPLE_CAP = 10;
+    var sampleStore = Object.create(null);   // "cls::m" -> [sample...]
+
+    function safeName(cls, m) {
+        var s = (cls + "__" + m).replace(/[^A-Za-z0-9_.$]/g, "_");
+        if (s.length > 120) s = s.substring(0, 120);
+        return s + ".json";
+    }
+
+    function ensureDir() {
+        try {
+            var File = Java.use("java.io.File");
+            var d = File.$new(CALLS_DIR);
+            if (!d.exists()) d.mkdirs();
+        } catch (e) {}
+    }
+
+    function loadSamplesFromDisk() {
+        try {
+            ensureDir();
+            var File = Java.use("java.io.File");
+            var FileReader = Java.use("java.io.FileReader");
+            var BufferedReader = Java.use("java.io.BufferedReader");
+            var SB = Java.use("java.lang.StringBuilder");
+            var dir = File.$new(CALLS_DIR);
+            var files = dir.listFiles();
+            if (!files) return;
+            var n = files.length;
+            for (var i = 0; i < n; i++) {
+                try {
+                    var fr = FileReader.$new(files[i]);
+                    var br = BufferedReader.$new(fr);
+                    var sb = SB.$new();
+                    var line;
+                    while ((line = br.readLine()) !== null) sb.append(line);
+                    br.close();
+                    var obj = JSON.parse(String(sb.toString()));
+                    if (!obj || !obj.cls || !obj.m || !obj.samples) continue;
+                    var key = obj.cls + "::" + obj.m;
+                    sampleStore[key] = obj.samples;
+                } catch (e) {}
+            }
+            send({type:"samples_loaded", count:Object.keys(sampleStore).length});
+        } catch (e) {
+            send({type:"samples_load_err", error:""+e});
+        }
+    }
+
+    function persistSamples(cls, m) {
+        try {
+            ensureDir();
+            var key = cls + "::" + m;
+            var arr = sampleStore[key] || [];
+            var obj = { cls: cls, m: m, samples: arr };
+            var json = JSON.stringify(obj);
+            var File = Java.use("java.io.File");
+            var FileWriter = Java.use("java.io.FileWriter");
+            var f = File.$new(CALLS_DIR + "/" + safeName(cls, m));
+            var fw = FileWriter.$new(f, false);
+            fw.write(json);
+            fw.close();
+        } catch (e) {
+            send({type:"samples_save_err", error:""+e});
+        }
+    }
+
+    // Compact typed encoder for arguments
+    function encodeArg(v) {
+        if (v === null || v === undefined) return {kind:"null"};
+        var t = typeof v;
+        if (t === "number")
+            return Number.isInteger(v)
+                ? {kind:"long", value:String(v)}
+                : {kind:"double", value:String(v)};
+        if (t === "boolean") return {kind:"boolean", value:v};
+        if (t === "string")  return {kind:"string",  value:v};
+        if (t !== "object")  return {kind:"string",  value:String(v)};
+
+        try {
+            var cn = v.$className ? String(v.$className) : "";
+            if (!cn) return {kind:"null"};
+            if (cn === "java.lang.String")
+                return {kind:"string", value:String(v)};
+            if (cn === "java.lang.Integer" || cn === "java.lang.Long" ||
+                cn === "java.lang.Short" || cn === "java.lang.Byte")
+                return {kind:"long", value:String(v)};
+            if (cn === "java.lang.Float" || cn === "java.lang.Double")
+                return {kind:"double", value:String(v)};
+            if (cn === "java.lang.Boolean")
+                return {kind:"boolean", value:String(v) === "true"};
+            if (cn === "java.lang.Character")
+                return {kind:"char", value:String(v)};
+            // Enum
+            var isEnum = false;
+            try { isEnum = Java.use(cn).class.isEnum(); } catch (e) {}
+            if (isEnum)
+                return {kind:"enum", className:cn, enumName:String(v.name())};
+            // Map
+            if (cn.indexOf("Map") >= 0) {
+                var entries = [];
+                try {
+                    var it = v.entrySet().iterator();
+                    var c = 0;
+                    while (it.hasNext() && c < 40) {
+                        var e = it.next();
+                        entries.push({
+                            k: encodeArg(e.getKey()),
+                            v: encodeArg(e.getValue())
+                        });
+                        c++;
+                    }
+                } catch (e) {}
+                return {kind:"map", className:cn, entries:entries};
+            }
+            // List/Set
+            if (cn.indexOf("List") >= 0 || cn.indexOf("Set") >= 0 ||
+                cn.indexOf("Collection") >= 0) {
+                var items = [];
+                try {
+                    var it2 = v.iterator();
+                    var c2 = 0;
+                    while (it2.hasNext() && c2 < 40) {
+                        items.push(encodeArg(it2.next()));
+                        c2++;
+                    }
+                } catch (e) {}
+                return {kind:(cn.indexOf("Set")>=0 ? "set" : "list"),
+                        className:cn, items:items};
+            }
+            // Arrays
+            if (cn.charAt(0) === "[") {
+                var items3 = [];
+                var n3 = 0;
+                try { n3 = Number(v.length) || 0; } catch (e) {}
+                var cap3 = Math.min(n3, 40);
+                for (var i3 = 0; i3 < cap3; i3++) {
+                    try { items3.push(encodeArg(v[i3])); }
+                    catch (e) { items3.push({kind:"null"}); }
+                }
+                return {kind:"array", className:cn,
+                        elementType: cn.substring(1),
+                        items: items3, length:n3};
+            }
+            // Instance — encode fields for reconstruction
+            var fields = [];
+            try {
+                var C = Java.use(cn);
+                var fs = C.class.getDeclaredFields();
+                var capF = Math.min(fs.length, 20);
+                for (var k = 0; k < capF; k++) {
+                    try {
+                        fs[k].setAccessible(true);
+                        if ((fs[k].getModifiers() & 8) !== 0) continue;
+                        fields.push({
+                            name: String(fs[k].getName()),
+                            typeName: String(fs[k].getType().getName()),
+                            value: encodeArg(fs[k].get(v))
+                        });
+                    } catch (e) {}
+                }
+            } catch (e) {}
+            return {kind:"construct", className:cn, args:[],
+                    fields:fields, display:String(v)};
+        } catch (e) {
+            return {kind:"null"};
+        }
+    }
+
+    function recordSample(cls, m, args) {
+        var key = cls + "::" + m;
+        if (!sampleStore[key]) sampleStore[key] = [];
+        var arr = sampleStore[key];
+        var sample = { ts: Date.now(), args: args };
+        arr.push(sample);
+        while (arr.length > SAMPLE_CAP) arr.shift();
+        // Persist async (once per capture — cheap)
+        try { persistSamples(cls, m); } catch (e) {}
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     //  cpp_* handlers
     // ═══════════════════════════════════════════════════════════════
     var cppHandlers = {
@@ -863,6 +1049,17 @@ function classifyType(typeName) {
                                     lastFire = now;
                                     try {
                                         var a = Array.prototype.slice.call(arguments);
+                                        // Typed sample for persistence
+                                        try {
+                                            var encoded = [];
+                                            for (var kk = 0; kk < a.length; kk++) {
+                                                try { encoded.push(encodeArg(a[kk])); }
+                                                catch (e) { encoded.push({kind:"null"}); }
+                                            }
+                                            recordSample(tagCls, tagM, encoded);
+                                            send({type:"trace_sample", cls:tagCls,
+                                                  m:tagM, args:encoded, ts:Date.now()});
+                                        } catch (e) {}
                                         if (onlyArg >= 0) {
                                             if (onlyArg < a.length) {
                                                 var sv;
@@ -1288,6 +1485,43 @@ function classifyType(typeName) {
                 }
             }
             setTimeout(step, 0);
+        },
+        jv_samples_get: function (cmd) {
+            queueJava(function() {
+                try {
+                    var key = cmd.className + "::" + cmd.methodName;
+                    var arr = sampleStore[key] || [];
+                    send({type:"samples_result",
+                          className: cmd.className,
+                          methodName: cmd.methodName,
+                          samples: arr});
+                } catch (e) {
+                    send({type:"samples_result", samples:[],
+                          className:cmd.className, methodName:cmd.methodName,
+                          error:""+e});
+                }
+            });
+        },
+        jv_samples_clear: function (cmd) {
+            queueJava(function() {
+                try {
+                    var key = cmd.className + "::" + cmd.methodName;
+                    delete sampleStore[key];
+                    try {
+                        var File = Java.use("java.io.File");
+                        var f = File.$new(CALLS_DIR + "/" +
+                                          safeName(cmd.className, cmd.methodName));
+                        if (f.exists()) f.delete();
+                    } catch (e) {}
+                    send({type:"samples_result",
+                          className: cmd.className,
+                          methodName: cmd.methodName,
+                          samples:[]});
+                } catch (e) {}
+            });
+        },
+        jv_samples_load_all: function (cmd) {
+            queueJava(function() { loadSamplesFromDisk(); });
         },
         jv_eval: function (cmd) {
             try {

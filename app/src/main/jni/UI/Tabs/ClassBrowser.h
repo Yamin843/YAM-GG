@@ -58,6 +58,21 @@ private:
         int  argCount{0};
         bool isStatic{false};
     };
+    struct SampleArg {
+        std::string typeName;
+        std::string kind;
+        std::string scalar;
+        bool booleanVal{false};
+        std::string className;      // for construct
+        std::string fieldsJson;     // for construct
+        std::string jsonSpec;       // full spec
+        std::string label;
+    };
+    struct Sample {
+        long long ts{0};
+        std::string label;
+        std::vector<SampleArg> args;
+    };
     struct CallState {
         bool active{false};
         bool isCtor{false};
@@ -67,6 +82,9 @@ private:
         std::string lastResult;
         bool lastOk{false};
         bool haveResult{false};
+        std::vector<Sample> samples;   // history for this method
+        int  sampleIdx{-1};            // chosen sample for recall
+        std::vector<int> argSampleIdx; // per-arg chosen sample (-1 = none)
     };
 
     void registerEvents();

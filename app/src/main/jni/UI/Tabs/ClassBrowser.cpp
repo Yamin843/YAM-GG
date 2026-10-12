@@ -243,6 +243,42 @@ void ClassBrowser::registerEvents() {
             jesc(ev.get_str("value")).c_str());
         pushTraceLog(buf);
     });
+    yam::events::on("samples_result", [this](const yam::Event& ev) {
+        std::string cls = ev.get_str("className");
+        std::string m   = ev.get_str("methodName");
+        std::lock_guard<std::mutex> lk(mu_);
+        // Only update if CallMethod is on this method
+        if (!callState_.active || callState_.className != cls ||
+            callState_.methodName != m) return;
+        callState_.samples.clear();
+        auto* arr = ev.data.get("samples");
+        if (arr && arr->is_arr()) {
+            for (auto& s : arr->arr_val) {
+                Sample sm;
+                if (auto* v = s.get("ts")) sm.ts = v->as_i64(0);
+                sm.label = "sample #" + std::to_string(callState_.samples.size());
+                auto* args = s.get("args");
+                if (args && args->is_arr()) {
+                    for (auto& a : args->arr_val) {
+                        SampleArg sa;
+                        if (auto* v = a.get("kind")) sa.kind = v->as_str();
+                        if (auto* v = a.get("value")) sa.scalar = v->as_str();
+                        if (auto* v = a.get("className")) sa.className = v->as_str();
+                        if (auto* v = a.get("enumName")) sa.scalar = v->as_str();
+                        if (sa.kind == "boolean") sa.booleanVal = (sa.scalar == "true");
+                        sa.jsonSpec = a.stringify();
+                        sa.label = sa.kind;
+                        sm.args.push_back(std::move(sa));
+                    }
+                }
+                callState_.samples.push_back(std::move(sm));
+            }
+        }
+        callState_.argSampleIdx.assign(callState_.args.size(), -1);
+        LOGI("CB: samples_result %s::%s -> %zu",
+             cls.c_str(), m.c_str(), callState_.samples.size());
+    });
+
     yam::events::on("members_search_progress", [this](const yam::Event& ev) {
         std::lock_guard<std::mutex> lk(mu_);
         memberSearchVisited_ = (int)ev.get_i64("visited", 0);
@@ -384,18 +420,28 @@ void ClassBrowser::triggerMemberSearch() {
 }
 
 void ClassBrowser::activateCall(const std::string& cls, MethodInfo& m) {
-    std::lock_guard<std::mutex> lk(mu_);
-    callState_.active    = true;
-    callState_.isCtor    = false;
-    callState_.className = cls;
-    callState_.methodName= m.name;
-    callState_.returnType= m.ret;
-    callState_.isStatic  = m.isStatic;
-    callState_.args      = m.args;
-    callState_.lastResult.clear();
-    callState_.haveResult = false;
-    pendingSwitchToCall_ = true;
-    pendingSubTab_ = 2;
+    {
+        std::lock_guard<std::mutex> lk(mu_);
+        callState_.active    = true;
+        callState_.isCtor    = false;
+        callState_.className = cls;
+        callState_.methodName= m.name;
+        callState_.returnType= m.ret;
+        callState_.isStatic  = m.isStatic;
+        callState_.args      = m.args;
+        callState_.samples.clear();
+        callState_.sampleIdx = -1;
+        callState_.argSampleIdx.assign(m.args.size(), -1);
+        callState_.lastResult.clear();
+        callState_.haveResult = false;
+        pendingSwitchToCall_ = true;
+        pendingSubTab_ = 2;
+    }
+    // Ask JS for saved samples
+    std::string cmd = R"({"action":"jv_samples_get","className":")";
+    cmd += jesc(cls); cmd += R"(","methodName":")"; cmd += jesc(m.name);
+    cmd += R"("})";
+    sendCommand(cmd);
 }
 
 void ClassBrowser::activateCallCtor(const std::string& cls, CtorInfo& c) {
@@ -1005,16 +1051,82 @@ void ClassBrowser::drawCallMethodTab() {
             callState_.className.c_str(), callState_.methodName.c_str(),
             callState_.args.size());
     ImGui::PopStyleColor();
-    ImGui::TextDisabled("return: %s", callState_.returnType.c_str());
+    ImGui::TextDisabled("return: %s    samples: %zu",
+        callState_.returnType.c_str(), callState_.samples.size());
+
+    // Header actions
+    if (ImGui::Button("Refresh Samples", ImVec2(150, 32))) {
+        std::string c = callState_.className, m = callState_.methodName;
+        // cannot send while holding lock — release by using a local
+        ImGui::End();
+        std::string cmd = R"({"action":"jv_samples_get","className":")";
+        cmd += jesc(c); cmd += R"(","methodName":")"; cmd += jesc(m);
+        cmd += R"("})";
+        YamBridge::instance().postCommand(cmd);
+        return;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear Samples", ImVec2(150, 32))) {
+        std::string c = callState_.className, m = callState_.methodName;
+        std::string cmd = R"({"action":"jv_samples_clear","className":")";
+        cmd += jesc(c); cmd += R"(","methodName":")"; cmd += jesc(m);
+        cmd += R"("})";
+        YamBridge::instance().postCommand(cmd);
+    }
     ImGui::Separator();
 
     if (callState_.args.empty()) {
         ImGui::TextDisabled("(no parameters)");
     } else {
-        for (size_t i = 0; i < callState_.args.size(); ++i)
-            drawParamWidget(callState_.args[i], (int)i);
+        for (size_t i = 0; i < callState_.args.size(); ++i) {
+            ParamInfo& p = callState_.args[i];
+
+            // Per-arg sample dropdown
+            if (!callState_.samples.empty()) {
+                int& cur = callState_.argSampleIdx[i];
+                char comboLabel[64];
+                if (cur < 0) std::snprintf(comboLabel, sizeof(comboLabel), "sample...");
+                else         std::snprintf(comboLabel, sizeof(comboLabel),
+                                           "#%d", cur);
+                ImGui::PushID((int)(i * 1000 + 7));
+                ImGui::SetNextItemWidth(140);
+                if (ImGui::BeginCombo("##samp", comboLabel)) {
+                    if (ImGui::Selectable("(none)", cur < 0)) cur = -1;
+                    for (size_t s = 0; s < callState_.samples.size(); ++s) {
+                        if (i >= callState_.samples[s].args.size()) continue;
+                        char lbl[64];
+                        std::snprintf(lbl, sizeof(lbl), "#%zu  %s",
+                                      s, callState_.samples[s].args[i].label.c_str());
+                        if (ImGui::Selectable(lbl, (int)s == cur)) {
+                            cur = (int)s;
+                            // Fill the param from sample
+                            const SampleArg& sa = callState_.samples[s].args[i];
+                            p.kind = sa.kind.empty() ? p.kind : sa.kind;
+                            if (sa.kind == "boolean") {
+                                p.booleanVal = sa.booleanVal;
+                            } else if (sa.kind == "construct" ||
+                                       sa.kind == "map" || sa.kind == "list" ||
+                                       sa.kind == "set" || sa.kind == "array") {
+                                // Store full spec in jsonSpec
+                                std::strncpy(p.jsonSpec, sa.jsonSpec.c_str(),
+                                             sizeof(p.jsonSpec) - 1);
+                            } else {
+                                std::strncpy(p.scalar, sa.scalar.c_str(),
+                                             sizeof(p.scalar) - 1);
+                                // Also mirror into jsonSpec for complex types
+                                std::strncpy(p.jsonSpec, sa.jsonSpec.c_str(),
+                                             sizeof(p.jsonSpec) - 1);
+                            }
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                ImGui::SameLine();
+            }
+            drawParamWidget(p, (int)i);
+            ImGui::Separator();
+        }
     }
-    ImGui::Separator();
 
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.16f, 0.04f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.86f, 0.42f, 1.0f));
