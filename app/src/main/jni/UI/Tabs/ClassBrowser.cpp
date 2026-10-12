@@ -359,7 +359,9 @@ void ClassBrowser::triggerUntrace(const std::string& cls, MethodInfo& m) {
 }
 
 std::string ClassBrowser::argsSpecFor(const std::vector<ParamInfo>& args) {
-    std::string out = "[";
+    std::string out;
+    out.reserve(256);
+    out += "[";
     for (size_t i = 0; i < args.size(); ++i) {
         if (i) out += ",";
         const ParamInfo& p = args[i];
@@ -387,8 +389,92 @@ std::string ClassBrowser::argsSpecFor(const std::vector<ParamInfo>& args) {
             out += R"(","enumName":")";
             out += jesc(p.scalar);
             out += R"("})";
+        } else if (k == "map" || k == "json") {
+            // Build with auto-wrapped value types
+            std::string cls = p.typeName;
+            if (cls.empty() || cls == "java.util.Map" ||
+                cls == "java.util.HashMap")
+                cls = "java.util.HashMap";
+            out += R"({"kind":"map","className":")";
+            out += jesc(cls);
+            out += R"(","entries":[)";
+            for (size_t j = 0; j < p.kvPairs.size(); ++j) {
+                if (j) out += ",";
+                const KVPair& kv = p.kvPairs[j];
+                out += R"({"k":{"kind":"string","value":")";
+                out += jesc(kv.key);
+                out += R"("},"v":)";
+                switch (kv.valueType) {
+                case 1: // int
+                    out += R"({"kind":"int","value":)";
+                    out += (kv.value[0] ? kv.value : "0"); out += "}";
+                    break;
+                case 2: // long
+                    out += R"({"kind":"long","value":)";
+                    out += (kv.value[0] ? kv.value : "0"); out += "}";
+                    break;
+                case 3: // double
+                    out += R"({"kind":"double","value":)";
+                    out += (kv.value[0] ? kv.value : "0"); out += "}";
+                    break;
+                case 4: // boolean
+                    out += R"({"kind":"boolean","value":)";
+                    out += (std::strcmp(kv.value, "true") == 0 ? "true" : "false");
+                    out += "}";
+                    break;
+                case 5: // null
+                    out += R"({"kind":"null"})";
+                    break;
+                default: // string
+                    out += R"({"kind":"string","value":")";
+                    out += jesc(kv.value);
+                    out += R"("})";
+                }
+                out += "}";
+            }
+            out += "]}";
+        } else if (k == "list" || k == "set" ||
+                   k == "object_array" || k == "array" ||
+                   k == "prim_array" || k == "byte_array") {
+            std::string listKind = (k == "set") ? "set" : "list";
+            std::string cls = p.typeName;
+            if (cls.empty() || cls == "java.util.List" || cls == "java.util.Collection")
+                cls = "java.util.ArrayList";
+            if (k == "set" && cls == "java.util.Set") cls = "java.util.HashSet";
+            out += R"({"kind":")"; out += listKind;
+            out += R"(","className":")"; out += jesc(cls);
+            out += R"(","items":[)";
+            for (size_t j = 0; j < p.listItems.size(); ++j) {
+                if (j) out += ",";
+                switch (p.listItemType) {
+                case 1:
+                    out += R"({"kind":"int","value":)";
+                    out += (p.listItems[j].empty() ? "0" : p.listItems[j].c_str());
+                    out += "}";
+                    break;
+                case 2:
+                    out += R"({"kind":"long","value":)";
+                    out += (p.listItems[j].empty() ? "0" : p.listItems[j].c_str());
+                    out += "}";
+                    break;
+                case 3:
+                    out += R"({"kind":"double","value":)";
+                    out += (p.listItems[j].empty() ? "0" : p.listItems[j].c_str());
+                    out += "}";
+                    break;
+                case 4:
+                    out += R"({"kind":"boolean","value":)";
+                    out += (p.listItems[j] == "true" ? "true" : "false");
+                    out += "}";
+                    break;
+                default:
+                    out += R"({"kind":"string","value":")";
+                    out += jesc(p.listItems[j]);
+                    out += R"("})";
+                }
+            }
+            out += "]}";
         } else {
-            // Complex: use jsonSpec (already valid JSON from preset)
             if (p.jsonSpec[0]) out += p.jsonSpec;
             else               out += R"({"kind":"null"})";
         }
@@ -757,14 +843,15 @@ void ClassBrowser::drawMethodNode(const std::string& cls, MethodInfo& m) {
 
 void ClassBrowser::drawParamWidget(ParamInfo& p, int idx) {
     ImGui::PushID(idx);
-    ImGui::PushTextWrapPos(0.0f);
+
+    // ── Header ────────────────────────────────────────────────────
     if (!p.generic.empty())
         ImGui::TextWrapped("arg%d %s <%s>", idx, p.typeName.c_str(),
                             p.generic.c_str());
     else
         ImGui::TextWrapped("arg%d (%s) [%s]", idx, p.typeName.c_str(),
                             p.kind.c_str());
-    ImGui::PopTextWrapPos();
+
     const std::string& k = p.kind;
 
     if (k == "boolean") {
@@ -795,8 +882,101 @@ void ClassBrowser::drawParamWidget(ParamInfo& p, int idx) {
         ImGui::SetNextItemWidth(120);
         ImGui::InputText("##h", p.scalar, sizeof(p.scalar),
                           ImGuiInputTextFlags_CharsDecimal);
+    } else if (k == "map" || k == "json") {
+        // ── MAP / JSON: key-value table ─────────────────────────
+        char hdr[64];
+        std::snprintf(hdr, sizeof(hdr), "entries (%zu)###kv",
+                      p.kvPairs.size());
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.82f, 0.90f, 1.0f));
+        if (ImGui::TreeNodeEx(hdr, ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::PopStyleColor();
+            static const char* kTypeNames[] = {
+                "string", "int", "long", "double", "bool", "null"
+            };
+            for (size_t i = 0; i < p.kvPairs.size(); i++) {
+                ImGui::PushID((int)i);
+                ImGui::SetNextItemWidth(150);
+                ImGui::InputText("##k", p.kvPairs[i].key,
+                                  sizeof(p.kvPairs[i].key));
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(80);
+                ImGui::Combo("##t", &p.kvPairs[i].valueType,
+                              kTypeNames, 6);
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(-40);
+                if (p.kvPairs[i].valueType == 4) {
+                    bool b = (std::strcmp(p.kvPairs[i].value, "true") == 0);
+                    if (ImGui::Checkbox("##b", &b))
+                        std::strncpy(p.kvPairs[i].value,
+                                      b ? "true" : "false",
+                                      sizeof(p.kvPairs[i].value)-1);
+                } else if (p.kvPairs[i].valueType == 5) {
+                    ImGui::TextDisabled("null");
+                } else {
+                    ImGui::InputText("##v", p.kvPairs[i].value,
+                                      sizeof(p.kvPairs[i].value));
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("X")) {
+                    p.kvPairs.erase(p.kvPairs.begin() + i);
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopID();
+            }
+            if (ImGui::SmallButton("+ Add entry"))
+                p.kvPairs.push_back(KVPair{});
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Clear"))
+                p.kvPairs.clear();
+            ImGui::TreePop();
+        } else {
+            ImGui::PopStyleColor();
+        }
+    } else if (k == "list" || k == "set" ||
+               k == "object_array" || k == "array" ||
+               k == "prim_array" || k == "byte_array") {
+        // ── LIST / SET / ARRAY: item rows ───────────────────────
+        char hdr[64];
+        std::snprintf(hdr, sizeof(hdr), "items (%zu)###li",
+                      p.listItems.size());
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.82f, 0.90f, 1.0f));
+        if (ImGui::TreeNodeEx(hdr, ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::PopStyleColor();
+            static const char* kTypes[] = {
+                "string", "int", "long", "double", "bool"
+            };
+            ImGui::SetNextItemWidth(120);
+            ImGui::Combo("##it", &p.listItemType, kTypes, 5);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(item type)");
+            for (size_t i = 0; i < p.listItems.size(); i++) {
+                ImGui::PushID((int)i);
+                ImGui::SetNextItemWidth(-40);
+                char buf[512];
+                std::strncpy(buf, p.listItems[i].c_str(), sizeof(buf)-1);
+                buf[sizeof(buf)-1] = 0;
+                if (ImGui::InputText("##v", buf, sizeof(buf)))
+                    p.listItems[i] = buf;
+                ImGui::SameLine();
+                if (ImGui::SmallButton("X")) {
+                    p.listItems.erase(p.listItems.begin() + i);
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopID();
+            }
+            if (ImGui::SmallButton("+ Add item"))
+                p.listItems.push_back("");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Clear"))
+                p.listItems.clear();
+            ImGui::TreePop();
+        } else {
+            ImGui::PopStyleColor();
+        }
     } else {
-        // Complex: JSON editor (Map/List/Set/Array/JSON/Color/Date/...)
+        // Fallback: raw JSON
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.72f, 0.90f, 1.0f));
         ImGui::TextWrapped("JSON spec (edit freely):");
         ImGui::PopStyleColor();

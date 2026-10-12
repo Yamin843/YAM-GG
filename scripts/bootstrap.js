@@ -740,67 +740,71 @@ function classifyType(typeName) {
                 var C = Java.use(cmd.className);
                 var MM = C[cmd.methodName];
                 if (!MM || !MM.overloads) throw new Error("no overloads");
+                var tag = cmd.className + "::" + cmd.methodName;
+                var MAX_EVENTS = 20;         // burst
+                var MIN_INTERVAL_MS = 200;   // then 5/sec
+                var counters = { burst: MAX_EVENTS, last: 0 };
+                var wantBt = (cmd.captureBacktrace === true);
                 var n = 0;
+
                 for (var i = 0; i < MM.overloads.length; i++) {
                     (function(ov){
                         if (ov.__ygg_trace !== undefined) return;
                         ov.__ygg_trace = ov.implementation || null;
                         ov.implementation = function() {
                             var a = Array.prototype.slice.call(arguments);
-                            // Typed args
-                            var typedArgs = [];
-                            for (var k = 0; k < a.length; k++) {
-                                try { typedArgs.push(describeTyped(a[k], 0)); }
-                                catch (e) { typedArgs.push({kind:"error",
-                                                            display:"<err>"}); }
+                            var shouldLog = false;
+                            var now = Date.now();
+                            if (counters.burst > 0) {
+                                counters.burst--;
+                                shouldLog = true;
+                            } else if ((now - counters.last) >= MIN_INTERVAL_MS) {
+                                counters.last = now;
+                                shouldLog = true;
                             }
-                            // Backtrace
-                            var bt = "";
-                            try {
-                                var b = Java.backtrace({limit:8});
-                                if (b && b.frames) {
-                                    var fr = [];
-                                    for (var f = 0; f < b.frames.length; f++) {
-                                        var fr0 = b.frames[f];
-                                        fr.push(String(fr0.className||"") + "." +
-                                                String(fr0.methodName||""));
-                                    }
-                                    bt = fr.join(" < ");
+
+                            if (shouldLog) {
+                                var parts = [];
+                                for (var k = 0; k < a.length; k++) {
+                                    try { parts.push(describe(a[k], 2)); }
+                                    catch (e) { parts.push("<err>"); }
                                 }
-                            } catch (e) {}
-                            // Build multi-line trace output
-                            var out = "[trace] " + cmd.className + "." +
-                                      cmd.methodName;
-                            for (var k2 = 0; k2 < typedArgs.length; k2++) {
-                                out += "\n  arg" + k2 + " = " +
-                                    formatTypedTree(typedArgs[k2], "").trim();
+                                var out = "[trace] " + tag +
+                                          " (" + parts.join(", ") + ")";
+                                if (wantBt) {
+                                    try {
+                                        var b = Java.backtrace({limit:6});
+                                        if (b && b.frames) {
+                                            var fr = [];
+                                            for (var f = 0; f < b.frames.length; f++) {
+                                                var fr0 = b.frames[f];
+                                                fr.push(String(fr0.className||"") +
+                                                        "." + String(fr0.methodName||""));
+                                            }
+                                            out += "\n  bt: " + fr.join(" < ");
+                                        }
+                                    } catch (e) {}
+                                }
+                                try { send({type:"trace_line", level:"log", line:out}); }
+                                catch (e) {}
                             }
-                            if (bt) out += "\n  bt: " + bt;
-                            try {
-                                send({type:"trace_line", level:"log", line:out});
-                            } catch (e) {}
+
                             var r;
                             try {
                                 r = ov.__ygg_trace
                                     ? ov.__ygg_trace.apply(this, a) : undefined;
                             } catch (ex) {
-                                try {
-                                    send({type:"trace_line", level:"error",
-                                          line:"[trace] " + cmd.className +
-                                               "." + cmd.methodName +
-                                               " THREW: " + ex});
-                                } catch (e2) {}
+                                if (shouldLog) {
+                                    try { send({type:"trace_line", level:"error",
+                                          line:"[trace] " + tag + " THREW: " + ex}); }
+                                    catch (e) {}
+                                }
                                 throw ex;
                             }
-                            if (r !== undefined) {
-                                try {
-                                    var rt = describeTyped(r, 0);
-                                    send({type:"trace_line", level:"log",
-                                          line:"[trace] " + cmd.className +
-                                               "." + cmd.methodName +
-                                               " -> " +
-                                               formatTypedTree(rt, "").trim()});
-                                } catch (e) {}
+                            if (shouldLog && r !== undefined) {
+                                try { send({type:"trace_line", level:"log",
+                                      line:"[trace] " + tag + " -> " + describe(r, 2)}); }
+                                catch (e) {}
                             }
                             return r;
                         };
@@ -808,7 +812,8 @@ function classifyType(typeName) {
                     })(MM.overloads[i]);
                 }
                 send({type:"trace_ok", className:cmd.className,
-                      methodName:cmd.methodName, count:n});
+                      methodName:cmd.methodName, count:n,
+                      throttled:true, maxBurst:MAX_EVENTS});
             } catch (e) {
                 send({type:"trace_err", error:""+e});
             }
@@ -835,6 +840,7 @@ function classifyType(typeName) {
             try {
                 var items = [];
                 var C = Java.use(cmd.className);
+                // Timeout (3s) prevents VM-pause hang on huge heaps.
                 Java.choose(cmd.className, {
                     onMatch: function(x) {
                         if (items.length >= 20) return "stop";
@@ -842,7 +848,7 @@ function classifyType(typeName) {
                             var h = alloc(x);
                             var flds = C.class.getDeclaredFields();
                             var fields = [];
-                            for (var i = 0; i < flds.length; i++) {
+                            for (var i = 0; i < flds.length && i < 32; i++) {
                                 var f = flds[i];
                                 if ((f.getModifiers() & 8) !== 0) continue;
                                 try {
@@ -850,8 +856,7 @@ function classifyType(typeName) {
                                     var t = describeTyped(f.get(x), 0);
                                     fields.push({
                                         name: String(f.getName()),
-                                        value: formatTypedTree(t, "").trim(),
-                                        typed: t
+                                        value: formatTypedTree(t, "").trim()
                                     });
                                 } catch (e) {}
                             }
@@ -861,7 +866,7 @@ function classifyType(typeName) {
                         } catch (e) {}
                     },
                     onComplete: function() {}
-                });
+                }, 3000);
                 sendMaybeChunked({type:"instances_result",
                                   className:cmd.className, items:items});
             } catch (e) {

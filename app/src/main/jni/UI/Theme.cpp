@@ -33,7 +33,7 @@ static const ImVec4 kTextDim     = rgba(0xA8, 0xA8, 0xAE);
 static const ImVec4 kTextFaint   = rgba(0x62, 0x62, 0x68);
 } // namespace
 
-float g_fontSize = 26.0f;
+float g_fontSize = 30.0f;
 
 void Theme::apply() {
     ImGuiStyle& style = ImGui::GetStyle();

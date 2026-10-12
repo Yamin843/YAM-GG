@@ -20,6 +20,11 @@ private:
     ClassBrowser(const ClassBrowser&) = delete;
     ClassBrowser& operator=(const ClassBrowser&) = delete;
 
+    struct KVPair {
+        char key[256]{0};
+        char value[256]{0};
+        int  valueType{0};  // 0=str,1=int,2=long,3=double,4=bool,5=null
+    };
     struct ParamInfo {
         std::string typeName;
         std::string kind;              // int/string/enum/list/map/... 
@@ -30,6 +35,9 @@ private:
         bool booleanVal{false};
         // Complex editor (JSON text, prefilled with preset)
         char jsonSpec[4096]{0};
+        std::vector<KVPair> kvPairs;
+        std::vector<std::string> listItems;
+        int  listItemType{0};
     };
     struct MethodInfo {
         std::string name, ret, retKind;
