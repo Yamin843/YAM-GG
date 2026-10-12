@@ -32,6 +32,8 @@ private:
         std::vector<std::string> enumValues;
         // Simple editors
         char scalar[512]{0};
+        char dateStr[32]{0};
+        char nestedClass[256]{0};
         bool booleanVal{false};
         // Complex editor (JSON text, prefilled with preset)
         char jsonSpec[4096]{0};

@@ -389,7 +389,36 @@ std::string ClassBrowser::argsSpecFor(const std::vector<ParamInfo>& args) {
             out += R"(","enumName":")";
             out += jesc(p.scalar);
             out += R"("})";
-        } else if (k == "map" || k == "json") {
+        } else if (k == "date") {
+            out += R"({"kind":"date","value":")";
+            out += jesc(p.dateStr[0] ? p.dateStr : "2026-01-01 00:00:00");
+            out += R"("})";
+        } else if (k == "class") {
+            out += R"({"kind":"class","value":")";
+            out += jesc(p.nestedClass[0] ? p.nestedClass : "java.lang.Object");
+            out += R"("})";
+        } else if (k == "object" && p.nestedClass[0]) {
+            out += R"({"kind":"object","className":")";
+            out += jesc(p.nestedClass);
+            out += R"(","args":[]})";
+        } else if (k == "date") {
+        ImGui::SetNextItemWidth(-1);
+        if (p.dateStr[0] == 0) std::strncpy(p.dateStr, "2026-01-01 00:00:00",
+                                             sizeof(p.dateStr)-1);
+        ImGui::InputTextWithHint("##d", "yyyy-MM-dd HH:mm:ss",
+                                  p.dateStr, sizeof(p.dateStr));
+    } else if (k == "class") {
+        ImGui::SetNextItemWidth(-1);
+        if (p.nestedClass[0] == 0) std::strncpy(p.nestedClass, "java.lang.Object",
+                                                sizeof(p.nestedClass)-1);
+        ImGui::InputTextWithHint("##cn", "fully.qualified.ClassName",
+                                  p.nestedClass, sizeof(p.nestedClass));
+    } else if (k == "object") {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##oc", "FQCN (constructed with no-arg)",
+                                  p.nestedClass, sizeof(p.nestedClass));
+        ImGui::TextDisabled("(uses no-arg ctor; use expr for complex)");
+    } else if (k == "map" || k == "json") {
             // Build with auto-wrapped value types
             std::string cls = p.typeName;
             if (cls.empty() || cls == "java.util.Map" ||

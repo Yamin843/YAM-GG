@@ -48,6 +48,10 @@ static const char kBootstrapSrc[] = R"YAMJS(
             tn === "byte" || tn === "float" || tn === "double" ||
             tn === "boolean" || tn === "char" || tn === "void") return tn;
         if (tn === "java.lang.String") return "string";
+        if (tn === "java.util.Date" ||
+            tn === "java.sql.Date" ||
+            tn === "java.sql.Timestamp") return "date";
+        if (tn === "java.lang.Class") return "class";
         if (tn.charAt(0) === "[") return "array";
         if (tn.indexOf("Map") >= 0) return "map";
         if (tn.indexOf("List") >= 0) return "list";
@@ -144,6 +148,9 @@ function classifyType(typeName) {
             case "color":  return {kind:"color", value:0xFF000000};
             case "date":   return {kind:"expr", expr:"new java.util.Date()"};
             case "file":   return {kind:"string", value:"/sdcard/"};
+            case "date":   return {kind:"date",
+                                   value:"2026-01-01 00:00:00"};
+            case "class":  return {kind:"class", value:"java.lang.Object"};
             case "intent": return {kind:"expr",
                                    expr:"new android.content.Intent()"};
             case "bundle": return {kind:"expr",
@@ -552,6 +559,95 @@ function classifyType(typeName) {
         return out;
     }
 
+    // ─── Async trace install queue ────────────────────────────────────
+    // Each overload of a method is installed in its own JS turn, 25ms
+    // apart, so the ART watchdog never sees a long performNow block.
+    var pendingTraceQueue = [];
+    var pendingTraceDraining = false;
+
+    function drainTraceQueue() {
+        if (pendingTraceQueue.length === 0) {
+            pendingTraceDraining = false;
+            return;
+        }
+        pendingTraceDraining = true;
+        setTimeout(function() {
+            try {
+                Java.performNow(function() {
+                    try {
+                        var job = pendingTraceQueue[0];
+                        if (!job.started) {
+                            job.started = true;
+                            var C = Java.use(job.className);
+                            var MM = C[job.methodName];
+                            if (!MM || !MM.overloads)
+                                throw new Error("no overloads for " + job.methodName);
+                            job.overloads = MM.overloads;
+                            job.idx = 0;
+                        }
+                        if (job.idx >= job.overloads.length) {
+                            send({type:"trace_ok", className:job.className,
+                                  methodName:job.methodName,
+                                  count:job.overloads.length});
+                            pendingTraceQueue.shift();
+                        } else {
+                            var ov = job.overloads[job.idx];
+                            if (ov.__ygg_trace === undefined) {
+                                ov.__ygg_trace = ov.implementation || null;
+                                ov.implementation = makeTraceWrapper(job);
+                            }
+                            job.idx++;
+                        }
+                    } catch (e) {
+                        send({type:"trace_err", error:""+e});
+                        pendingTraceQueue.shift();
+                    }
+                });
+            } catch (e) {
+                send({type:"trace_err", error:"outer: "+e});
+                pendingTraceQueue.shift();
+            }
+            drainTraceQueue();
+        }, 25);
+    }
+
+    function makeTraceWrapper(job) {
+        return function() {
+            var a = Array.prototype.slice.call(arguments);
+            var parts = [];
+            for (var k = 0; k < a.length; k++) {
+                try { parts.push(describe(a[k], 2)); }
+                catch (e) { parts.push("<err>"); }
+            }
+            var jsonLine = JSON.stringify({
+                tag: "trace",
+                cls: job.className,
+                m: job.methodName,
+                args: parts
+            });
+            try { send({type:"trace_line", level:"log", line:jsonLine}); }
+            catch (e) {}
+
+            var self = this;
+            var ov = arguments.callee;   // not used; keep scope
+            var r;
+            try {
+                r = job.__lastImpl
+                    ? job.__lastImpl.apply(self, a) : undefined;
+            } catch (ex) {
+                try {
+                    send({type:"trace_line", level:"error",
+                          line: JSON.stringify({
+                              tag:"trace_err", cls: job.className,
+                              m: job.methodName, error:""+ex
+                          })});
+                } catch (e) {}
+                throw ex;
+            }
+            return r;
+        };
+    }
+
     // ─── Chunked sender ───────────────────────────────────────────────
     var _nextChunkSession = 1;
     var CHUNK_THRESHOLD = 128 * 1024;
@@ -745,143 +841,82 @@ function classifyType(typeName) {
         },
 
         jv_trace: function (cmd) {
-            try {
-                var C = Java.use(cmd.className);
-                var MM = C[cmd.methodName];
-                if (!MM || !MM.overloads) throw new Error("no overloads");
-                var tag = cmd.className + "::" + cmd.methodName;
-                var MAX_EVENTS = 20;         // burst
-                var MIN_INTERVAL_MS = 200;   // then 5/sec
-                var counters = { burst: MAX_EVENTS, last: 0 };
-                var wantBt = (cmd.captureBacktrace === true);
-                var n = 0;
-
-                for (var i = 0; i < MM.overloads.length; i++) {
-                    (function(ov){
-                        if (ov.__ygg_trace !== undefined) return;
-                        ov.__ygg_trace = ov.implementation || null;
-                        ov.implementation = function() {
-                            var a = Array.prototype.slice.call(arguments);
-                            var shouldLog = false;
-                            var now = Date.now();
-                            if (counters.burst > 0) {
-                                counters.burst--;
-                                shouldLog = true;
-                            } else if ((now - counters.last) >= MIN_INTERVAL_MS) {
-                                counters.last = now;
-                                shouldLog = true;
-                            }
-
-                            if (shouldLog) {
-                                var parts = [];
-                                for (var k = 0; k < a.length; k++) {
-                                    try { parts.push(describe(a[k], 2)); }
-                                    catch (e) { parts.push("<err>"); }
-                                }
-                                var out = "[trace] " + tag +
-                                          " (" + parts.join(", ") + ")";
-                                if (wantBt) {
-                                    try {
-                                        var b = Java.backtrace({limit:6});
-                                        if (b && b.frames) {
-                                            var fr = [];
-                                            for (var f = 0; f < b.frames.length; f++) {
-                                                var fr0 = b.frames[f];
-                                                fr.push(String(fr0.className||"") +
-                                                        "." + String(fr0.methodName||""));
-                                            }
-                                            out += "\n  bt: " + fr.join(" < ");
-                                        }
-                                    } catch (e) {}
-                                }
-                                try { send({type:"trace_line", level:"log", line:out}); }
-                                catch (e) {}
-                            }
-
-                            var r;
-                            try {
-                                r = ov.__ygg_trace
-                                    ? ov.__ygg_trace.apply(this, a) : undefined;
-                            } catch (ex) {
-                                if (shouldLog) {
-                                    try { send({type:"trace_line", level:"error",
-                                          line:"[trace] " + tag + " THREW: " + ex}); }
-                                    catch (e) {}
-                                }
-                                throw ex;
-                            }
-                            if (shouldLog && r !== undefined) {
-                                try { send({type:"trace_line", level:"log",
-                                      line:"[trace] " + tag + " -> " + describe(r, 2)}); }
-                                catch (e) {}
-                            }
-                            return r;
-                        };
-                        n++;
-                    })(MM.overloads[i]);
-                }
-                send({type:"trace_ok", className:cmd.className,
-                      methodName:cmd.methodName, count:n,
-                      throttled:true, maxBurst:MAX_EVENTS});
-            } catch (e) {
-                send({type:"trace_err", error:""+e});
-            }
+            pendingTraceQueue.push({
+                className: cmd.className,
+                methodName: cmd.methodName
+            });
+            if (!pendingTraceDraining) drainTraceQueue();
         },
 
         jv_untrace: function (cmd) {
             try {
-                var C = Java.use(cmd.className);
-                var MM = C[cmd.methodName];
-                if (MM && MM.overloads) {
-                    for (var i = 0; i < MM.overloads.length; i++) {
-                        var ov = MM.overloads[i];
-                        if (ov.__ygg_trace !== undefined) {
-                            ov.implementation = ov.__ygg_trace;
-                            delete ov.__ygg_trace;
+                Java.performNow(function() {
+                    try {
+                        var C = Java.use(cmd.className);
+                        var MM = C[cmd.methodName];
+                        if (MM && MM.overloads) {
+                            for (var i = 0; i < MM.overloads.length; i++) {
+                                var ov = MM.overloads[i];
+                                if (ov.__ygg_trace !== undefined) {
+                                    ov.implementation = ov.__ygg_trace;
+                                    delete ov.__ygg_trace;
+                                }
+                            }
                         }
-                    }
-                }
-                send({type:"untrace_ok"});
+                        send({type:"untrace_ok"});
+                    } catch (e) { send({type:"untrace_err", error:""+e}); }
+                });
             } catch (e) { send({type:"untrace_err", error:""+e}); }
         },
 
         jv_instances: function (cmd) {
-            try {
-                var items = [];
-                var C = Java.use(cmd.className);
-                // Timeout (3s) prevents VM-pause hang on huge heaps.
-                Java.choose(cmd.className, {
-                    onMatch: function(x) {
-                        if (items.length >= 20) return "stop";
+            setTimeout(function() {
+                try {
+                    Java.performNow(function() {
                         try {
-                            var h = alloc(x);
-                            var flds = C.class.getDeclaredFields();
-                            var fields = [];
-                            for (var i = 0; i < flds.length && i < 32; i++) {
-                                var f = flds[i];
-                                if ((f.getModifiers() & 8) !== 0) continue;
-                                try {
-                                    f.setAccessible(true);
-                                    var t = describeTyped(f.get(x), 0);
-                                    fields.push({
-                                        name: String(f.getName()),
-                                        value: formatTypedTree(t, "").trim()
-                                    });
-                                } catch (e) {}
-                            }
-                            items.push({handle:h,
-                                        className:String(x.$className),
-                                        fields:fields});
-                        } catch (e) {}
-                    },
-                    onComplete: function() {}
-                }, 3000);
-                sendMaybeChunked({type:"instances_result",
-                                  className:cmd.className, items:items});
-            } catch (e) {
-                send({type:"instances_result", className:cmd.className,
-                      items:[], error:""+e});
-            }
+                            var items = [];
+                            var C = Java.use(cmd.className);
+                            var t0 = Date.now();
+                            Java.choose(cmd.className, {
+                                onMatch: function(x) {
+                                    if (items.length >= 20) return "stop";
+                                    if ((Date.now() - t0) > 2500) return "stop";
+                                    try {
+                                        var h = alloc(x);
+                                        var flds = C.class.getDeclaredFields();
+                                        var fields = [];
+                                        for (var i = 0; i < flds.length && i < 32; i++) {
+                                            var f = flds[i];
+                                            if ((f.getModifiers() & 8) !== 0) continue;
+                                            try {
+                                                f.setAccessible(true);
+                                                var t = describeTyped(f.get(x), 0);
+                                                fields.push({
+                                                    name: String(f.getName()),
+                                                    value: formatTypedTree(t, "").trim()
+                                                });
+                                            } catch (e) {}
+                                        }
+                                        items.push({handle:h,
+                                                    className:String(x.$className),
+                                                    fields:fields});
+                                    } catch (e) {}
+                                },
+                                onComplete: function() {}
+                            });
+                            sendMaybeChunked({type:"instances_result",
+                                              className:cmd.className, items:items});
+                        } catch (e) {
+                            send({type:"instances_result",
+                                  className:cmd.className, items:[],
+                                  error:""+e});
+                        }
+                    });
+                } catch (e) {
+                    send({type:"instances_result", className:cmd.className,
+                          items:[], error:"outer: "+e});
+                }
+            }, 30);
         },
 
         jv_new: function (cmd) {
