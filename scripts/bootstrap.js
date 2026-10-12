@@ -618,6 +618,9 @@ function classifyType(typeName) {
     // race in ART: NewGlobalRef during an unregistered thread state
     // triggers SIGABRT (JavaVMExt::AddGlobalRef). Serializing at the JS
     // level eliminates the race.
+    // Search generation — bumping this cancels any in-flight member search
+    var __searchGen = 0;
+
     var __javaQueue = [];
     var __javaBusy = false;
 
@@ -1371,6 +1374,8 @@ function classifyType(typeName) {
         },
 
         jv_search_members: function (cmd) {
+            __searchGen++;
+            var myGen = __searchGen;
             var q = (cmd.query || "").toLowerCase();
             if (q.length < 2) {
                 send({type:"members_search_result", query:cmd.query,
@@ -1383,19 +1388,22 @@ function classifyType(typeName) {
             var total = classes.length;
             var idx = 0;
             var matches = [];
-            var BATCH = 100;
+            var BATCH = 200;
+            var lastProgressMs = 0;
 
             function step() {
+                if (myGen !== __searchGen) return;   // cancelled by newer query
                 queueJava(function() {
+                    if (myGen !== __searchGen) return;
                     var end = idx + BATCH;
                     if (end > total) end = total;
                     for (var i = idx; i < end; i++) {
+                        if (myGen !== __searchGen) return;
                         var cn = classes[i];
                         try {
                             var C = Java.use(cn);
                             if (wantMethod) {
                                 var seen = Object.create(null);
-                                // getDeclaredMethods — private + declared
                                 try {
                                     var ms = C.class.getDeclaredMethods();
                                     for (var k = 0; k < ms.length; k++) {
@@ -1413,7 +1421,6 @@ function classifyType(typeName) {
                                         }
                                     }
                                 } catch (e) {}
-                                // getMethods — public inherited
                                 try {
                                     var ms2 = C.class.getMethods();
                                     for (var k2 = 0; k2 < ms2.length; k2++) {
@@ -1451,40 +1458,26 @@ function classifyType(typeName) {
                                         }
                                     }
                                 } catch (e) {}
-                                try {
-                                    var fs2 = C.class.getFields();
-                                    for (var j2 = 0; j2 < fs2.length; j2++) {
-                                        var fn2 = String(fs2[j2].getName());
-                                        if (fn2.toLowerCase().indexOf(q) >= 0
-                                            && !seenF[fn2]) {
-                                            seenF[fn2] = 1;
-                                            matches.push({
-                                                className:cn, name:fn2,
-                                                kind:"field",
-                                                ret:String(fs2[j2].getType().getName()),
-                                                argCount:0,
-                                                isStatic: (fs2[j2].getModifiers() & 8) !== 0
-                                            });
-                                        }
-                                    }
-                                } catch (e) {}
                             }
                         } catch (e) {}
                     }
                     idx = end;
-                    send({type:"members_search_progress", query:cmd.query,
-                          visited:idx, total:total,
-                          matches:matches.length});
+                    var now = Date.now();
+                    if (now - lastProgressMs > 800) {
+                        lastProgressMs = now;
+                        send({type:"members_search_progress",
+                              query:cmd.query,
+                              visited:idx, total:total,
+                              matches:matches.length});
+                    }
                 });
-                if (idx < total) {
-                    setTimeout(step, 0);
-                } else {
-                    sendMaybeChunked({type:"members_search_result",
-                                      query:cmd.query,
-                                      totalClasses: total,
-                                      visited: idx,
-                                      matches: matches});
-                }
+                if (myGen !== __searchGen) return;
+                if (idx < total) setTimeout(step, 0);
+                else sendMaybeChunked({type:"members_search_result",
+                                       query:cmd.query,
+                                       totalClasses: total,
+                                       visited: idx,
+                                       matches: matches});
             }
             setTimeout(step, 0);
         },
