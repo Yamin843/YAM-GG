@@ -369,6 +369,7 @@ void ClassBrowser::activateCall(const std::string& cls, MethodInfo& m) {
     callState_.lastResult.clear();
     callState_.haveResult = false;
     pendingSwitchToCall_ = true;
+    pendingSubTab_ = 2;
 }
 
 void ClassBrowser::activateCallCtor(const std::string& cls, CtorInfo& c) {
@@ -519,30 +520,29 @@ std::string ClassBrowser::argsSpecFor(const std::vector<ParamInfo>& args) {
 void ClassBrowser::draw() {
     if (!autoLoadTried_) { autoLoadTried_ = true; triggerLoadClasses(); }
 
+    ImGuiTabItemFlags f0 = (pendingSubTab_ == 0) ? ImGuiTabItemFlags_SetSelected : 0;
+    ImGuiTabItemFlags f1 = (pendingSubTab_ == 1) ? ImGuiTabItemFlags_SetSelected : 0;
+    ImGuiTabItemFlags f2 = (pendingSubTab_ == 2) ? ImGuiTabItemFlags_SetSelected : 0;
+
     if (ImGui::BeginTabBar("##jv_subtabs", ImGuiTabBarFlags_None)) {
-        if (ImGui::BeginTabItem("Classes",
-                nullptr, activeSubTab_ == 0 ? ImGuiTabItemFlags_SetSelected : 0)) {
+        if (ImGui::BeginTabItem("Classes", nullptr, f0)) {
             activeSubTab_ = 0;
             drawClassesTab();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("TraceLog",
-                nullptr, activeSubTab_ == 1 ? ImGuiTabItemFlags_SetSelected : 0)) {
+        if (ImGui::BeginTabItem("TraceLog", nullptr, f1)) {
             activeSubTab_ = 1;
             drawTraceLogTab();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("CallMethod",
-                nullptr,
-                (activeSubTab_ == 2 || pendingSwitchToCall_)
-                    ? ImGuiTabItemFlags_SetSelected : 0)) {
+        if (ImGui::BeginTabItem("CallMethod", nullptr, f2)) {
             activeSubTab_ = 2;
-            pendingSwitchToCall_ = false;
             drawCallMethodTab();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
     }
+    pendingSubTab_ = -1;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -575,8 +575,27 @@ void ClassBrowser::drawSearchBar() {
         filter_ = searchBuf_;
         triggerLoadClasses();
         if (searchMethod_ || searchField_) triggerMemberSearch();
+        autoSearchLast_ = searchBuf_;
     }
+
+    // Debounced auto member search while typing
+    float now = (float)ImGui::GetTime();
+    std::string cur = searchBuf_;
+    if (cur != autoSearchLast_) {
+        autoSearchLast_ = cur;
+        autoSearchAt_ = now + 0.6f;  // 600ms idle before firing
+    } else if (!cur.empty() && cur.size() >= 3 &&
+               (searchMethod_ || searchField_) &&
+               autoSearchAt_ > 0.0f && now >= autoSearchAt_) {
+        autoSearchAt_ = 0.0f;
+        triggerMemberSearch();
+    }
+
     if (loading_) { ImGui::SameLine(); ImGui::TextDisabled("..."); }
+    else if (searchMethod_ || searchField_) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(member search active)");
+    }
 }
 
 void ClassBrowser::drawMemberMatches() {
@@ -732,6 +751,18 @@ void ClassBrowser::drawClassNode(const std::string& cls) {
     if (mit != methods_.end() && !mit->second.empty()) {
         size_t shown = 0;
         for (auto& m : mit->second) if (match(m.name)) shown++;
+        if (ImGui::Button("TRACE ALL", ImVec2(120, 30))) {
+            for (auto& m : mit->second) {
+                if (!m.tracing) triggerTrace(cls, m);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("STOP ALL", ImVec2(120, 30))) {
+            for (auto& m : mit->second) {
+                if (m.tracing) triggerUntrace(cls, m);
+            }
+        }
+        ImGui::Separator();
         char hdr[80];
         std::snprintf(hdr, sizeof(hdr), "Methods (%zu/%zu)###mth", shown,
                       mit->second.size());

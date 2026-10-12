@@ -118,6 +118,7 @@ private:
     std::vector<MemberMatch> memberMatches_;
 
     int  activeSubTab_{0};
+    int  pendingSubTab_{-1};
     bool pendingSwitchToCall_{false};
     CallState callState_;
     std::vector<std::string> traceLog_;
@@ -136,6 +137,8 @@ private:
     bool searchMethod_{false};
     bool searchField_{false};
     char searchBuf_[256]{0};
+    float autoSearchAt_{0.0f};
+    std::string autoSearchLast_;
     char memberSearch_[128]{0};
 };
 

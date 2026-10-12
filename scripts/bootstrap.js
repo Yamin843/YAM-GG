@@ -619,44 +619,37 @@ function classifyType(typeName) {
         }
         pendingTraceDraining = true;
         setTimeout(function() {
-            try {
-                Java.performNow(function() {
-                    try {
-                        var job = pendingTraceQueue[0];
-                        if (job.idx === undefined && job.argIndex === undefined)
-                            job.argIndex = job.cmd && job.cmd.argIndex;
-                        if (!job.started) {
-                            job.started = true;
-                            var C = Java.use(job.className);
-                            var MM = C[job.methodName];
-                            if (!MM || !MM.overloads)
-                                throw new Error("no overloads for " + job.methodName);
-                            job.overloads = MM.overloads;
-                            job.idx = 0;
-                        }
-                        if (job.idx >= job.overloads.length) {
-                            send({type:"trace_ok", className:job.className,
-                                  methodName:job.methodName,
-                                  count:job.overloads.length});
-                            pendingTraceQueue.shift();
-                        } else {
-                            var ov = job.overloads[job.idx];
-                            if (ov.__ygg_trace === undefined) {
-                                ov.__ygg_trace = ov.implementation || null;
-                                job.__lastImpl = ov.__ygg_trace;
-                                ov.implementation = makeTraceWrapper(job);
-                            }
-                            job.idx++;
-                        }
-                    } catch (e) {
-                        send({type:"trace_err", error:""+e});
-                        pendingTraceQueue.shift();
+            queueJava(function() {
+                try {
+                    var job = pendingTraceQueue[0];
+                    if (!job.started) {
+                        job.started = true;
+                        var C = Java.use(job.className);
+                        var MM = C[job.methodName];
+                        if (!MM || !MM.overloads)
+                            throw new Error("no overloads for " + job.methodName);
+                        job.overloads = MM.overloads;
+                        job.idx = 0;
                     }
-                });
-            } catch (e) {
-                send({type:"trace_err", error:"outer: "+e});
-                pendingTraceQueue.shift();
-            }
+                    if (job.idx >= job.overloads.length) {
+                        send({type:"trace_ok", className:job.className,
+                              methodName:job.methodName,
+                              count:job.overloads.length});
+                        pendingTraceQueue.shift();
+                    } else {
+                        var ov = job.overloads[job.idx];
+                        if (ov.__ygg_trace === undefined) {
+                            ov.__ygg_trace = ov.implementation || null;
+                            job.__lastImpl = ov.__ygg_trace;
+                            ov.implementation = makeTraceWrapper(job);
+                        }
+                        job.idx++;
+                    }
+                } catch (e) {
+                    send({type:"trace_err", error:""+e});
+                    pendingTraceQueue.shift();
+                }
+            });
             drainTraceQueue();
         }, 25);
     }
@@ -704,6 +697,42 @@ function classifyType(typeName) {
             }
             return r;
         };
+    }
+
+    // ─── Java access serialization ────────────────────────────────────
+    // ALL Java work must go through queueJava. Calling Java.performNow
+    // from two timers simultaneously (setInterval + setTimeout) can
+    // race in ART: NewGlobalRef during an unregistered thread state
+    // triggers SIGABRT (JavaVMExt::AddGlobalRef). Serializing at the JS
+    // level eliminates the race.
+    var __javaQueue = [];
+    var __javaBusy = false;
+
+    function queueJava(fn) {
+        __javaQueue.push(fn);
+        __drainJava();
+    }
+
+    function __drainJava() {
+        if (__javaBusy || __javaQueue.length === 0) return;
+        __javaBusy = true;
+        setTimeout(function() {
+            var fn = __javaQueue.shift();
+            try {
+                Java.performNow(function() {
+                    try { fn(); }
+                    catch (e) {
+                        try { send({type:"java_task_err", error:""+e}); }
+                        catch (e2) {}
+                    }
+                });
+            } catch (e) {
+                try { send({type:"java_outer_err", error:""+e}); }
+                catch (e2) {}
+            }
+            __javaBusy = false;
+            __drainJava();
+        }, 0);
     }
 
     // ─── Chunked sender ───────────────────────────────────────────────
@@ -1177,65 +1206,65 @@ function classifyType(typeName) {
             var classes = Java.enumerateLoadedClassesSync();
             var matches = [];
             var idx = 0;
+            var t0 = Date.now();
+            var TIME_LIMIT_MS = 2500;
             var CAP = 500;
 
             function step() {
-                try {
-                    Java.performNow(function() {
-                        var processed = 0;
-                        while (idx < classes.length && processed < 150
-                               && matches.length < CAP) {
-                            var cn = classes[idx++];
-                            try {
-                                var C = Java.use(cn);
-                                if (wantMethod) {
-                                    var ms = C.class.getDeclaredMethods();
-                                    for (var i = 0; i < ms.length; i++) {
-                                        var mn = String(ms[i].getName()).toLowerCase();
-                                        if (mn.indexOf(q) >= 0) {
-                                            matches.push({
-                                                className: cn,
-                                                name: String(ms[i].getName()),
-                                                kind: "method",
-                                                ret: String(ms[i].getReturnType().getName()),
-                                                argCount: ms[i].getParameterTypes().length,
-                                                isStatic: (ms[i].getModifiers() & 8) !== 0
-                                            });
-                                            if (matches.length >= CAP) break;
-                                        }
+                queueJava(function() {
+                    var batch = 0;
+                    while (idx < classes.length && batch < 200 &&
+                           matches.length < CAP &&
+                           (Date.now() - t0) < TIME_LIMIT_MS) {
+                        var cn = classes[idx++]; batch++;
+                        try {
+                            var C = Java.use(cn);
+                            if (wantMethod) {
+                                var ms = C.class.getDeclaredMethods();
+                                for (var i = 0; i < ms.length; i++) {
+                                    var mn = String(ms[i].getName()).toLowerCase();
+                                    if (mn.indexOf(q) >= 0) {
+                                        matches.push({
+                                            className: cn,
+                                            name: String(ms[i].getName()),
+                                            kind: "method",
+                                            ret: String(ms[i].getReturnType().getName()),
+                                            argCount: ms[i].getParameterTypes().length,
+                                            isStatic: (ms[i].getModifiers() & 8) !== 0
+                                        });
+                                        if (matches.length >= CAP) break;
                                     }
                                 }
-                                if (wantField && matches.length < CAP) {
-                                    var fs = C.class.getDeclaredFields();
-                                    for (var j = 0; j < fs.length; j++) {
-                                        var fn = String(fs[j].getName()).toLowerCase();
-                                        if (fn.indexOf(q) >= 0) {
-                                            matches.push({
-                                                className: cn,
-                                                name: String(fs[j].getName()),
-                                                kind: "field",
-                                                ret: String(fs[j].getType().getName()),
-                                                argCount: 0,
-                                                isStatic: (fs[j].getModifiers() & 8) !== 0
-                                            });
-                                            if (matches.length >= CAP) break;
-                                        }
+                            }
+                            if (wantField && matches.length < CAP) {
+                                var fs = C.class.getDeclaredFields();
+                                for (var j = 0; j < fs.length; j++) {
+                                    var fn = String(fs[j].getName()).toLowerCase();
+                                    if (fn.indexOf(q) >= 0) {
+                                        matches.push({
+                                            className: cn,
+                                            name: String(fs[j].getName()),
+                                            kind: "field",
+                                            ret: String(fs[j].getType().getName()),
+                                            argCount: 0,
+                                            isStatic: (fs[j].getModifiers() & 8) !== 0
+                                        });
+                                        if (matches.length >= CAP) break;
                                     }
                                 }
-                            } catch (e) {}
-                            processed++;
-                        }
-                    });
-                } catch (e) {
-                    send({type:"members_search_err", error:""+e});
-                }
-                if (idx < classes.length && matches.length < CAP) {
+                            }
+                        } catch (e) {}
+                    }
+                });
+                if (idx < classes.length && matches.length < CAP &&
+                    (Date.now() - t0) < TIME_LIMIT_MS) {
                     setTimeout(step, 0);
                 } else {
                     sendMaybeChunked({
                         type:"members_search_result",
                         query: cmd.query,
                         totalClasses: classes.length,
+                        visited: idx,
                         truncated: matches.length >= CAP,
                         matches: matches
                     });
@@ -1269,22 +1298,17 @@ function classifyType(typeName) {
             var nm = cmd.name || "anon";
             var code = cmd.code || "";
             setTimeout(function() {
-                try {
-                    Java.performNow(function() {
-                        try {
-                            (new Function(code))();
-                            send({type:"user_script_loaded", name:nm,
-                                  size:code.length, ok:true});
-                        } catch (e) {
-                            send({type:"user_script_loaded", name:nm,
-                                  ok:false, error:""+e});
-                            send({type:"script_failed", name:nm, error:""+e});
-                        }
-                    });
-                } catch (e) {
-                    send({type:"user_script_loaded", name:nm, ok:false,
-                          error:"outer: "+e});
-                }
+                queueJava(function() {
+                    try {
+                        (new Function(code))();
+                        send({type:"user_script_loaded", name:nm,
+                              size:code.length, ok:true});
+                    } catch (e) {
+                        send({type:"user_script_loaded", name:nm,
+                              ok:false, error:""+e});
+                        send({type:"script_failed", name:nm, error:""+e});
+                    }
+                });
             }, 30);
         },
         enumerate_classes: function (cmd) {
@@ -1570,48 +1594,57 @@ function classifyType(typeName) {
     var ALIVE_EVERY_MS = 30000;
     var lastAliveAt = 0;
     var booted = false;
-    function pollTick() {
-        try {
-            Java.performNow(function () {
-                var MV = getModViewClass();
-                if (!MV) return;
-                if (!booted) {
-                    booted = true;
-                    try { send({type:"boot_poller_v7"}); } catch (e) {}
-                    installAllHooks();
-                    attachAttempts++;
-                    try { tryAttachOnce_inner(); } catch (e) {}
-                    try { send({type:"boot_poller_done_v7"}); } catch (e) {}
-                }
-                if (!attachDone) { attachAttempts++; try { tryAttachOnce_inner(); } catch (e) { send({type:"poll_attach_err", message:""+e}); } }
-                var drained = 0;
-                for (var i = 0; i < 128; i++) {
-                    var raw;
-                    try { raw = MV.nativeGetPendingCmd(); }
-                    catch (e) { break; }
-                    if (!raw) break;
-                    var obj = null;
-                    try { obj = JSON.parse(raw); } catch (e) { continue; }
-                    var cmd = (obj.payload && obj.payload.action)
-                        ? obj.payload : obj;
-                    if (!cmd || !cmd.action) continue;
-                    dispatchCmd(cmd);
-                    drained++;
-                }
-                pollCount++;
-                var now = Date.now();
-                if ((now - lastAliveAt) >= ALIVE_EVERY_MS) {
-                    lastAliveAt = now;
-                    try { send({type:"poller_alive", count:pollCount,
-                                drained:drained}); } catch (e) {}
-                }
-            });
-        } catch (e) {
-            try { send({type:"tick_err", message:""+e}); } catch (e2) {}
+    var pollCount = 0;
+    var POLL_INTERVAL_MS = 60;
+    var ALIVE_EVERY_MS = 30000;
+    var lastAliveAt = 0;
+    var booted = false;
+
+    function pollOnce() {
+        var MV = getModViewClass();
+        if (!MV) return;
+
+        if (!booted) {
+            booted = true;
+            try { send({type:"boot_poller_v7"}); } catch (e) {}
+            installAllHooks();
+            try { tryAttachOnce_inner(); } catch (e) {}
+            try { send({type:"boot_poller_done_v7"}); } catch (e) {}
+        }
+        if (!attachDone) { attachAttempts++; try { tryAttachOnce_inner(); } catch (e) {} }
+
+        var drained = 0;
+        for (var i = 0; i < 128; i++) {
+            var raw;
+            try { raw = MV.nativeGetPendingCmd(); }
+            catch (e) { break; }
+            if (!raw) break;
+            var obj = null;
+            try { obj = JSON.parse(raw); } catch (e) { continue; }
+            var cmd = (obj.payload && obj.payload.action) ? obj.payload : obj;
+            if (!cmd || !cmd.action) continue;
+            dispatchCmd(cmd);
+            drained++;
+        }
+        pollCount++;
+        var now = Date.now();
+        if ((now - lastAliveAt) >= ALIVE_EVERY_MS) {
+            lastAliveAt = now;
+            try { send({type:"poller_alive", count:pollCount,
+                        drained:drained}); } catch (e) {}
         }
     }
+
+    function schedulePoll() {
+        setTimeout(function() {
+            queueJava(pollOnce);
+            schedulePoll();
+        }, POLL_INTERVAL_MS);
+    }
+
+    function pollTick() { schedulePoll(); }
     try { send({type:"poller_started", interval:POLL_INTERVAL_MS}); } catch (e) {}
-    setInterval(pollTick, POLL_INTERVAL_MS);
+    schedulePoll();
     try { send({type:"cpp_ready"}); }       catch (e) {}
     try { send({type:"cpp_ready_final"}); } catch (e) {}
     try { send({type:"boot_signals_done_v7"}); } catch (e) {}
