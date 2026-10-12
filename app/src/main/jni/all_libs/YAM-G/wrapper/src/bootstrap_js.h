@@ -648,9 +648,10 @@ function classifyType(typeName) {
                     } else {
                         var ov = job.overloads[job.idx];
                         if (ov.__ygg_trace === undefined) {
-                            ov.__ygg_trace = ov.implementation || null;
-                            job.__lastImpl = ov.__ygg_trace;
-                            ov.implementation = makeTraceWrapper(job);
+                            // Capture per-overload original — no shared state
+                            var original = ov.implementation;
+                            ov.__ygg_trace = original || null;
+                            ov.implementation = makeTraceWrapper(job, original);
                         }
                         job.idx++;
                     }
@@ -659,25 +660,36 @@ function classifyType(typeName) {
                     pendingTraceQueue.shift();
                 }
             });
-            drainTraceQueue();
-        }, 25);
+            // 300ms between overloads: give ART time to settle after deopt
+            setTimeout(drainTraceQueue, 300);
+        }, 0);
     }
 
-    function makeTraceWrapper(job) {
+    function makeTraceWrapper(job, original) {
         var onlyArg = (typeof job.argIndex === "number") ? job.argIndex : -1;
+        var lastFire = 0;
+        var MIN_MS = 500;   // 2 events per second per overload, max
         return function() {
+            var now = Date.now();
+            // Cheap path when throttled: bypass everything
+            if (now - lastFire < MIN_MS) {
+                return original ? original.apply(this, arguments) : undefined;
+            }
+            lastFire = now;
+
             var a = Array.prototype.slice.call(arguments);
             if (onlyArg >= 0) {
                 if (onlyArg < a.length) {
                     var v = null;
                     try { v = describe(a[onlyArg], 3); }
                     catch (e) { v = "<err>"; }
-                    try { send({type:"trace_line", level:"log",
-                          line: JSON.stringify({
-                              t:"trace", cls:job.className, m:job.methodName,
-                              i:onlyArg, v:v
-                          })}); }
-                    catch (e) {}
+                    try {
+                        send({type:"trace_line", level:"log",
+                              line: JSON.stringify({
+                                  t:"trace", cls:job.className,
+                                  m:job.methodName, i:onlyArg, v:v
+                              })});
+                    } catch (e) {}
                 }
             } else {
                 var parts = [];
@@ -685,23 +697,25 @@ function classifyType(typeName) {
                     try { parts.push(describe(a[k], 2)); }
                     catch (e) { parts.push("<err>"); }
                 }
-                try { send({type:"trace_line", level:"log",
-                      line: JSON.stringify({
-                          t:"trace", cls:job.className, m:job.methodName,
-                          args:parts
-                      })}); }
-                catch (e) {}
+                try {
+                    send({type:"trace_line", level:"log",
+                          line: JSON.stringify({
+                              t:"trace", cls:job.className,
+                              m:job.methodName, args:parts
+                          })});
+                } catch (e) {}
             }
             var r;
             try {
-                r = job.__lastImpl ? job.__lastImpl.apply(this, a) : undefined;
+                r = original ? original.apply(this, a) : undefined;
             } catch (ex) {
-                try { send({type:"trace_line", level:"error",
-                      line: JSON.stringify({
-                          t:"trace_err", cls:job.className, m:job.methodName,
-                          err:""+ex
-                      })}); }
-                catch (e) {}
+                try {
+                    send({type:"trace_line", level:"error",
+                          line: JSON.stringify({
+                              t:"trace_err", cls:job.className,
+                              m:job.methodName, err:""+ex
+                          })});
+                } catch (e) {}
                 throw ex;
             }
             return r;
@@ -1207,76 +1221,116 @@ function classifyType(typeName) {
             var q = (cmd.query || "").toLowerCase();
             if (q.length < 2) {
                 send({type:"members_search_result", query:cmd.query,
-                      matches:[], totalClasses:0, truncated:false});
+                      matches:[], totalClasses:0, visited:0});
                 return;
             }
             var wantMethod = cmd.wantMethod === true;
             var wantField  = cmd.wantField === true;
             var classes = Java.enumerateLoadedClassesSync();
-            var matches = [];
+            var total = classes.length;
             var idx = 0;
-            var t0 = Date.now();
-            var TIME_LIMIT_MS = 2500;
-            var CAP = 500;
+            var matches = [];
+            var BATCH = 100;
 
             function step() {
                 queueJava(function() {
-                    var batch = 0;
-                    while (idx < classes.length && batch < 200 &&
-                           matches.length < CAP &&
-                           (Date.now() - t0) < TIME_LIMIT_MS) {
-                        var cn = classes[idx++]; batch++;
+                    var end = idx + BATCH;
+                    if (end > total) end = total;
+                    for (var i = idx; i < end; i++) {
+                        var cn = classes[i];
                         try {
                             var C = Java.use(cn);
                             if (wantMethod) {
-                                var ms = C.class.getDeclaredMethods();
-                                for (var i = 0; i < ms.length; i++) {
-                                    var mn = String(ms[i].getName()).toLowerCase();
-                                    if (mn.indexOf(q) >= 0) {
-                                        matches.push({
-                                            className: cn,
-                                            name: String(ms[i].getName()),
-                                            kind: "method",
-                                            ret: String(ms[i].getReturnType().getName()),
-                                            argCount: ms[i].getParameterTypes().length,
-                                            isStatic: (ms[i].getModifiers() & 8) !== 0
-                                        });
-                                        if (matches.length >= CAP) break;
+                                var seen = Object.create(null);
+                                // getDeclaredMethods — private + declared
+                                try {
+                                    var ms = C.class.getDeclaredMethods();
+                                    for (var k = 0; k < ms.length; k++) {
+                                        var mn = String(ms[k].getName());
+                                        if (mn.toLowerCase().indexOf(q) >= 0
+                                            && !seen[mn]) {
+                                            seen[mn] = 1;
+                                            matches.push({
+                                                className:cn, name:mn,
+                                                kind:"method",
+                                                ret:String(ms[k].getReturnType().getName()),
+                                                argCount: ms[k].getParameterTypes().length,
+                                                isStatic: (ms[k].getModifiers() & 8) !== 0
+                                            });
+                                        }
                                     }
-                                }
+                                } catch (e) {}
+                                // getMethods — public inherited
+                                try {
+                                    var ms2 = C.class.getMethods();
+                                    for (var k2 = 0; k2 < ms2.length; k2++) {
+                                        var mn2 = String(ms2[k2].getName());
+                                        if (mn2.toLowerCase().indexOf(q) >= 0
+                                            && !seen[mn2]) {
+                                            seen[mn2] = 1;
+                                            matches.push({
+                                                className:cn, name:mn2,
+                                                kind:"method",
+                                                ret:String(ms2[k2].getReturnType().getName()),
+                                                argCount: ms2[k2].getParameterTypes().length,
+                                                isStatic: (ms2[k2].getModifiers() & 8) !== 0
+                                            });
+                                        }
+                                    }
+                                } catch (e) {}
                             }
-                            if (wantField && matches.length < CAP) {
-                                var fs = C.class.getDeclaredFields();
-                                for (var j = 0; j < fs.length; j++) {
-                                    var fn = String(fs[j].getName()).toLowerCase();
-                                    if (fn.indexOf(q) >= 0) {
-                                        matches.push({
-                                            className: cn,
-                                            name: String(fs[j].getName()),
-                                            kind: "field",
-                                            ret: String(fs[j].getType().getName()),
-                                            argCount: 0,
-                                            isStatic: (fs[j].getModifiers() & 8) !== 0
-                                        });
-                                        if (matches.length >= CAP) break;
+                            if (wantField) {
+                                var seenF = Object.create(null);
+                                try {
+                                    var fs = C.class.getDeclaredFields();
+                                    for (var j = 0; j < fs.length; j++) {
+                                        var fn = String(fs[j].getName());
+                                        if (fn.toLowerCase().indexOf(q) >= 0
+                                            && !seenF[fn]) {
+                                            seenF[fn] = 1;
+                                            matches.push({
+                                                className:cn, name:fn,
+                                                kind:"field",
+                                                ret:String(fs[j].getType().getName()),
+                                                argCount:0,
+                                                isStatic: (fs[j].getModifiers() & 8) !== 0
+                                            });
+                                        }
                                     }
-                                }
+                                } catch (e) {}
+                                try {
+                                    var fs2 = C.class.getFields();
+                                    for (var j2 = 0; j2 < fs2.length; j2++) {
+                                        var fn2 = String(fs2[j2].getName());
+                                        if (fn2.toLowerCase().indexOf(q) >= 0
+                                            && !seenF[fn2]) {
+                                            seenF[fn2] = 1;
+                                            matches.push({
+                                                className:cn, name:fn2,
+                                                kind:"field",
+                                                ret:String(fs2[j2].getType().getName()),
+                                                argCount:0,
+                                                isStatic: (fs2[j2].getModifiers() & 8) !== 0
+                                            });
+                                        }
+                                    }
+                                } catch (e) {}
                             }
                         } catch (e) {}
                     }
+                    idx = end;
+                    send({type:"members_search_progress", query:cmd.query,
+                          visited:idx, total:total,
+                          matches:matches.length});
                 });
-                if (idx < classes.length && matches.length < CAP &&
-                    (Date.now() - t0) < TIME_LIMIT_MS) {
+                if (idx < total) {
                     setTimeout(step, 0);
                 } else {
-                    sendMaybeChunked({
-                        type:"members_search_result",
-                        query: cmd.query,
-                        totalClasses: classes.length,
-                        visited: idx,
-                        truncated: matches.length >= CAP,
-                        matches: matches
-                    });
+                    sendMaybeChunked({type:"members_search_result",
+                                      query:cmd.query,
+                                      totalClasses: total,
+                                      visited: idx,
+                                      matches: matches});
                 }
             }
             setTimeout(step, 0);

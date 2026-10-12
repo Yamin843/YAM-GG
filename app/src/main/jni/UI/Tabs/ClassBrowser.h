@@ -116,6 +116,10 @@ private:
     std::set<std::string> tracedMethods_;
     std::set<std::string> pendingClasses_;
     std::vector<MemberMatch> memberMatches_;
+    int  memberSearchVisited_{0};
+    int  memberSearchTotal_{0};
+    int  memberSearchMatches_{0};
+    bool memberSearchRunning_{false};
 
     int  activeSubTab_{0};
     int  pendingSubTab_{-1};

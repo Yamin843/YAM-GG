@@ -243,6 +243,14 @@ void ClassBrowser::registerEvents() {
             jesc(ev.get_str("value")).c_str());
         pushTraceLog(buf);
     });
+    yam::events::on("members_search_progress", [this](const yam::Event& ev) {
+        std::lock_guard<std::mutex> lk(mu_);
+        memberSearchVisited_ = (int)ev.get_i64("visited", 0);
+        memberSearchTotal_   = (int)ev.get_i64("total", 0);
+        memberSearchMatches_ = (int)ev.get_i64("matches", 0);
+        memberSearchRunning_ = true;
+    });
+
     yam::events::on("members_search_result", [this](const yam::Event& ev) {
         std::lock_guard<std::mutex> lk(mu_);
         memberMatches_.clear();
@@ -259,8 +267,13 @@ void ClassBrowser::registerEvents() {
                 memberMatches_.push_back(std::move(mm));
             }
         }
-        LOGI("CB: members_search %s -> %zu", ev.get_str("query").c_str(),
-             memberMatches_.size());
+        memberSearchRunning_ = false;
+        memberSearchVisited_ = (int)ev.get_i64("visited", 0);
+        memberSearchTotal_   = (int)ev.get_i64("total", 0);
+        memberSearchMatches_ = (int)memberMatches_.size();
+        LOGI("CB: members_search %s -> %zu (visited %d/%d)",
+             ev.get_str("query").c_str(), memberMatches_.size(),
+             memberSearchVisited_, memberSearchTotal_);
     });
 }
 
@@ -580,9 +593,19 @@ void ClassBrowser::drawSearchBar() {
     ImGui::SameLine();
     bool find = ImGui::Button("Find", ImVec2(80, 0));
 
-    if (enter || find) {
+    if (find) {
+        // Find: RELOAD the class list, then filter + member search
         filter_ = searchBuf_;
         triggerLoadClasses(true);
+        if (searchMethod_ || searchField_) triggerMemberSearch();
+        autoSearchLast_ = searchBuf_;
+    } else if (enter) {
+        // Enter: NO reload — only re-filter the classes we already have
+        filter_ = searchBuf_;
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            lastQuery_ = "\x01INVALIDATE\x01";
+        }
         if (searchMethod_ || searchField_) triggerMemberSearch();
         autoSearchLast_ = searchBuf_;
     }
@@ -592,7 +615,7 @@ void ClassBrowser::drawSearchBar() {
     std::string cur = searchBuf_;
     if (cur != autoSearchLast_) {
         autoSearchLast_ = cur;
-        autoSearchAt_ = now + 0.6f;  // 600ms idle before firing
+        autoSearchAt_ = now + 0.8f;
     } else if (!cur.empty() && cur.size() >= 3 &&
                (searchMethod_ || searchField_) &&
                autoSearchAt_ > 0.0f && now >= autoSearchAt_) {
@@ -600,10 +623,17 @@ void ClassBrowser::drawSearchBar() {
         triggerMemberSearch();
     }
 
-    if (loading_) { ImGui::SameLine(); ImGui::TextDisabled("..."); }
-    else if (searchMethod_ || searchField_) {
+    if (loading_) {
+        ImGui::SameLine(); ImGui::TextDisabled("loading...");
+    } else if (memberSearchRunning_) {
         ImGui::SameLine();
-        ImGui::TextDisabled("(member search active)");
+        if (memberSearchTotal_ > 0) {
+            ImGui::TextDisabled("searching %d/%d (found %d)",
+                memberSearchVisited_, memberSearchTotal_,
+                memberSearchMatches_);
+        } else {
+            ImGui::TextDisabled("searching...");
+        }
     }
 }
 
