@@ -246,12 +246,9 @@ void ClassBrowser::registerEvents() {
     yam::events::on("samples_result", [this](const yam::Event& ev) {
         std::string cls = ev.get_str("className");
         std::string m   = ev.get_str("methodName");
-        int  fa = (int)ev.get_i64("focusArg", -1);
         std::lock_guard<std::mutex> lk(mu_);
         if (!callState_.active || callState_.className != cls ||
             callState_.methodName != m) return;
-        // Only accept the result that matches the current focus
-        if (callState_.focusArg >= 0 && fa != callState_.focusArg) return;
         callState_.samples.clear();
         auto* arr = ev.data.get("samples");
         if (arr && arr->is_arr()) {
@@ -277,8 +274,8 @@ void ClassBrowser::registerEvents() {
             }
         }
         callState_.argSampleIdx.assign(callState_.args.size(), -1);
-        LOGI("CB: samples_result %s::%s focus=%d -> %zu",
-             cls.c_str(), m.c_str(), fa, callState_.samples.size());
+        LOGI("CB: samples_result %s::%s -> %zu",
+             cls.c_str(), m.c_str(), callState_.samples.size());
     });
 
     yam::events::on("members_search_progress", [this](const yam::Event& ev) {
@@ -357,7 +354,7 @@ void ClassBrowser::triggerTrace(const std::string& cls, MethodInfo& m) {
     }
     std::string sc = R"({"action":"jv_samples_get","className":")";
     sc += jesc(cls); sc += R"(","methodName":")"; sc += jesc(m.name);
-    sc += R"(","argIndex":-1})";
+    sc += R"("})";
     sendCommand(sc);
 }
 
@@ -372,10 +369,10 @@ void ClassBrowser::triggerTraceArg(const std::string& cls, MethodInfo& m, int id
         m.tracing = true; m.argTraceIdx = idx;
         tracedMethods_.insert(cls + "::" + m.name);
     }
-    // Fetch samples scoped to this single arg
+    // Fetch whole-method samples (config is not scoped by arg)
     std::string sc = R"({"action":"jv_samples_get","className":")";
     sc += jesc(cls); sc += R"(","methodName":")"; sc += jesc(m.name);
-    sc += R"(","argIndex":)"; sc += std::to_string(idx); sc += "}";
+    sc += R"("})";
     sendCommand(sc);
 }
 
@@ -455,7 +452,7 @@ void ClassBrowser::activateCall(const std::string& cls, MethodInfo& m) {
     // Ask JS for saved samples
     std::string cmd = R"({"action":"jv_samples_get","className":")";
     cmd += jesc(cls); cmd += R"(","methodName":")"; cmd += jesc(m.name);
-    cmd += R"(","argIndex":-1})";
+    cmd += R"("})";
     sendCommand(cmd);
 }
 
